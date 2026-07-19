@@ -5,13 +5,15 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("ships the homepage, advanced editors, MCP widgets, skills, icons, and generation routes", async () => {
-  const [page, home, editor, playground, studio, inspector, widget, modelWidget, modelSpec, demos, modelStlRoute, skillRoute, stlRoute, mcpRoute, fontRoute, icon] = await Promise.all([
+  const [page, home, editor, playground, studio, inspector, viewport, fields, widget, modelWidget, modelSpec, demos, modelStlRoute, skillRoute, stlRoute, mcpRoute, fontRoute, icon] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/HomePage.tsx", root), "utf8"),
     readFile(new URL("app/editor/page.tsx", root), "utf8"),
     readFile(new URL("app/TextPlayground.tsx", root), "utf8"),
     readFile(new URL("app/ProceduralStudio.tsx", root), "utf8"),
-    readFile(new URL("app/SpecInspector.tsx", root), "utf8"),
+    readFile(new URL("components/editor/Inspector.tsx", root), "utf8"),
+    readFile(new URL("components/editor/Viewport.tsx", root), "utf8"),
+    readFile(new URL("components/editor/fields.tsx", root), "utf8"),
     readFile(new URL("lib/mcp-widget.ts", root), "utf8"),
     readFile(new URL("lib/mcp-model-widget.ts", root), "utf8"),
     readFile(new URL("lib/model-spec.ts", root), "utf8"),
@@ -52,39 +54,48 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(playground, /three-gpu-pathtracer/);
   assert.match(playground, /High quality/);
   assert.match(playground, /Print material/);
-  assert.match(studio, /editor-mode-switch/);
-  assert.match(studio, /Shape what you see/);
-  assert.match(studio, /Full JSON \/ YAML spec/);
-  assert.match(studio, /createGroundDimensions/);
-  assert.match(studio, /Download STL/);
-  assert.match(inspector, /Google font/);
-  assert.match(inspector, /loadFontPreview/);
-  assert.match(inspector, /Search all Google Fonts/);
-  assert.match(inspector, /scroll for all/);
-  assert.match(inspector, /Floor W\/H gizmos/);
-  assert.match(inspector, /Add layer/);
+  // Redesigned editor shell: shadcn components, resizable panes, floating stage controls.
+  assert.match(studio, /ResizablePanelGroup/);
+  assert.match(studio, /LoadSaveDialog/);
+  assert.match(studio, /ViewSettings/);
+  assert.match(studio, /<Viewport/);
+  assert.match(studio, /Download/);
+  assert.match(studio, /saveModel/);
+  // Inspector: plain-language controls, layers, modifiers, fonts.
+  assert.match(inspector, /FontPicker/);
   assert.match(inspector, /Add modifier/);
-  assert.match(widget, /font-menu/);
+  assert.match(inspector, /Advanced/);
+  assert.match(inspector, /Print setup/);
+  assert.match(inspector, /MODIFIER_META/);
+  // Focus-stable inputs keep their own draft while focused.
+  assert.match(fields, /focusedRef/);
+  assert.match(fields, /function NumberField/);
+  assert.match(fields, /function TextField/);
+  // Viewport: fitted shadows, slice tool, smooth/flat shading.
+  assert.match(viewport, /fitEnvironment/);
+  assert.match(viewport, /clippingPlanes/);
+  assert.match(viewport, /flatShading/);
+  assert.match(viewport, /createGroundDimensions/);
+  // Text MCP widget: resizable minimal sidebar, view settings, sfx, STL download.
+  assert.match(widget, /fp-menu/);
   assert.match(widget, /ui\/notifications\/tool-input/);
-  assert.match(widget, /Measurement units/);
+  assert.match(widget, /create_extruded_text/);
   assert.match(widget, /font-weight/);
   assert.match(widget, /text-case/);
-  assert.match(widget, /loadPreviewFont/);
-  assert.match(widget, /font-search-wrap/);
-  assert.match(widget, /fontVisibleCount/);
-  assert.match(widget, /scroll for all/);
-  assert.match(widget, /volume-warning/);
-  assert.match(widget, /Generation and download remain enabled/);
-  assert.match(widget, /groundDimensions/);
-  assert.match(widget, /three-gpu-pathtracer/);
+  assert.match(widget, /View settings/);
+  assert.match(widget, /Interface sounds/);
+  assert.match(widget, /side-collapsed/);
+  assert.match(widget, /shading/);
   assert.match(widget, /material-preset/);
-  assert.match(widget, /high-quality/);
-  assert.match(widget, /app settings-collapsed/);
-  assert.match(widget, /requestDisplayMode\(\{mode:target\}\)/);
-  assert.match(widget, /Three\.js/);
-  assert.match(modelWidget, /Shape in layers/);
+  assert.match(widget, /Download STL/);
+  assert.match(widget, /requestDisplayMode/);
+  // Procedural MCP widget: layers, open/save modal, slice tool.
+  assert.match(modelWidget, /Open a model/);
+  assert.match(modelWidget, /Starter models/);
   assert.match(modelWidget, /create_procedural_model/);
-  assert.match(modelWidget, /JSON \/ YAML spec/);
+  assert.match(modelWidget, /Interface sounds/);
+  assert.match(modelWidget, /applySlice/);
+  assert.match(modelWidget, /side-collapsed/);
   assert.match(modelWidget, /STLLoader/);
   assert.match(modelSpec, /MODEL_SPEC_VERSION/);
   assert.match(modelSpec, /radialWave/);

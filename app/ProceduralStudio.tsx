@@ -6,23 +6,42 @@ import {
   Braces,
   Check,
   Download,
-  Droplets,
-  Focus,
+  FolderOpen,
   Layers3,
   LoaderCircle,
+  MoreHorizontal,
   Play,
-  Rotate3D,
+  Save,
   ScrollText,
-  Sparkles,
-  Waves,
+  TriangleAlert,
 } from "lucide-react";
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { Textarea } from "@/components/ui/textarea";
 import { DEMO_MODEL_CARDS, type DemoModelId } from "@/lib/demo-models";
-import { printMaterialPreset, type PrintMaterialPreset } from "@/lib/material-presets";
+import type { PrintMaterialPreset } from "@/lib/material-presets";
 import type { ModelDocument } from "@/lib/model-spec";
-import { SpecInspector } from "@/app/SpecInspector";
+import { saveModel } from "@/lib/saved-models";
+import { sfxError, sfxOpen, sfxSuccess, sfxTap } from "@/lib/sfx";
+import { cn } from "@/lib/utils";
+import { Inspector } from "@/components/editor/Inspector";
+import type { FontSummary } from "@/components/editor/FontPicker";
+import { LoadSaveDialog } from "@/components/editor/LoadSaveDialog";
+import { ViewSettings } from "@/components/editor/ViewSettings";
+import { Viewport, type PreviewSource, type ShadingMode, type ViewportHandle } from "@/components/editor/Viewport";
 
 type InspectResult = {
   document: ModelDocument;
@@ -34,9 +53,6 @@ type InspectResult = {
   warnings: string[];
   materialPreset: PrintMaterialPreset;
 };
-
-type FontSummary = { id: string; family: string; category: string };
-type PreviewSource = { key: string; url?: string; buffer?: ArrayBuffer };
 
 function encodeDocument(document: ModelDocument) {
   const bytes = new TextEncoder().encode(JSON.stringify(document));
@@ -56,339 +72,30 @@ function documentMaterial(node: ModelDocument["root"]): PrintMaterialPreset {
   return documentMaterial(node.children[0]);
 }
 
-function createDimensionLabel(text: string, color: string, worldSize: number) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 128;
-  const context = canvas.getContext("2d")!;
-  context.fillStyle = "rgba(10, 26, 25, 0.92)";
-  context.beginPath();
-  context.roundRect(3, 3, 506, 122, 24);
-  context.fill();
-  context.strokeStyle = color;
-  context.lineWidth = 5;
-  context.stroke();
-  context.fillStyle = "#fffaf0";
-  context.font = "700 48px ui-monospace, monospace";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(text, 256, 65);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, toneMapped: false });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(worldSize * 4, worldSize), material);
-  mesh.renderOrder = 12;
-  return mesh;
-}
-
-function createGroundDimensions(box: THREE.Box3, display: ModelDocument["display"], units: ModelDocument["units"]) {
-  const group = new THREE.Group();
-  group.name = "spec-ground-dimensions";
-  const width = box.max.x - box.min.x;
-  const height = box.max.y - box.min.y;
-  const largest = Math.max(width, height);
-  const unitScale = units === "cm" ? 10 : units === "in" ? 25.4 : 1;
-  const margin = Math.max(display.dimensions.offset * unitScale, largest * 0.045);
-  const arrow = THREE.MathUtils.clamp(largest * 0.025, 2.5, 9);
-  const labelSize = THREE.MathUtils.clamp(largest * 0.035, 4, 10);
-  const z = 0.32;
-  const widthY = box.min.y - margin;
-  const heightX = box.min.x - margin;
-  const precision = display.dimensions.precision;
-  const suffix = units;
-  const inUnits = (value: number) => value / unitScale;
-  const addSegments = (points: THREE.Vector3[], color: string, opacity = 1) => {
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity, depthTest: false }));
-    lines.renderOrder = 10;
-    group.add(lines);
-  };
-  if (display.dimensions.width) {
-    addSegments([
-      new THREE.Vector3(box.min.x, widthY, z), new THREE.Vector3(box.max.x, widthY, z),
-      new THREE.Vector3(box.min.x, widthY, z), new THREE.Vector3(box.min.x + arrow, widthY + arrow * .52, z),
-      new THREE.Vector3(box.min.x, widthY, z), new THREE.Vector3(box.min.x + arrow, widthY - arrow * .52, z),
-      new THREE.Vector3(box.max.x, widthY, z), new THREE.Vector3(box.max.x - arrow, widthY + arrow * .52, z),
-      new THREE.Vector3(box.max.x, widthY, z), new THREE.Vector3(box.max.x - arrow, widthY - arrow * .52, z),
-      new THREE.Vector3(box.min.x, box.min.y, z), new THREE.Vector3(box.min.x, widthY - arrow, z),
-      new THREE.Vector3(box.max.x, box.min.y, z), new THREE.Vector3(box.max.x, widthY - arrow, z),
-    ], "#ff6b8f");
-    const label = createDimensionLabel(`W  ${inUnits(width).toFixed(precision)} ${suffix}`, "#ff6b8f", labelSize);
-    label.position.set((box.min.x + box.max.x) / 2, widthY - labelSize * 1.05, z + .03);
-    group.add(label);
-  }
-  if (display.dimensions.height) {
-    addSegments([
-      new THREE.Vector3(heightX, box.min.y, z), new THREE.Vector3(heightX, box.max.y, z),
-      new THREE.Vector3(heightX, box.min.y, z), new THREE.Vector3(heightX + arrow * .52, box.min.y + arrow, z),
-      new THREE.Vector3(heightX, box.min.y, z), new THREE.Vector3(heightX - arrow * .52, box.min.y + arrow, z),
-      new THREE.Vector3(heightX, box.max.y, z), new THREE.Vector3(heightX + arrow * .52, box.max.y - arrow, z),
-      new THREE.Vector3(heightX, box.max.y, z), new THREE.Vector3(heightX - arrow * .52, box.max.y - arrow, z),
-      new THREE.Vector3(box.min.x, box.min.y, z), new THREE.Vector3(heightX - arrow, box.min.y, z),
-      new THREE.Vector3(box.min.x, box.max.y, z), new THREE.Vector3(heightX - arrow, box.max.y, z),
-    ], "#b8a4ed");
-    const label = createDimensionLabel(`H  ${inUnits(height).toFixed(precision)} ${suffix}`, "#b8a4ed", labelSize);
-    label.rotation.z = Math.PI / 2;
-    label.position.set(heightX - labelSize * 1.05, (box.min.y + box.max.y) / 2, z + .03);
-    group.add(label);
-  }
-  return group;
-}
-
-function disposeObject(object: THREE.Object3D | null) {
-  object?.traverse((child) => {
-    const item = child as THREE.Mesh | THREE.LineSegments;
-    item.geometry?.dispose();
-    const materials = item.material ? (Array.isArray(item.material) ? item.material : [item.material]) : [];
-    materials.forEach((material) => {
-      if ("map" in material && material.map instanceof THREE.Texture) material.map.dispose();
-      material.dispose();
-    });
-  });
-}
-
-function createPreviewMaterial(materialPreset: PrintMaterialPreset) {
-  const preset = printMaterialPreset(materialPreset);
-  return new THREE.MeshPhysicalMaterial({
-    color: preset.color,
-    roughness: preset.roughness,
-    metalness: preset.metalness,
-    clearcoat: preset.clearcoat,
-    transmission: preset.transmission,
-    thickness: preset.transmission ? 2.2 : 0,
-    emissive: preset.id === "pla-orange" ? "#401006" : "#000000",
-    emissiveIntensity: preset.id === "pla-orange" ? 0.12 : 0,
-  });
-}
-
-function ModelViewport({ source, materialPreset, display, units, onReady }: { source: PreviewSource; materialPreset: PrintMaterialPreset; display: ModelDocument["display"]; units: ModelDocument["units"]; onReady?: () => void }) {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const frameRef = useRef<() => void>(() => undefined);
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const controlsRef = useRef<OrbitControls | null>(null);
-  const floorRef = useRef<THREE.Mesh | null>(null);
-  const gridRef = useRef<THREE.GridHelper | null>(null);
-  const modelRef = useRef<THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial> | null>(null);
-  const dimensionsRef = useRef<THREE.Group | null>(null);
-  const invalidateRef = useRef<(frames?: number) => void>(() => undefined);
-  const hasFramedRef = useRef(false);
-  const displayRef = useRef(display);
-  const unitsRef = useRef(units);
-  const materialPresetRef = useRef(materialPreset);
-
+/** Borderless model-name input in the header; commits into the document as you type. */
+function ModelName({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const focusedRef = useRef(false);
   useEffect(() => {
-    displayRef.current = display;
-    unitsRef.current = units;
-    materialPresetRef.current = materialPreset;
-  }, [display, materialPreset, units]);
-
-  useEffect(() => {
-    const mount = mountRef.current;
-    if (!mount) return;
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#11110f");
-    scene.fog = new THREE.Fog("#11110f", 440, 900);
-    sceneRef.current = scene;
-    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 3000);
-    camera.up.set(0, 0, 1);
-    camera.position.set(170, -210, 150);
-    cameraRef.current = camera;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
-    mount.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.065;
-    controls.target.set(0, 0, 55);
-    controlsRef.current = controls;
-
-    scene.add(new THREE.HemisphereLight("#fff7e8", "#182241", 2.5));
-    const key = new THREE.DirectionalLight("#fff0d5", 5.4);
-    key.position.set(-120, -150, 240);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1536, 1536);
-    scene.add(key);
-    const rim = new THREE.DirectionalLight("#748cff", 4.2);
-    rim.position.set(150, 100, 150);
-    scene.add(rim);
-
-    const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(240, 128),
-      new THREE.MeshStandardMaterial({ color: "#191916", roughness: 0.86, metalness: 0.08 }),
-    );
-    floor.receiveShadow = true;
-    floor.position.z = -0.3;
-    scene.add(floor);
-    floorRef.current = floor;
-    const grid = new THREE.GridHelper(420, 42, "#363631", "#272724");
-    grid.rotation.x = Math.PI / 2;
-    grid.position.z = 0.05;
-    scene.add(grid);
-    gridRef.current = grid;
-
-    let animationFrame = 0;
-    let interacting = false;
-    let remainingFrames = 0;
-    const render = () => {
-      controls.update();
-      renderer.render(scene, camera);
-      if (interacting || remainingFrames > 0) {
-        remainingFrames = Math.max(0, remainingFrames - 1);
-        animationFrame = requestAnimationFrame(render);
-      } else animationFrame = 0;
-    };
-    const invalidate = (frames = 2) => {
-      remainingFrames = Math.max(remainingFrames, frames);
-      if (!animationFrame) animationFrame = requestAnimationFrame(render);
-    };
-    invalidateRef.current = invalidate;
-    const startInteraction = () => { interacting = true; invalidate(2); };
-    const endInteraction = () => { interacting = false; invalidate(24); };
-    const change = () => invalidate(2);
-    controls.addEventListener("start", startInteraction);
-    controls.addEventListener("end", endInteraction);
-    controls.addEventListener("change", change);
-
-    const frame = () => {
-      const model = modelRef.current;
-      if (!model) return;
-      const box = new THREE.Box3().setFromObject(model);
-      if (dimensionsRef.current) box.expandByObject(dimensionsRef.current);
-      const sphere = box.getBoundingSphere(new THREE.Sphere());
-      const distance = Math.max(45, sphere.radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.22);
-      camera.position.set(sphere.center.x + distance * 0.78, sphere.center.y - distance, sphere.center.z + distance * 0.66);
-      camera.near = Math.max(0.1, distance / 150);
-      camera.far = distance * 20;
-      camera.updateProjectionMatrix();
-      controls.target.copy(sphere.center);
-      controls.update();
-      invalidate(24);
-    };
-    frameRef.current = frame;
-
-    const resize = () => {
-      const bounds = mount.getBoundingClientRect();
-      renderer.setSize(bounds.width, bounds.height, false);
-      camera.aspect = bounds.width / Math.max(bounds.height, 1);
-      camera.updateProjectionMatrix();
-      invalidate(2);
-    };
-    const observer = new ResizeObserver(resize);
-    observer.observe(mount);
-    resize();
-    invalidate(2);
-    return () => {
-      cancelAnimationFrame(animationFrame);
-      observer.disconnect();
-      controls.removeEventListener("start", startInteraction);
-      controls.removeEventListener("end", endInteraction);
-      controls.removeEventListener("change", change);
-      controls.dispose();
-      modelRef.current?.geometry.dispose();
-      modelRef.current?.material.dispose();
-      disposeObject(dimensionsRef.current);
-      floor.geometry.dispose();
-      (floor.material as THREE.Material).dispose();
-      renderer.dispose();
-      renderer.domElement.remove();
-      scene.clear();
-      sceneRef.current = null;
-      cameraRef.current = null;
-      rendererRef.current = null;
-      controlsRef.current = null;
-      floorRef.current = null;
-      gridRef.current = null;
-      modelRef.current = null;
-      dimensionsRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) return;
-    const controller = new AbortController();
-    let active = true;
-    const load = source.buffer
-      ? Promise.resolve(source.buffer)
-      : fetch(source.url!, { signal: controller.signal }).then((response) => {
-          if (!response.ok) throw new Error("Model could not be loaded.");
-          return response.arrayBuffer();
-        });
-    void load.then((buffer) => {
-      if (!active || !sceneRef.current) return;
-      const geometry = new STLLoader().parse(buffer);
-      geometry.computeVertexNormals();
-      geometry.computeBoundingBox();
-      const model = new THREE.Mesh(geometry, createPreviewMaterial(materialPresetRef.current));
-      model.castShadow = true;
-      model.receiveShadow = true;
-      if (modelRef.current) {
-        scene.remove(modelRef.current);
-        modelRef.current.geometry.dispose();
-        modelRef.current.material.dispose();
-      }
-      if (dimensionsRef.current) {
-        scene.remove(dimensionsRef.current);
-        disposeObject(dimensionsRef.current);
-      }
-      modelRef.current = model;
-      scene.add(model);
-      const currentDisplay = displayRef.current;
-      const currentUnits = unitsRef.current;
-      dimensionsRef.current = currentDisplay.dimensions.visible && geometry.boundingBox ? createGroundDimensions(geometry.boundingBox, currentDisplay, currentUnits) : null;
-      if (dimensionsRef.current) scene.add(dimensionsRef.current);
-      if (!hasFramedRef.current) {
-        hasFramedRef.current = true;
-        frameRef.current();
-      } else invalidateRef.current(4);
-      onReady?.();
-    }).catch((error) => { if (error?.name !== "AbortError") console.error(error); });
-    return () => { active = false; controller.abort(); };
-  }, [onReady, source]);
-
-  useEffect(() => {
-    const model = modelRef.current;
-    if (!model) return;
-    const previous = model.material;
-    model.material = createPreviewMaterial(materialPreset);
-    previous.dispose();
-    invalidateRef.current(3);
-  }, [materialPreset]);
-
-  useEffect(() => {
-    if (floorRef.current) floorRef.current.visible = display.floor;
-    if (gridRef.current) gridRef.current.visible = display.grid;
-    const scene = sceneRef.current;
-    const model = modelRef.current;
-    if (scene && model) {
-      if (dimensionsRef.current) { scene.remove(dimensionsRef.current); disposeObject(dimensionsRef.current); }
-      model.geometry.computeBoundingBox();
-      dimensionsRef.current = display.dimensions.visible && model.geometry.boundingBox ? createGroundDimensions(model.geometry.boundingBox, display, units) : null;
-      if (dimensionsRef.current) scene.add(dimensionsRef.current);
-    }
-    invalidateRef.current(3);
-  }, [display, units]);
-
+    if (!focusedRef.current) setDraft(value);
+  }, [value]);
   return (
-    <div className="studio-viewer">
-      <div ref={mountRef} className="studio-viewer-canvas" aria-label="Interactive procedural model preview" />
-      <span className="studio-orbit-hint"><Rotate3D size={13} /> Drag to orbit · scroll to zoom</span>
-      <button className="studio-focus" type="button" onClick={() => frameRef.current()} aria-label="Frame model"><Focus size={16} /></button>
-    </div>
+    <input
+      value={draft}
+      aria-label="Model name"
+      className="h-8 w-full min-w-0 max-w-72 truncate rounded-md bg-transparent px-2 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-secondary/70 focus-visible:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring/40"
+      onFocus={() => { focusedRef.current = true; }}
+      onBlur={() => { focusedRef.current = false; setDraft(value); }}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        if (event.target.value.trim()) onChange(event.target.value);
+      }}
+    />
   );
 }
 
 export function ProceduralStudio() {
-  const [activeDemo, setActiveDemo] = useState<DemoModelId>("type-specimen");
+  const [activeDemo, setActiveDemo] = useState<DemoModelId | null>("type-specimen");
   const [spec, setSpec] = useState("");
   const [result, setResult] = useState<InspectResult | null>(null);
   const [document, setDocument] = useState<ModelDocument | null>(null);
@@ -397,13 +104,17 @@ export function ProceduralStudio() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [liveUpdating, setLiveUpdating] = useState(false);
-  const [previewQuality, setPreviewQuality] = useState(false);
   const [compileInfo, setCompileInfo] = useState("");
   const [modelReady, setModelReady] = useState(false);
+  const [shading, setShading] = useState<ShadingMode>("smooth");
+  const [loadOpen, setLoadOpen] = useState(false);
+  const [specOpen, setSpecOpen] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
   const liveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveAbortRef = useRef<AbortController | null>(null);
   const liveSequenceRef = useRef(0);
   const compiledGeometryKeyRef = useRef("");
+  const viewportRef = useRef<ViewportHandle>(null);
   const handleModelReady = useCallback(() => setModelReady(true), []);
 
   const inspect = useCallback(async (payload: { demo?: string; spec?: string | ModelDocument; encoded?: string }) => {
@@ -425,11 +136,14 @@ export function ProceduralStudio() {
       setSpec(data.spec);
       setPreview({ key: data.stlUrl, url: data.stlUrl });
       compiledGeometryKeyRef.current = geometryKey(data.document);
-      setPreviewQuality(false);
       setCompileInfo("");
+      sfxSuccess();
       if (data.studioUrl) window.history.replaceState(window.history.state, "", data.studioUrl.replace(window.location.origin, ""));
+      return true;
     } catch (nextError) {
+      sfxError();
       setError(nextError instanceof Error ? nextError.message : "Model spec is invalid.");
+      return false;
     } finally {
       setLoading(false);
     }
@@ -479,12 +193,14 @@ export function ProceduralStudio() {
       });
       setPreview({ key: `live-${sequence}`, buffer });
       compiledGeometryKeyRef.current = geometryKey(next);
-      setPreviewQuality(true);
-      setCompileInfo(`${response.headers.get("Server-Timing")?.replace("compile;dur=", "") ?? "—"} ms · ${response.headers.get("X-Printa-Cache") ?? "cold graph"}`);
+      setCompileInfo(`${response.headers.get("Server-Timing")?.replace("compile;dur=", "") ?? "—"} ms`);
       window.history.replaceState(window.history.state, "", studioUrl);
     } catch (nextError) {
       if (nextError instanceof DOMException && nextError.name === "AbortError") return;
-      if (sequence === liveSequenceRef.current) setError(nextError instanceof Error ? nextError.message : "Model preview could not be compiled.");
+      if (sequence === liveSequenceRef.current) {
+        sfxError();
+        setError(nextError instanceof Error ? nextError.message : "Model preview could not be compiled.");
+      }
     } finally {
       if (sequence === liveSequenceRef.current) setLiveUpdating(false);
     }
@@ -512,7 +228,6 @@ export function ProceduralStudio() {
           || previous.stats.depthMm > next.print.buildVolume[1]
           || previous.stats.heightMm > next.print.buildVolume[2],
       } : previous);
-      setCompileInfo("View/spec update · mesh reused");
       window.history.replaceState(window.history.state, "", studioUrl);
       return;
     }
@@ -527,8 +242,10 @@ export function ProceduralStudio() {
     const fallback = mode === "procedural" ? "contour-spiral-vase" : "type-specimen";
     const nextDemo = DEMO_MODEL_CARDS.some((card) => card.id === demo) ? demo! : fallback;
     const timer = window.setTimeout(() => {
-      if (encoded) void inspect({ encoded });
-      else {
+      if (encoded) {
+        setActiveDemo(null);
+        void inspect({ encoded });
+      } else {
         setActiveDemo(nextDemo);
         void inspect({ demo: nextDemo });
       }
@@ -544,66 +261,189 @@ export function ProceduralStudio() {
     };
   }, []);
 
-  const selectDemo = (id: DemoModelId) => {
-    setActiveDemo(id);
-    void inspect({ demo: id });
-  };
+  const stats = result?.stats;
 
   return (
-    <main className="studio-shell">
-      <header className="studio-topbar">
-        <Link className="brand" href="/" aria-label="Printa home"><span className="brand-mark"><Layers3 size={18} /></span><span>PRINTA</span><em>SPEC 1.0</em></Link>
-        <div className="studio-topbar-center editor-mode-switch" aria-label="Unified editor">
-          <Link className="mode-pill is-active" href="/editor"><Layers3 size={14} /> Model editor</Link>
-          <span className="mode-pill"><Braces size={14} /> Spec + WYSIWYG</span>
-          <i />
+    <main className="flex h-dvh w-full flex-col overflow-hidden bg-background font-sans text-foreground">
+      <header className="flex h-13 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Link className="grid size-8 shrink-0 place-items-center rounded-lg transition-colors hover:bg-secondary" href="/" aria-label="Printa home">
+            <span className="grid size-6 place-items-center rounded-md bg-primary text-primary-foreground"><Layers3 className="size-3.5" /></span>
+          </Link>
+          {document && <ModelName value={document.name} onChange={(name) => { const draft = structuredClone(document); draft.name = name; updateDocument(draft); }} />}
         </div>
-        <nav><a href="/skills" target="_blank"><ScrollText size={14} /> Skill</a><a href="/api/model/schema" target="_blank"><Braces size={14} /> Schema</a></nav>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button variant="ghost" size="sm" onClick={() => { sfxOpen(); setLoadOpen(true); }}>
+            <FolderOpen className="size-4" /> <span className="hidden sm:inline">Open</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!document}
+            onClick={() => {
+              if (!document) return;
+              sfxSuccess();
+              saveModel(document.name, document);
+              setSavedFlash(true);
+              window.setTimeout(() => setSavedFlash(false), 1500);
+            }}
+          >
+            {savedFlash ? <Check className="size-4 text-accent" /> : <Save className="size-4" />}
+            <span className="hidden sm:inline">{savedFlash ? "Saved" : "Save"}</span>
+          </Button>
+          {result && (
+            <Button asChild size="sm" onClick={() => sfxTap()}>
+              <a href={result.stlUrl}>
+                <Download className="size-4" /> <span className="hidden sm:inline">Download</span> STL
+              </a>
+            </Button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="More" onClick={() => sfxTap()}>
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => { sfxOpen(); setSpecOpen(true); }}>
+                <Braces className="size-4" /> Edit raw spec
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href="/skills" target="_blank"><ScrollText className="size-4" /> Modeling skill</a>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href="/api/model/schema" target="_blank"><Braces className="size-4" /> JSON schema</a>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </header>
 
-      <div className="studio-workspace">
-        <aside className="studio-sidebar">
-          <section className="studio-intro"><span className="eyebrow"><Waves size={13} /> One editable model spec</span><h1>Shape what you see.</h1><p>Every layer, font, modifier, transform and viewport gizmo is stored in the document and rebuilt live.</p></section>
+      <ResizablePanelGroup direction="horizontal" autoSaveId="printa-editor-panels" className="min-h-0 flex-1">
+        <ResizablePanel defaultSize={26} minSize={18} maxSize={44} className="min-w-64">
+          <aside className="h-full overflow-y-auto overscroll-contain bg-background [scrollbar-width:thin]">
+            {document && <Inspector document={document} fonts={fonts} onChange={updateDocument} />}
+          </aside>
+        </ResizablePanel>
+        <ResizableHandle />
+        <ResizablePanel defaultSize={74}>
+          <section className="relative h-full min-w-0">
+            {result && preview && document && (
+              <Viewport
+                ref={viewportRef}
+                source={preview}
+                materialPreset={result.materialPreset}
+                display={document.display}
+                units={document.units}
+                shading={shading}
+                onReady={handleModelReady}
+              />
+            )}
 
-          <section className="studio-demo-section">
-            <div className="studio-section-head"><strong>Starting form</strong><small>{DEMO_MODEL_CARDS.length} specs</small></div>
-            <label className="studio-demo-select"><span>{DEMO_MODEL_CARDS.find((demo) => demo.id === activeDemo)?.family === "simulation" ? <Droplets size={14} /> : <Layers3 size={14} />}</span><select value={activeDemo} onChange={(event) => selectDemo(event.target.value as DemoModelId)}>{DEMO_MODEL_CARDS.map((demo) => <option key={demo.id} value={demo.id}>{demo.name}</option>)}</select></label>
+            {/* View settings + compile state, top-right of the viewport */}
+            <div className="absolute top-3 right-3 flex items-center gap-2">
+              <span
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-2.5 py-1.5 font-mono text-[10px] font-medium backdrop-blur-md transition-colors",
+                  liveUpdating ? "text-amber-200" : "text-emerald-200/80",
+                )}
+              >
+                {liveUpdating ? <LoaderCircle className="size-3 animate-spin" /> : <Check className="size-3" />}
+                {liveUpdating ? "Updating…" : compileInfo || "Up to date"}
+              </span>
+              {document && (
+                <ViewSettings
+                  display={document.display}
+                  shading={shading}
+                  onShadingChange={setShading}
+                  onDisplayChange={(nextDisplay) => {
+                    if (!document) return;
+                    const draft = structuredClone(document);
+                    draft.display = nextDisplay;
+                    updateDocument(draft);
+                  }}
+                />
+              )}
+            </div>
+
+            {/* Model stats along the bottom of the stage */}
+            {stats && (
+              <div className="absolute bottom-3 left-1/2 flex max-w-[calc(100%-6rem)] -translate-x-1/2 items-center gap-4 overflow-x-auto rounded-full border border-white/10 bg-black/45 px-4 py-2 font-mono text-[10px] whitespace-nowrap text-white/70 backdrop-blur-md">
+                <span><span className="text-white/40">Size</span> {stats.widthMm.toFixed(1)} × {stats.depthMm.toFixed(1)} × {stats.heightMm.toFixed(1)} mm</span>
+                <span><span className="text-white/40">Mesh</span> {stats.triangles.toLocaleString()} tris</span>
+                {result && !result.exceedsBuildVolume && <span className="flex items-center gap-1 text-emerald-300/90"><Check className="size-3" /> Fits printer</span>}
+                {result?.exceedsBuildVolume && <span className="flex items-center gap-1 text-amber-300"><TriangleAlert className="size-3" /> Too big for printer</span>}
+              </div>
+            )}
+
+            {error && (
+              <div className="absolute bottom-16 left-1/2 flex max-w-md -translate-x-1/2 items-start gap-2 rounded-xl border border-destructive/40 bg-black/70 px-3.5 py-2.5 text-xs font-medium text-red-200 backdrop-blur-md">
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" /> {error}
+              </div>
+            )}
+
+            {!modelReady && (
+              <div className="absolute inset-0 grid place-items-center bg-stage/70 backdrop-blur-[2px]">
+                <span className="flex items-center gap-2.5 font-mono text-xs font-medium text-white/70">
+                  <LoaderCircle className="size-4.5 animate-spin" /> {loading ? "Building your model…" : "Loading printable mesh…"}
+                </span>
+              </div>
+            )}
           </section>
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
-          {document && <SpecInspector document={document} fonts={fonts} onChange={updateDocument} />}
+      <LoadSaveDialog
+        open={loadOpen}
+        onOpenChange={setLoadOpen}
+        document={document}
+        activeDemo={activeDemo}
+        onLoadDemo={(id) => {
+          setActiveDemo(id);
+          void inspect({ demo: id });
+        }}
+        onLoadDocument={(next) => {
+          setActiveDemo(null);
+          void inspect({ spec: next });
+        }}
+      />
 
-          <details className="studio-spec-section">
-            <summary><span><Braces size={13} /> Full JSON / YAML spec</span><small>Advanced</small></summary>
-            <textarea value={spec} onChange={(event) => setSpec(event.target.value)} spellCheck={false} aria-label="Procedural model YAML or JSON spec" />
-            {error && <div className="studio-error">{error}</div>}
-            <button className="studio-apply" type="button" onClick={() => void inspect({ spec })} disabled={loading || !spec.trim()}>
-              {loading ? <LoaderCircle className="is-spinning" size={15} /> : <Play size={15} fill="currentColor" />} Apply spec
-            </button>
-          </details>
-        </aside>
-
-        <section className="studio-stage">
-          <div className="studio-stage-head">
-            <div><span className="eyebrow"><Sparkles size={13} /> Generated solid</span><h2>{result?.document.name ?? "Building form…"}</h2></div>
-            {result && <span className={`studio-compile-state${liveUpdating ? " is-active" : ""}`}>{liveUpdating ? <LoaderCircle className="is-spinning" size={13} /> : <Check size={13} />}{liveUpdating ? "Compiling preview…" : compileInfo || "Graph ready"}</span>}
-            {result && <a className="studio-download" href={result.stlUrl}><Download size={15} /> Download STL</a>}
+      <Dialog
+        open={specOpen}
+        onOpenChange={(next) => {
+          setSpecOpen(next);
+          if (next && result) setSpec(result.spec);
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Braces className="size-4.5" /> Model spec</DialogTitle>
+            <DialogDescription>
+              The whole model as editable JSON or YAML — everything in the editor lives here too.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={spec}
+            spellCheck={false}
+            rows={18}
+            className="max-h-[55dvh] bg-stage font-mono text-[11px] leading-relaxed text-[#f6f0e4] selection:bg-white/20"
+            aria-label="Model YAML or JSON spec"
+            onChange={(event) => setSpec(event.target.value)}
+          />
+          {error && <p className="text-xs font-medium text-destructive">{error}</p>}
+          <div className="flex justify-end">
+            <Button
+              disabled={loading || !spec.trim()}
+              onClick={() => {
+                sfxTap();
+                void inspect({ spec }).then((ok) => { if (ok) setSpecOpen(false); });
+              }}
+            >
+              {loading ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />} Apply spec
+            </Button>
           </div>
-          <div className="studio-stage-body">
-            {result && preview && document && <ModelViewport source={preview} materialPreset={result.materialPreset} display={document.display} units={document.units} onReady={handleModelReady} />}
-            {!modelReady && <div className="studio-loading"><LoaderCircle className="is-spinning" size={19} /> {loading ? "Evaluating model graph…" : "Loading printable mesh…"}</div>}
-          </div>
-          <div className="studio-stage-foot">
-            {result ? (
-              <>
-                <span><small>Bounds</small><strong>{result.stats.widthMm.toFixed(1)} × {result.stats.depthMm.toFixed(1)} × {result.stats.heightMm.toFixed(1)} mm</strong></span>
-                <span><small>Mesh{previewQuality ? " preview" : ""}</small><strong>{result.stats.triangles.toLocaleString()} triangles</strong></span>
-                <span><small>Volume est.</small><strong>{previewQuality ? "On full STL build" : `${(result.stats.volumeEstimateMm3 / 1000).toFixed(1)} cm³`}</strong></span>
-                <span className={result.exceedsBuildVolume ? "is-warning" : "is-ready"}><Check size={13} /> {result.exceedsBuildVolume ? "Check build volume" : "Ready for slicer"}</span>
-              </>
-            ) : <span>Waiting for a valid model spec.</span>}
-          </div>
-        </section>
-      </div>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

@@ -18,8 +18,8 @@ import { inspectProceduralModel, makeProceduralFilename } from "@/lib/procedural
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TEMPLATE_URI = "ui://widget/printa-extruded-text-v8.html";
-const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v3.html";
+const TEMPLATE_URI = "ui://widget/printa-extruded-text-v9.html";
+const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v4.html";
 
 function createServer(origin: string) {
   const server = new McpServer(
@@ -45,7 +45,7 @@ function createServer(origin: string) {
               resourceDomains: [origin, "https://cdn.jsdelivr.net"],
             },
           },
-        "openai/widgetDescription": "A full 3D text editor with searchable live Google Font previews, print-material presets, progressive path tracing, unit-aware controls, and STL download.",
+        "openai/widgetDescription": "A clean 3D text editor with a resizable sidebar, searchable live Google Font previews, print-material presets, view settings with smooth/flat shading, unit-aware controls, and STL download.",
           "openai/widgetPrefersBorder": false,
           "openai/widgetCSP": {
             connect_domains: [origin, "https://cdn.jsdelivr.net"],
@@ -70,7 +70,7 @@ function createServer(origin: string) {
             resourceDomains: [origin, "https://cdn.jsdelivr.net"],
           },
         },
-        "openai/widgetDescription": "A complete spec-driven modeling workbench with Google Font text, editable JSON/YAML, form and simulation demos, live 3D preview, spec-controlled floor dimensions, mesh warnings, editor handoff, and STL download.",
+        "openai/widgetDescription": "A clean spec-driven modeling workbench with a resizable sidebar, layer list, load/save models, form and simulation starters, view settings with smooth/flat shading, a slice-to-peek-inside tool, live 3D preview, and STL download.",
         "openai/widgetPrefersBorder": false,
         "openai/widgetCSP": {
           connect_domains: [origin, "https://cdn.jsdelivr.net"],

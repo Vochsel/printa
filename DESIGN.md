@@ -1,6 +1,23 @@
 # Printa design and product system
 
-Printa is a promptable 3D-model compiler for printable forms. Its primary surfaces are the MCP tools, MCP UI, and `/editor`; the homepage explains the system through interactive printing studies. The product should feel like a precise workshop instrument with a playful material sensibility—not a generic CAD suite and not a conventional SaaS dashboard.
+Printa is a promptable 3D-model compiler for printable forms. Its primary surfaces are the MCP tools, MCP UI, and `/editor`; the homepage explains the system through interactive printing studies.
+
+The audience is an entry-level 3D-print hobbyist or someone comfortable with 2D print/design tools — **not** a CAD professional. The editor must be legible at a glance: plain-language labels, one thing per row, advanced knobs hidden until asked for. The model is the hero; the interface is quiet scaffolding around it.
+
+## Interface system (shadcn + Tailwind v4)
+
+The editor and its shared controls are built from a small shadcn-style component library in `components/ui` (button, input, select, dialog, dropdown-menu, popover, slider, switch, tooltip, resizable, textarea) on Radix primitives. Design tokens live in `app/globals.css` under `@theme inline`. The MCP widgets are standalone inline-HTML documents that mirror the same tokens and patterns by hand (they can't import React).
+
+**Restraint over decoration.** Surfaces are near-white neutrals (`#ffffff` / `#fafafa` / `#f4f4f5`), text is near-black, hairlines are light grey. There is exactly one saturated accent — Printa orange `#ff5d2e` — used for the active state, primary emphasis, and focus rings, and nothing else. No warm-paper gradients, no colored section cards, no uppercase mono eyebrows stacked on every panel. If a screen has more than one accent color competing for attention, it is wrong.
+
+**Simplicity rules for the inspector.**
+- One control per row; group at most three tightly-related numbers.
+- Plain words over jargon: "Height", "Depth", "Ribs", "Bend", "Solid base" — not "extrude depth", "radialWave", "bottomCap".
+- Every layer/shape shows only its essential fields inline; resolution/segment/thickness tuning goes inside a collapsed **Advanced** disclosure.
+- Print/document settings collapse into a single **Print setup** section, closed by default.
+- The raw JSON/YAML spec is never on the main surface — it lives behind an "Edit raw spec" action in a modal for power users.
+
+The original brief called for a "precise workshop instrument with a playful material sensibility." That still holds, but the playfulness now lives in the **material presets and the 3D stage**, not in the chrome. The chrome is calm.
 
 ## Product principles
 
@@ -51,35 +68,43 @@ The material palette is allowed to be more expressive than the UI palette. Prese
 
 ## Editor layout
 
-The editor occupies `100dvh`. Its top bar is fixed-height; the remaining workspace is a two-column grid.
+The editor fills `100dvh` and never overflows the window. A slim (`h-13`) top bar holds the logo, an inline-editable model name, and the primary actions (Open, Save, Download STL, and an overflow menu with the raw spec / skill / schema). Below it, a **resizable two-pane split** (via `react-resizable-panels`): a minimal inspector on the left, the 3D stage on the right. The user can drag the divider; the sidebar has sensible min/max bounds and remembers its width.
 
-- **Inspector:** independently scrollable, contains starting forms, the layer graph, selection-specific fields, print/display settings, and advanced JSON/YAML.
-- **Stage:** fills all remaining space, keeps the renderer mounted, and contains model status, download, viewport, and mesh measurements.
-- On narrow screens, simplify secondary status and advanced spec controls before reducing the model viewport.
+- **Inspector:** independently scrollable. Order is Layers → selected shape/modifier → Print setup. It is deliberately sparse — see the simplicity rules above. No marketing intro, no demo grid living permanently in the panel.
+- **Stage:** fills the rest, keeps the renderer mounted, and floats its own controls over the canvas (view settings, slice, frame, compile state, size/mesh readout).
+- Starting forms and saved models live in an **Open** modal, not in the sidebar. Save/load persists to `localStorage`.
 
-Layer rows express hierarchy through indentation. A shape row names its source; modifier rows sit beneath the node they affect. Assemblies and repeats are visible graph concepts, not flattened UI conveniences.
+Layer rows express hierarchy through indentation. A shape row names its shape in plain language; modifier rows sit beneath the node they affect with a friendly name (Twist, Ribs, Bend…). Assemblies and repeats remain visible graph concepts.
 
 Controls use the most direct representation:
 
 - sliders paired with numeric entry for bounded continuous values;
+- **focus-stable text and number inputs** — a field keeps its own draft while focused so live recompiles never steal the caret or reset the value mid-typing;
 - unit-aware millimeter/centimeter/inch values;
 - switches for booleans;
-- searchable, virtualized/scroll-complete Google Font picker with live family previews;
-- selects for finite modes such as bevel side, material, primitive type, and case;
-- compact JSON editors only for inherently structured arrays such as paths, profiles, drops, or colliders.
+- searchable, scroll-complete Google Font picker (Radix popover) with live family previews;
+- selects (Radix) for finite modes such as bevel side, material, primitive type, and case;
+- compact JSON editors only for inherently structured arrays such as paths, profiles, drops, or colliders, kept inside Advanced.
 
 ## 3D stage
 
-The default view is close enough to read the model without fog interference. The stage includes:
+The default view is close enough to read the model without fog interference. Stage controls float over the canvas rather than sitting in a chrome bar. The stage includes:
 
 - orbit, zoom, and explicit frame-model control;
-- print-bed floor and optional grid;
+- a **View settings** popover (opened from a viewport button) holding shading (**smooth / flat**), floor, grid, measurements, and an interface-sound toggle — presentation-only, never mutating printed geometry;
+- a **slice slider** that clips the model along the up (Z) axis so the user can slide down and see inside;
+- print-bed floor and optional grid that **scale to the model's bounding sphere**, so shadows and ground read correctly at any model size (a 5 mm charm and a 250 mm vase both sit in a fitted shadow);
+- a directional key light whose shadow camera is refit to the model each load;
 - spec-driven footprint width and height/depth arrows;
 - material presets using physically based Three.js materials;
 - no continuous render loop while idle;
 - preserved camera and controls across mesh, material, and display updates.
 
 Width uses pink; footprint height/depth uses lavender. Labels sit outside the bounds and scale with the model while remaining readable.
+
+## Sound
+
+Both the editor and the MCP widgets play **subtle, synthesized** interface sounds (WebAudio, no assets): a soft tap on selection/buttons, a feather tick on slider/number changes (throttled), a firmer toggle flip, open/close cues for dialogs, a two-note success on compile, and a low buzz on error. Sounds are quiet by design and can be muted from View settings; the preference persists per device.
 
 ## Model document architecture
 
@@ -121,7 +146,7 @@ The renderer invalidates on resize, controls, mesh, material, or gizmo changes a
 
 ## MCP and MCP UI
 
-MCP tools accept the same schema used by the editor. Tool output should provide concise measurements, warnings, editor link, and STL link. The MCP UI mirrors the web controls with proper selects, sliders, unit handling, complete searchable font access, typography options, smoothing/bevel controls, material selection, build-volume warning, and an interactive preview.
+MCP tools accept the same schema used by the editor. Tool output should provide concise measurements, warnings, editor link, and STL link. The two MCP widgets (`lib/mcp-widget.ts` for text, `lib/mcp-model-widget.ts` for procedural) are standalone inline-HTML/JS documents that reproduce the editor's design language by hand: the same neutral surfaces and single orange accent, a **resizable, collapsible sidebar**, plain-language controls, focus-stable number inputs, a floating **View settings** popover with smooth/flat shading, fitted shadows, and subtle interface sounds. The procedural widget adds a layer list and an **Open** modal with starter demos plus local save/load; it also carries the slice-to-peek-inside tool. Both keep the interactive Three.js preview and STL download. Bump the `*_TEMPLATE_URI` version when a widget's HTML changes so hosts don't serve a cached document.
 
 Never silently reject a model solely because it exceeds `256 × 256 × 256 mm`; warn and continue generation.
 
