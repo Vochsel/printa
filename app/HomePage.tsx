@@ -71,7 +71,7 @@ function frameGeometry(camera: THREE.PerspectiveCamera, controls: OrbitControls,
   const fov = THREE.MathUtils.degToRad(camera.fov);
   const distance = (sphere.radius / Math.sin(fov / 2)) * 1.12;
   const direction = camera.position.clone().sub(controls.target);
-  if (direction.lengthSq() < 1e-4) direction.set(0.62, -0.95, 0.6);
+  if (direction.lengthSq() < 1e-4) direction.set(0.45, -0.75, 0.95);
   direction.normalize();
   controls.target.copy(sphere.center);
   camera.position.copy(sphere.center).addScaledVector(direction, distance);
@@ -128,7 +128,7 @@ function LayerVisualizer() {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 800);
     camera.up.set(0, 0, 1);
-    camera.position.set(70, -95, 66);
+    camera.position.set(42, -70, 96);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -373,7 +373,7 @@ function SydneyModel({ model }: { model: McpModel | null }) {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 800);
     camera.up.set(0, 0, 1);
-    camera.position.set(24, -80, 34);
+    camera.position.set(18, -58, 56);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
