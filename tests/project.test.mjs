@@ -150,6 +150,28 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(mcpRoute, /text\/html;profile=mcp-app|RESOURCE_MIME_TYPE/);
   assert.match(fontRoute, /getGoogleFontCatalog/);
   assert.match(icon, /stacked 3D printing layers/);
+  assert.match(modelWidget, /spec-hidden/);
+  assert.match(modelWidget, /toggleSpec/);
+});
+
+test("ships the AI assistant chat that builds models from prompts and images", async () => {
+  const [chatRoute, chatPanel, studio] = await Promise.all([
+    readFile(new URL("app/api/chat/route.ts", root), "utf8"),
+    readFile(new URL("components/editor/ChatPanel.tsx", root), "utf8"),
+    readFile(new URL("app/ProceduralStudio.tsx", root), "utf8"),
+  ]);
+  assert.match(chatRoute, /streamText/);
+  assert.match(chatRoute, /PRINTA_CHAT_MODEL/);
+  assert.match(chatRoute, /build_model/);
+  assert.match(chatRoute, /parseModelDocument/);
+  assert.match(chatRoute, /convertToModelMessages/);
+  assert.match(chatPanel, /useChat/);
+  assert.match(chatPanel, /DefaultChatTransport/);
+  assert.match(chatPanel, /tool-build_model/);
+  assert.match(chatPanel, /type="file"/);
+  assert.match(chatPanel, /currentSpec/);
+  assert.match(studio, /ChatPanel/);
+  assert.match(studio, /Assistant/);
 });
 
 test("production build contains every public route", async () => {

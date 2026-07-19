@@ -18,6 +18,7 @@ import {
   Save,
   Scan,
   ScrollText,
+  Sparkles,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
@@ -48,6 +49,7 @@ import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToggleField } from "@/components/editor/fields";
+import { ChatPanel } from "@/components/editor/ChatPanel";
 import { DEMO_MODEL_CARDS, type DemoModelId } from "@/lib/demo-models";
 import { printMaterialPreset, type PrintMaterialPreset } from "@/lib/material-presets";
 import type { ModelDocument } from "@/lib/model-spec";
@@ -588,6 +590,7 @@ export function ProceduralStudio() {
   const [loadOpen, setLoadOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [specOpen, setSpecOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
   const liveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -834,6 +837,16 @@ export function ProceduralStudio() {
             {liveUpdating ? "Compiling…" : "Ready"}
           </span>
           <div className="ml-auto flex items-center gap-1">
+            <Button
+              variant={chatOpen ? "secondary" : "ghost"}
+              size="sm"
+              className={cn(!chatOpen && "text-[var(--accent-tool)]")}
+              onClick={() => { sfx("page"); setChatOpen((open) => !open); }}
+              data-cuelume-press
+            >
+              <Sparkles /> Assistant
+            </Button>
+            <span className="mx-0.5 h-4 w-px bg-border" />
             <Button variant="ghost" size="sm" onClick={openLoad} data-cuelume-press><FolderOpen /> Load</Button>
             <Button variant="ghost" size="sm" onClick={openSave} disabled={!document} data-cuelume-press><Save /> Save</Button>
             <Button
@@ -1000,6 +1013,15 @@ export function ProceduralStudio() {
               )}
             </div>
           </section>
+
+          {/* AI assistant */}
+          {chatOpen && (
+            <ChatPanel
+              currentSpec={spec}
+              onClose={() => setChatOpen(false)}
+              onApply={(specJson) => { try { void inspect({ spec: JSON.parse(specJson) as ModelDocument }); } catch { /* ignore malformed */ } }}
+            />
+          )}
         </div>
 
         {/* Load dialog */}
