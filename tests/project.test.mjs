@@ -25,13 +25,12 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
 
   assert.match(page, /<HomePage\s*\/>/);
   assert.match(home, /LayerVisualizer/);
-  assert.match(home, /Contour vase/);
-  assert.match(home, /Twist tower/);
-  assert.match(home, /Orb study/);
-  assert.match(home, /PRINTA type/);
+  assert.match(home, /const WORDS = \["PRINTA", "HELLO", "MAKER", "TYPE"\]/);
+  assert.match(home, /buildPrintStudies/);
+  assert.match(home, /STUDY_PALETTE/);
+  assert.match(home, /textGeometryFor/);
   assert.match(home, /setStudyIndex/);
   assert.match(home, /href="\/editor"/);
-  assert.match(home, /href="\/studio"/);
   assert.match(editor, /<TextPlayground\s*\/>/);
   assert.match(playground, /Download STL/);
   assert.match(playground, /OrbitControls/);
