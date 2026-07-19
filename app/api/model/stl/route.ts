@@ -1,5 +1,6 @@
 import { getDemoModel } from "@/lib/demo-models";
 import { decodeModelDocument, parseModelDocument } from "@/lib/model-spec";
+import { MODEL_STL_CORS_HEADERS } from "@/lib/model-stl-cors";
 import { createProceduralStl, makeProceduralFilename, proceduralCacheMetrics } from "@/lib/procedural-mesh";
 
 export const runtime = "nodejs";
@@ -63,10 +64,14 @@ async function createResponse(request: Request) {
         "X-Printa-Cache": `hit=${cacheAfter.hits - cacheBefore.hits}; miss=${cacheAfter.misses - cacheBefore.misses}; coalesced=${cacheAfter.coalesced - cacheBefore.coalesced}`,
         "Server-Timing": `compile;dur=${(performance.now() - startedAt).toFixed(1)}`,
         "X-Content-Type-Options": "nosniff",
+        ...MODEL_STL_CORS_HEADERS,
       },
     });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Invalid model spec." }, { status: 400 });
+    return Response.json(
+      { error: error instanceof Error ? error.message : "Invalid model spec." },
+      { status: 400, headers: MODEL_STL_CORS_HEADERS },
+    );
   }
 }
 
@@ -76,4 +81,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   return createResponse(request);
+}
+
+export function OPTIONS() {
+  return new Response(null, { status: 204, headers: MODEL_STL_CORS_HEADERS });
 }

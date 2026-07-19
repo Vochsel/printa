@@ -23,8 +23,16 @@ import {
 } from "../lib/procedural-geometry";
 import { unionClosedGeometryParts } from "../lib/manifold-geometry";
 import { createTextGeometry, geometryStats } from "../lib/text-geometry";
+import { MODEL_STL_CORS_HEADERS } from "../lib/model-stl-cors";
 
 const openTypeRuntime = (opentype as typeof opentype & { default?: typeof opentype }).default ?? opentype;
+
+test("model STL CORS policy permits and exposes MCP UI preview data", () => {
+  assert.equal(MODEL_STL_CORS_HEADERS["Access-Control-Allow-Origin"], "*");
+  assert.equal(MODEL_STL_CORS_HEADERS["Access-Control-Allow-Methods"], "GET, POST, OPTIONS");
+  assert.match(MODEL_STL_CORS_HEADERS["Access-Control-Expose-Headers"], /X-Printa-Dimensions/);
+  assert.match(MODEL_STL_CORS_HEADERS["Access-Control-Expose-Headers"], /X-Printa-Triangles/);
+});
 
 async function buildNode(node: ModelNode): Promise<BufferGeometry> {
   if (node.kind === "shape") {

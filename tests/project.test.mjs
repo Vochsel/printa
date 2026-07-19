@@ -125,6 +125,8 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(skill, /Direct STL fallback/);
   assert.match(skill, /make\/model\.stl\?spec=/);
   assert.match(modelStlRoute, /X-Printa-Cache/);
+  assert.match(modelStlRoute, /MODEL_STL_CORS_HEADERS/);
+  assert.match(publicStlRoute, /GET, OPTIONS/);
   assert.match(modelStlRoute, /Server-Timing/);
   assert.match(studio, /AbortController/);
   assert.match(studio, /preview: true/);
