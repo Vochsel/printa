@@ -171,6 +171,26 @@ function createGroundDimensions(box: THREE.Box3, display: ModelDocument["display
   return group;
 }
 
+function createBuildPlate(buildVolume: [number, number, number]) {
+  const [width, depth] = buildVolume;
+  const group = new THREE.Group();
+  group.name = "spec-build-plate";
+  const surface = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, depth),
+    new THREE.MeshBasicMaterial({ color: "#263c39", transparent: true, opacity: 0.34, depthWrite: false, side: THREE.DoubleSide }),
+  );
+  surface.position.z = 0.08;
+  group.add(surface);
+  const border = new THREE.LineSegments(
+    new THREE.EdgesGeometry(surface.geometry),
+    new THREE.LineBasicMaterial({ color: "#63d4c7", transparent: true, opacity: 0.92, depthTest: false }),
+  );
+  border.position.z = 0.11;
+  border.renderOrder = 8;
+  group.add(border);
+  return group;
+}
+
 function disposeObject(object: THREE.Object3D | null) {
   object?.traverse((child) => {
     const item = child as THREE.Mesh | THREE.LineSegments;
@@ -197,11 +217,12 @@ function createPreviewMaterial(materialPreset: PrintMaterialPreset) {
   });
 }
 
-function ModelViewport({ source, materialPreset, display, units, shading, slice, onReady }: {
+function ModelViewport({ source, materialPreset, display, units, buildVolume, shading, slice, onReady }: {
   source: PreviewSource;
   materialPreset: PrintMaterialPreset;
   display: ModelDocument["display"];
   units: ModelDocument["units"];
+  buildVolume: [number, number, number];
   shading: ShadingMode;
   slice: number;
   onReady?: () => void;
@@ -214,6 +235,7 @@ function ModelViewport({ source, materialPreset, display, units, shading, slice,
   const controlsRef = useRef<OrbitControls | null>(null);
   const floorRef = useRef<THREE.Mesh | null>(null);
   const gridRef = useRef<THREE.GridHelper | null>(null);
+  const buildPlateRef = useRef<THREE.Group | null>(null);
   const keyLightRef = useRef<THREE.DirectionalLight | null>(null);
   const modelRef = useRef<THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial> | null>(null);
   const baseGeometryRef = useRef<THREE.BufferGeometry | null>(null);
@@ -222,6 +244,7 @@ function ModelViewport({ source, materialPreset, display, units, shading, slice,
   const hasFramedRef = useRef(false);
   const displayRef = useRef(display);
   const unitsRef = useRef(units);
+  const buildVolumeRef = useRef(buildVolume);
   const materialPresetRef = useRef(materialPreset);
   const shadingRef = useRef(shading);
   const sliceRef = useRef(slice);
@@ -230,8 +253,9 @@ function ModelViewport({ source, materialPreset, display, units, shading, slice,
   useEffect(() => {
     displayRef.current = display;
     unitsRef.current = units;
+    buildVolumeRef.current = buildVolume;
     materialPresetRef.current = materialPreset;
-  }, [display, materialPreset, units]);
+  }, [buildVolume, display, materialPreset, units]);
 
   // Sizes the key light's orthographic shadow frustum (and the floor, grid and
   // fog) to the model so shadows land correctly no matter how big the print is.
@@ -349,6 +373,10 @@ function ModelViewport({ source, materialPreset, display, units, shading, slice,
     grid.position.z = 0.05;
     scene.add(grid);
     gridRef.current = grid;
+    const buildPlate = createBuildPlate(buildVolumeRef.current);
+    buildPlate.visible = displayRef.current.buildPlate;
+    scene.add(buildPlate);
+    buildPlateRef.current = buildPlate;
 
     let animationFrame = 0;
     let interacting = false;
@@ -378,6 +406,7 @@ function ModelViewport({ source, materialPreset, display, units, shading, slice,
       if (!model) return;
       const box = new THREE.Box3().setFromObject(model);
       if (dimensionsRef.current) box.expandByObject(dimensionsRef.current);
+      if (buildPlateRef.current?.visible) box.expandByObject(buildPlateRef.current);
       const sphere = box.getBoundingSphere(new THREE.Sphere());
       const distance = Math.max(45, sphere.radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.22);
       camera.position.set(sphere.center.x + distance * 0.78, sphere.center.y - distance, sphere.center.z + distance * 0.66);
@@ -414,6 +443,7 @@ function ModelViewport({ source, materialPreset, display, units, shading, slice,
       }
       baseGeometryRef.current?.dispose();
       disposeObject(dimensionsRef.current);
+      disposeObject(buildPlateRef.current);
       floor.geometry.dispose();
       (floor.material as THREE.Material).dispose();
       renderer.dispose();
@@ -425,6 +455,7 @@ function ModelViewport({ source, materialPreset, display, units, shading, slice,
       controlsRef.current = null;
       floorRef.current = null;
       gridRef.current = null;
+      buildPlateRef.current = null;
       keyLightRef.current = null;
       modelRef.current = null;
       baseGeometryRef.current = null;
@@ -497,6 +528,12 @@ function ModelViewport({ source, materialPreset, display, units, shading, slice,
     if (floorRef.current) floorRef.current.visible = display.floor;
     if (gridRef.current) gridRef.current.visible = display.grid;
     const scene = sceneRef.current;
+    if (scene) {
+      if (buildPlateRef.current) { scene.remove(buildPlateRef.current); disposeObject(buildPlateRef.current); }
+      buildPlateRef.current = createBuildPlate(buildVolume);
+      buildPlateRef.current.visible = display.buildPlate;
+      scene.add(buildPlateRef.current);
+    }
     const model = modelRef.current;
     if (scene && model) {
       if (dimensionsRef.current) { scene.remove(dimensionsRef.current); disposeObject(dimensionsRef.current); }
@@ -505,7 +542,7 @@ function ModelViewport({ source, materialPreset, display, units, shading, slice,
       if (dimensionsRef.current) scene.add(dimensionsRef.current);
     }
     invalidateRef.current(3);
-  }, [display, units]);
+  }, [buildVolume, display, units]);
 
   return (
     <div className="absolute inset-0">
@@ -596,11 +633,14 @@ export function ProceduralStudio() {
       setResult(data);
       setDocument(data.document);
       setSpec(data.spec);
-      setPreview({ key: data.stlUrl, url: data.stlUrl });
+      setPreview({
+        key: data.stlUrl,
+        url: `/api/model/stl?spec=${data.encoded}&preview=true`,
+      });
       compiledGeometryKeyRef.current = geometryKey(data.document);
       setPreviewQuality(false);
       setSlice(1);
-      if (data.studioUrl) window.history.replaceState(window.history.state, "", data.studioUrl.replace(window.location.origin, ""));
+      if (data.encoded) window.history.replaceState(window.history.state, "", `/editor?spec=${data.encoded}`);
     } catch (nextError) {
       sfx("error");
       setError(nextError instanceof Error ? nextError.message : "Model spec is invalid.");
@@ -631,7 +671,7 @@ export function ProceduralStudio() {
       if (sequence !== liveSequenceRef.current) return;
       const dimensions = (response.headers.get("X-Printa-Dimensions") ?? "0,0,0").split(",").map(Number);
       const encoded = encodeDocument(next);
-      const stlUrl = `/api/model/stl?spec=${encoded}`;
+      const stlUrl = `/make/model.stl?spec=${encoded}`;
       const studioUrl = `/editor?spec=${encoded}`;
       const material = response.headers.get("X-Printa-Material") as PrintMaterialPreset | null;
       const exceedsBuildVolume = response.headers.get("X-Printa-Exceeds") === "true";
@@ -681,7 +721,7 @@ export function ProceduralStudio() {
         ...previous,
         document: next,
         spec: nextSpec,
-        stlUrl: `/api/model/stl?spec=${encoded}`,
+        stlUrl: `/make/model.stl?spec=${encoded}`,
         studioUrl,
         materialPreset: documentMaterial(next.root),
         exceedsBuildVolume: previous.stats.widthMm > next.print.buildVolume[0]
@@ -846,6 +886,7 @@ export function ProceduralStudio() {
                 materialPreset={result.materialPreset}
                 display={document.display}
                 units={document.units}
+                buildVolume={document.print.buildVolume}
                 shading={shading}
                 slice={slice}
                 onReady={handleModelReady}

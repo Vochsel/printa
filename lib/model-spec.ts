@@ -9,6 +9,13 @@ const finite = z.number().finite();
 const positive = finite.positive();
 const nonNegative = finite.nonnegative();
 const vec3 = z.tuple([finite, finite, finite]);
+const modifierModulationSchema = z.object({
+  axis: z.enum(["x", "y", "z"]).default("z").describe("Local axis used to measure normalized modifier progress"),
+  points: z.array(z.tuple([finite.min(0).max(1), finite])).min(2).max(16)
+    .describe("[normalized position, amount multiplier] keyframes"),
+  interpolation: z.enum(["linear", "smoothstep"]).default("smoothstep"),
+}).strict();
+const modulationField = { modulation: modifierModulationSchema.optional() };
 
 export const interiorStrutsSchema = z.object({
   enabled: z.boolean().default(false),
@@ -43,6 +50,7 @@ const twistModifierSchema = z.object({
   angleDeg: finite,
   start: finite.min(0).max(1).default(0),
   end: finite.min(0).max(1).default(1),
+  ...modulationField,
 }).strict();
 
 const taperModifierSchema = z.object({
@@ -50,6 +58,7 @@ const taperModifierSchema = z.object({
   from: positive.default(1),
   to: positive,
   easing: z.enum(["linear", "smoothstep"]).default("smoothstep"),
+  ...modulationField,
 }).strict();
 
 const radialWaveModifierSchema = z.object({
@@ -58,6 +67,7 @@ const radialWaveModifierSchema = z.object({
   count: z.number().int().min(1).max(128),
   phaseDeg: finite.default(0),
   axialTurns: finite.default(0),
+  ...modulationField,
 }).strict();
 
 const axialWaveModifierSchema = z.object({
@@ -65,12 +75,14 @@ const axialWaveModifierSchema = z.object({
   amplitude: finite,
   cycles: positive,
   phaseDeg: finite.default(0),
+  ...modulationField,
 }).strict();
 
 const bendModifierSchema = z.object({
   type: z.literal("bend"),
   angleDeg: finite.min(-300).max(300),
   directionDeg: finite.default(0),
+  ...modulationField,
 }).strict();
 
 const noiseModifierSchema = z.object({
@@ -78,6 +90,7 @@ const noiseModifierSchema = z.object({
   amplitude: nonNegative,
   scale: positive.default(12),
   seed: z.number().int().default(1),
+  ...modulationField,
 }).strict();
 
 const smoothModifierSchema = z.object({
@@ -137,6 +150,7 @@ const revolveSourceSchema = z.object({
   profile: z.array(z.tuple([nonNegative, finite])).min(2).max(64).describe("[radius, height] control points"),
   segments: z.number().int().min(8).max(512).default(128),
   profileSegments: z.number().int().min(2).max(256).default(96),
+  radiusOffset: finite.default(0).describe("Amount added to every profile radius before the surface is revolved"),
   wall: positive.default(2).describe("Shell wall thickness"),
   bottomCap: z.boolean().default(true).describe("Close the vessel with a solid printable base"),
   bottomThickness: positive.default(2.4).describe("Solid base thickness"),
@@ -157,6 +171,7 @@ const textSourceSchema = z.object({
   bevel: nonNegative.default(0.6),
   bevelSegments: z.number().int().min(1).max(12).default(3),
   curveSegments: z.number().int().min(2).max(24).default(10),
+  extrudeSegments: z.number().int().min(1).max(64).default(1).describe("Subdivisions through the extrusion depth"),
   bevelSide: z.enum(["both", "top", "bottom"]).default("both"),
   smoothNormals: z.boolean().default(true),
   textCase: z.enum(["original", "uppercase", "lowercase", "titlecase"]).default("original"),
@@ -291,6 +306,7 @@ export const modelDocumentSchema = z.object({
   display: z.object({
     floor: z.boolean().default(true),
     grid: z.boolean().default(true),
+    buildPlate: z.boolean().default(false).describe("Preview the configured rectangular printer build plate"),
     dimensions: z.object({
       visible: z.boolean().default(true),
       width: z.boolean().default(true),
@@ -301,6 +317,7 @@ export const modelDocumentSchema = z.object({
   }).strict().default({
     floor: true,
     grid: true,
+    buildPlate: false,
     dimensions: { visible: true, width: true, height: true, offset: 9, precision: 1 },
   }),
   metadata: z.record(z.string(), z.union([z.string(), finite, z.boolean()])).default({}),

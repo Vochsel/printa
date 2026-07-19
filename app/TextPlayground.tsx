@@ -43,6 +43,7 @@ type ModelState = {
   bevelMm: number;
   bevelSegments: number;
   curveSegments: number;
+  extrudeSegments: number;
   bevelSide: "both" | "top" | "bottom";
   smoothNormals: boolean;
   textCase: "original" | "uppercase" | "lowercase" | "titlecase";
@@ -59,6 +60,7 @@ const INITIAL_MODEL: ModelState = {
   bevelMm: 0.6,
   bevelSegments: 3,
   curveSegments: 10,
+  extrudeSegments: 1,
   bevelSide: "both",
   smoothNormals: true,
   textCase: "original",
@@ -98,6 +100,7 @@ function readEditorQuery() {
     bevelMm: queryNumber(params, "bevel", INITIAL_MODEL.bevelMm),
     bevelSegments: queryNumber(params, "bevelSegments", INITIAL_MODEL.bevelSegments),
     curveSegments: queryNumber(params, "curveSegments", INITIAL_MODEL.curveSegments),
+    extrudeSegments: queryNumber(params, "extrudeSegments", INITIAL_MODEL.extrudeSegments),
     bevelSide,
     smoothNormals: queryBoolean(params, "smoothNormals", INITIAL_MODEL.smoothNormals),
     textCase,
@@ -123,6 +126,7 @@ function editorQuery(model: ModelState, units: "mm" | "cm", materialPreset: Prin
     bevel: String(model.bevelMm),
     bevelSegments: String(model.bevelSegments),
     curveSegments: String(model.curveSegments),
+    extrudeSegments: String(model.extrudeSegments),
     bevelSide: model.bevelSide,
     smoothNormals: String(model.smoothNormals),
     textCase: model.textCase,
@@ -189,6 +193,7 @@ function buildDownloadUrl(model: ModelState) {
     bevel: String(model.bevelMm),
     bevelSegments: String(model.bevelSegments),
     curveSegments: String(model.curveSegments),
+    extrudeSegments: String(model.extrudeSegments),
     bevelSide: model.bevelSide,
     smoothNormals: String(model.smoothNormals),
     textCase: model.textCase,
@@ -901,6 +906,7 @@ export function TextPlayground() {
             <label className="select-control"><span className="control-label"><span>Bevel faces</span></span><select value={model.bevelSide} onChange={(event) => update("bevelSide", event.target.value as ModelState["bevelSide"])}><option value="both">Top + bottom</option><option value="top">Top only</option><option value="bottom">Bottom only</option></select></label>
             <RangeControl label="Bevel resolution" value={model.bevelSegments} min={1} max={12} step={1} formatValue={(value) => `${value} segments`} onChange={(value) => update("bevelSegments", value)} />
             <RangeControl label="Curve resolution" value={model.curveSegments} min={2} max={24} step={1} formatValue={(value) => `${value} segments`} onChange={(value) => update("curveSegments", value)} />
+            <RangeControl label="Extrusion resolution" value={model.extrudeSegments} min={1} max={64} step={1} formatValue={(value) => `${value} segments`} onChange={(value) => update("extrudeSegments", value)} />
             <label className="toggle-control"><span><strong>Smooth normals</strong><small>Soft preview shading</small></span><input type="checkbox" checked={model.smoothNormals} onChange={(event) => update("smoothNormals", event.target.checked)} /><i /></label>
           </div>
 

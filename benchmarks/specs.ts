@@ -56,6 +56,42 @@ function strutBenchmark(pattern: "cross" | "diamond" | "radial"): ModelDocumentI
 }
 
 const addedCases = {
+  "modulated-offset-vase": {
+    version: "1.0",
+    name: "Modulated radius-offset vase",
+    description: "Exercises global profile radius offsets and generic modifier amount keyframes.",
+    units: "mm",
+    root: {
+      kind: "shape",
+      id: "modulated-vessel",
+      source: {
+        type: "revolve",
+        profile: [[24, 0], [31, 38], [29, 82], [22, 122]],
+        segments: 144,
+        profileSegments: 92,
+        radiusOffset: 3.5,
+        wall: 2.2,
+        bottomCap: true,
+        bottomThickness: 3,
+        topCap: false,
+        topThickness: 2.4,
+        interpolation: "catmull-rom",
+        axis: "z",
+      },
+      modifiers: [{
+        type: "radialWave",
+        amplitude: 3.2,
+        count: 12,
+        phaseDeg: 0,
+        axialTurns: 0.4,
+        modulation: { axis: "z", points: [[0, 0], [0.18, 1], [0.72, 0.55], [1, 0]], interpolation: "smoothstep" },
+      }],
+      material: "pla-silk",
+    },
+    ...defaults,
+    display: { ...defaults.display, buildPlate: true },
+    metadata: { benchmark: true, coverage: "revolve,radius-offset,modifier-modulation,build-plate" },
+  },
   "all-primitives-assembly": {
     version: "1.0",
     name: "All primitives assembly",
@@ -161,7 +197,7 @@ const addedCases = {
       id: "styled-word",
       source: {
         type: "text", text: "Realtime", font: "Roboto", size: 38, width: 142, height: 38, depth: 5.5, bevel: 0.7,
-        bevelSegments: 6, curveSegments: 18, bevelSide: "top", smoothNormals: true,
+        bevelSegments: 6, curveSegments: 18, extrudeSegments: 1, bevelSide: "top", smoothNormals: true,
         textCase: "lowercase", weight: "bold", italic: true, underline: true,
       },
       modifiers: [{ type: "bend", angleDeg: 9, directionDeg: 0 }],
@@ -169,6 +205,25 @@ const addedCases = {
     },
     ...defaults,
     metadata: { benchmark: true, coverage: "text,font,case,bold,italic,underline,bevel,exact-dimensions" },
+  },
+  "segmented-google-text": {
+    version: "1.0",
+    name: "Segmented Google text extrusion",
+    description: "Measures multi-step font extrusion independently from the stable typography baseline.",
+    units: "mm",
+    root: {
+      kind: "shape",
+      id: "segmented-word",
+      source: {
+        type: "text", text: "Layers", font: "Roboto", size: 32, depth: 8, bevel: 0.45,
+        bevelSegments: 3, curveSegments: 12, extrudeSegments: 8, bevelSide: "both", smoothNormals: true,
+        textCase: "original", weight: "regular", italic: false, underline: false,
+      },
+      modifiers: [],
+      material: "pla-matte",
+    },
+    ...defaults,
+    metadata: { benchmark: true, coverage: "text,font,extrude-segments" },
   },
   "exact-sphere-centimetres": {
     version: "1.0",

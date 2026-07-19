@@ -25,6 +25,7 @@ print:
 display:
   floor: true
   grid: true
+  buildPlate: false # configured W × D build-volume footprint
   dimensions:
     visible: true
     width: true
@@ -96,6 +97,7 @@ type: revolve
 profile: [[28, 0], [40, 45], [30, 100], [25, 130]]
 segments: 160
 profileSegments: 100
+radiusOffset: 0 # added to every profile radius
 wall: 2.2
 bottomCap: true
 bottomThickness: 3
@@ -144,6 +146,7 @@ depth: 4
 bevel: 0.6
 bevelSegments: 4
 curveSegments: 12
+extrudeSegments: 1
 bevelSide: both # both | top | bottom
 smoothNormals: true
 textCase: original # original | uppercase | lowercase | titlecase
@@ -152,11 +155,11 @@ italic: false
 underline: false
 ```
 
-`font` accepts any Google Fonts family. `height` and `depth` are exact final mesh bounds, including the bevel; `width` is also exact when supplied. Measurements come from the loaded OpenType outlines and final tessellated solid, not browser CSS metrics. All typography and printable styling fields are part of the source, so the editor, MCP tool, preview, and STL generator use the same values.
+`font` accepts any Google Fonts family. `height` and `depth` are exact final mesh bounds, including the bevel; `width` is also exact when supplied. Measurements come from the loaded OpenType outlines and final tessellated solid, not browser CSS metrics. `curveSegments` controls curved glyph outlines, `bevelSegments` controls edge rounding, and `extrudeSegments` adds subdivisions through the depth for later deformation. All typography and printable styling fields are part of the source, so the editor, MCP tool, preview, and STL generator use the same values.
 
 ## Display
 
-`display` is non-geometric preview state stored with the model. `floor` and `grid` control the build plate. `display.dimensions` controls the floor-plane W/H arrows, labels, spacing, and numeric precision. These settings do not add triangles to the exported STL.
+`display` is non-geometric preview state stored with the model. `floor` and `grid` control the ground treatment. `buildPlate` overlays the configured `print.buildVolume` width/depth footprint, which defaults to 256 × 256 mm. `display.dimensions` controls the floor-plane W/H arrows, labels, spacing, and numeric precision. These settings do not add triangles to the exported STL.
 
 ### Water
 
@@ -206,6 +209,17 @@ Modifiers run from first to last.
 - `bend`: `angleDeg` and XY `directionDeg`.
 - `noise`: deterministic radial `amplitude`, feature `scale`, and integer `seed`.
 - `smooth`: Laplacian `iterations` and `strength`. Apply sparingly because it changes dimensions.
+
+Every vertex-based modifier except `smooth` may include the same optional modulation envelope:
+
+```yaml
+modulation:
+  axis: z # x | y | z in local shape coordinates
+  points: [[0, 0], [0.2, 1], [0.75, 0.65], [1, 0]]
+  interpolation: smoothstep # linear | smoothstep
+```
+
+Positions are normalized from 0 to 1 along the chosen local axis; values multiply the modifier amount and may exceed 1 or become negative. This makes a flute fade in, strengthen around the shoulder, and disappear at a rim without adding a special-case flute profile format.
 
 ## Limits
 

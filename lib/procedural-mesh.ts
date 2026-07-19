@@ -132,6 +132,7 @@ async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>, interi
             bevelMm: node.source.bevel,
             bevelSegments: node.source.bevelSegments,
             curveSegments: node.source.curveSegments,
+            extrudeSegments: node.source.extrudeSegments,
             bevelSide: node.source.bevelSide,
             textCase: node.source.textCase,
             fontWeight: node.source.weight,
@@ -212,6 +213,7 @@ function previewNode(node: ModelNode): ModelNode {
   if (source.type === "text") {
     source.curveSegments = Math.min(source.curveSegments, 8);
     source.bevelSegments = Math.min(source.bevelSegments, 3);
+    source.extrudeSegments = Math.min(source.extrudeSegments, 4);
   } else if (source.type === "primitive") source.segments = Math.min(source.segments, 64);
   else if (source.type === "extrude") {
     source.curveSegments = Math.min(source.curveSegments, 12);

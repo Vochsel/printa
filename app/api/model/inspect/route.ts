@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       ...result,
       spec: stringifyModelDocument(result.document, body.format ?? "yaml"),
       encoded,
-      stlUrl: `${origin}/api/model/stl?spec=${encoded}`,
+      stlUrl: `${origin}/make/model.stl?spec=${encoded}`,
       studioUrl: `${origin}/editor?spec=${encoded}`,
     });
   } catch (error) {

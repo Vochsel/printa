@@ -18,15 +18,15 @@ import { inspectProceduralModel, makeProceduralFilename } from "@/lib/procedural
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TEMPLATE_URI = "ui://widget/printa-extruded-text-v8.html";
-const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v5.html";
+const TEMPLATE_URI = "ui://widget/printa-extruded-text-v9.html";
+const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v6.html";
 
 function createServer(origin: string) {
   const server = new McpServer(
-    { name: "printa", version: "0.5.0" },
+    { name: "printa", version: "0.6.0" },
     {
       instructions:
-        `Create ready-to-print geometry with create_procedural_model or use create_extruded_text for the focused text workflow. Printa Spec 1.0 composes primitive, custom-curve extrusion, revolve, text, water, and cloth sources with ordered modifiers, assemblies, repeats, and transforms. Revolved vases support wall thickness, solid bases, and optional solid top caps. JSON and YAML are accepted. Read the modeling skill at ${origin}/skills and the JSON Schema at ${origin}/api/model/schema.`,
+        `Create ready-to-print geometry with create_procedural_model or use create_extruded_text for the focused text workflow. Printa Spec 1.0 composes primitive, custom-curve extrusion, revolve, text, water, and cloth sources with ordered and height-modulated modifiers, assemblies, repeats, and transforms. JSON and YAML are accepted. If the MCP app is unavailable, encode the same JSON spec into ${origin}/make/model.stl?spec= as documented at ${origin}/skills.`,
     },
   );
 
@@ -96,6 +96,7 @@ function createServer(origin: string) {
         bevel_mm: z.number().min(0).default(0.6).describe("Edge bevel size in millimetres with no hard maximum"),
         bevel_segments: z.number().int().min(1).max(12).default(3).describe("Number of bevel subdivisions; higher values make round bevels smoother"),
         curve_segments: z.number().int().min(2).max(24).default(10).describe("Outline curve resolution; higher values increase curved-letter detail"),
+        extrude_segments: z.number().int().min(1).max(64).default(1).describe("Subdivisions through the extrusion depth for deformation-ready typography"),
         bevel_side: z.enum(["both", "top", "bottom"]).default("both").describe("Apply the bevel to both faces, only the top face, or only the bottom face"),
         smooth_normals: z.boolean().default(true).describe("Use smooth vertex normals for softer preview shading"),
         text_case: z.enum(["original", "uppercase", "lowercase", "titlecase"]).default("original").describe("Keep text as typed or transform it to upper, lower, or title case"),
@@ -114,6 +115,7 @@ function createServer(origin: string) {
         bevelMm: z.number(),
         bevelSegments: z.number(),
         curveSegments: z.number(),
+        extrudeSegments: z.number(),
         bevelSide: z.enum(["both", "top", "bottom"]),
         smoothNormals: z.boolean(),
         textCase: z.enum(["original", "uppercase", "lowercase", "titlecase"]),
@@ -149,6 +151,7 @@ function createServer(origin: string) {
       bevel_mm,
       bevel_segments,
       curve_segments,
+      extrude_segments,
       bevel_side,
       smooth_normals,
       text_case,
@@ -168,6 +171,7 @@ function createServer(origin: string) {
         bevelMm: bevel_mm,
         bevelSegments: bevel_segments,
         curveSegments: curve_segments,
+        extrudeSegments: extrude_segments,
         bevelSide: bevel_side,
         smoothNormals: smooth_normals,
         textCase: text_case,
@@ -185,6 +189,7 @@ function createServer(origin: string) {
         bevel: String(options.bevelMm),
         bevelSegments: String(options.bevelSegments),
         curveSegments: String(options.curveSegments),
+        extrudeSegments: String(options.extrudeSegments),
         bevelSide: options.bevelSide,
         smoothNormals: String(options.smoothNormals),
         textCase: options.textCase,
@@ -231,7 +236,7 @@ function createServer(origin: string) {
     "create_procedural_model",
     {
       title: "Create a procedural printable model",
-      description: "Validate and build a Printa Spec 1.0 document supplied as JSON or YAML, then show the result as an interactive 3D model with STL download. Use sources for primitives, custom Bézier extrusion, profile revolution, text, water simulation, or cloth simulation. Revolved vessels support wall thickness, solid bottom bases, optional top caps, and independent base/cap thickness. Compose ordered twist, taper, radialWave, axialWave, bend, noise, and smooth modifiers; merge assemblies; or repeat transformed nodes. For a quick start, choose one of the built-in demos.",
+      description: "Validate and build a Printa Spec 1.0 document supplied as JSON or YAML, then show the result as an interactive 3D model with STL download. Use sources for primitives, custom Bézier extrusion, profile revolution, text, water simulation, or cloth simulation. Revolved profiles support a global radius offset. Modulation keyframes can vary flute, wave, twist, taper, bend, and noise amount over any local axis. Compose ordered modifiers, merge assemblies, or repeat transformed nodes.",
       inputSchema: {
         spec: z.string().min(20).max(6_000).optional().describe("Complete Printa Spec 1.0 document as JSON or YAML. Prefer YAML for readability. Omit only when using a built-in demo."),
         demo: z.enum(["type-specimen", "contour-spiral-vase", "zenith-twist", "fluted-bud-vase", "ripple-column-vase", "spline-petal-dish", "primitive-totem", "water-ripple-tile", "cloth-drape-study"]).default("type-specimen").describe("Built-in starting model used when spec is omitted"),
@@ -265,6 +270,7 @@ function createServer(origin: string) {
         display: z.object({
           floor: z.boolean(),
           grid: z.boolean(),
+          buildPlate: z.boolean(),
           dimensions: z.object({ visible: z.boolean(), width: z.boolean(), height: z.boolean(), offset: z.number(), precision: z.number() }),
         }),
       },
@@ -281,7 +287,7 @@ function createServer(origin: string) {
       if (!input) throw new Error(`Unknown demo: ${demo}`);
       const result = await inspectProceduralModel(input);
       const encoded = encodeModelDocument(result.document);
-      const stlUrl = `${origin}/api/model/stl?spec=${encoded}`;
+      const stlUrl = `${origin}/make/model.stl?spec=${encoded}`;
       const previewUrl = `${origin}/api/model/stl?spec=${encoded}&preview=true`;
       const studioUrl = `${origin}/editor?spec=${encoded}`;
       const structuredContent = {

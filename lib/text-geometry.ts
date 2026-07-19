@@ -19,6 +19,7 @@ export type TextModelOptions = {
   bevelMm: number;
   bevelSegments: number;
   curveSegments: number;
+  extrudeSegments: number;
   bevelSide: BevelSide;
   smoothNormals: boolean;
   textCase: TextCase;
@@ -72,6 +73,7 @@ export function normalizeTextModelOptions(input: Partial<TextModelOptions>): Tex
     bevelMm: minimumNumber(Number(input.bevelMm ?? 0.6), 0, 0.6),
     bevelSegments: Math.round(clampNumber(Number(input.bevelSegments ?? 3), 1, 12)),
     curveSegments: Math.round(clampNumber(Number(input.curveSegments ?? 10), 2, 24)),
+    extrudeSegments: Math.round(clampNumber(Number(input.extrudeSegments ?? 1), 1, 64)),
     bevelSide,
     smoothNormals: input.smoothNormals ?? true,
     textCase,
@@ -158,6 +160,7 @@ export function createTextGeometry(
       syntheticItalic: Boolean(renderStyle.syntheticItalic),
     }), {
       depth: coreDepth,
+      steps: options.extrudeSegments,
       curveSegments: options.curveSegments,
       bevelEnabled: bevel > 0,
       bevelThickness: bevel,

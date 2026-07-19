@@ -16,6 +16,7 @@ export async function GET(request: Request) {
     bevelMm: Number(url.searchParams.get("bevel") ?? 0.6),
     bevelSegments: Number(url.searchParams.get("bevelSegments") ?? 3),
     curveSegments: Number(url.searchParams.get("curveSegments") ?? 10),
+    extrudeSegments: Number(url.searchParams.get("extrudeSegments") ?? 1),
     bevelSide: (url.searchParams.get("bevelSide") ?? "both") as "both" | "top" | "bottom",
     smoothNormals: url.searchParams.get("smoothNormals") !== "false",
     textCase: (url.searchParams.get("textCase") ?? "original") as "original" | "uppercase" | "lowercase" | "titlecase",

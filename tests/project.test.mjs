@@ -5,7 +5,7 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("ships the homepage, advanced editors, MCP widgets, skills, icons, and generation routes", async () => {
-  const [page, home, editor, playground, studio, inspector, widget, modelWidget, modelSpec, demos, modelStlRoute, skillRoute, stlRoute, mcpRoute, fontRoute, icon] = await Promise.all([
+  const [page, home, editor, playground, studio, inspector, widget, modelWidget, modelSpec, demos, modelStlRoute, publicStlRoute, skill, skillRoute, stlRoute, mcpRoute, fontRoute, icon] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/HomePage.tsx", root), "utf8"),
     readFile(new URL("app/editor/page.tsx", root), "utf8"),
@@ -17,6 +17,8 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
     readFile(new URL("lib/model-spec.ts", root), "utf8"),
     readFile(new URL("lib/demo-models.ts", root), "utf8"),
     readFile(new URL("app/api/model/stl/route.ts", root), "utf8"),
+    readFile(new URL("app/make/model.stl/route.ts", root), "utf8"),
+    readFile(new URL("skills/printa-modeling/SKILL.md", root), "utf8"),
     readFile(new URL("app/skills/route.ts", root), "utf8"),
     readFile(new URL("app/api/stl/route.ts", root), "utf8"),
     readFile(new URL("app/mcp/route.ts", root), "utf8"),
@@ -38,6 +40,7 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(playground, /OrbitControls/);
   assert.match(playground, /Smooth normals/);
   assert.match(playground, /Bevel resolution/);
+  assert.match(playground, /Extrusion resolution/);
   assert.match(playground, /UPPERCASE/);
   assert.match(playground, /Printable underline bar/);
   assert.match(playground, /loadFontPreview/);
@@ -59,16 +62,21 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(studio, /listSavedModels/);
   assert.match(studio, /Size labels/);
   assert.match(studio, /createGroundDimensions/);
+  assert.match(studio, /createBuildPlate/);
   assert.match(studio, /Download STL/);
   assert.match(inspector, /Google Fonts/);
   assert.match(inspector, /loadFontPreview/);
   assert.match(inspector, /Search .* Google Fonts/);
   assert.match(inspector, /PointListField/);
+  assert.match(inspector, /Global radius offset/);
+  assert.match(inspector, /Vary amount over shape/);
+  assert.match(inspector, /Preview build plate/);
   assert.match(inspector, /Advanced shape data/);
   assert.match(inspector, /Structural lattice inside/);
   assert.match(inspector, /New layer/);
   assert.match(inspector, /Add modifier/);
   assert.match(widget, /font-menu/);
+  assert.match(widget, /extrude-segments/);
   assert.match(widget, /ui\/notifications\/tool-input/);
   assert.match(widget, /Measurement units/);
   assert.match(widget, /font-weight/);
@@ -104,11 +112,18 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(modelSpec, /bevelSide/);
   assert.match(modelSpec, /bottomThickness/);
   assert.match(modelSpec, /topThickness/);
+  assert.match(modelSpec, /radiusOffset/);
+  assert.match(modelSpec, /extrudeSegments/);
+  assert.match(modelSpec, /modifierModulationSchema/);
   assert.match(modelSpec, /display: z\.object/);
   assert.match(demos, /type-specimen/);
   assert.match(demos, /contour-spiral-vase/);
   assert.match(demos, /cloth-drape-study/);
   assert.match(modelStlRoute, /createProceduralStl/);
+  assert.match(modelStlRoute, /URL-encoded JSON/);
+  assert.match(publicStlRoute, /api\/model\/stl\/route/);
+  assert.match(skill, /Direct STL fallback/);
+  assert.match(skill, /make\/model\.stl\?spec=/);
   assert.match(modelStlRoute, /X-Printa-Cache/);
   assert.match(modelStlRoute, /Server-Timing/);
   assert.match(studio, /AbortController/);
@@ -144,6 +159,7 @@ test("production build contains every public route", async () => {
     access(new URL(".next/server/app/api/fonts/route.js", root)),
     access(new URL(".next/server/app/api/font/route.js", root)),
     access(new URL(".next/server/app/api/model/stl/route.js", root)),
+    access(new URL(".next/server/app/make/model.stl/route.js", root)),
     access(new URL(".next/server/app/api/model/inspect/route.js", root)),
     access(new URL(".next/server/app/api/model/schema/route.js", root)),
     access(new URL(".next/server/app/skills/route.js", root)),

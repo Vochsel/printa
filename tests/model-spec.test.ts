@@ -116,6 +116,7 @@ root:
   assert.equal(fromYaml.print.placeOnBed, true);
   assert.equal(fromYaml.print.interiorStruts.enabled, false);
   assert.equal(fromYaml.display.dimensions.visible, true);
+  assert.equal(fromYaml.display.buildPlate, false);
   assert.equal(decodeModelDocument(encodeModelDocument(fromYaml)).name, "Test cylinder");
 });
 
@@ -127,9 +128,10 @@ test("publishes a machine-readable schema with every source family", () => {
   for (const modifier of ["twist", "taper", "radialWave", "bend", "noise", "smooth"]) {
     assert.match(schema, new RegExp(modifier));
   }
-  for (const textField of ["bevelSegments", "curveSegments", "bevelSide", "smoothNormals", "textCase", "underline"]) {
+  for (const textField of ["bevelSegments", "curveSegments", "extrudeSegments", "bevelSide", "smoothNormals", "textCase", "underline"]) {
     assert.match(schema, new RegExp(textField));
   }
+  for (const field of ["radiusOffset", "modulation", "buildPlate"]) assert.match(schema, new RegExp(field));
   assert.match(schema, /dimensions/);
 });
 
@@ -196,6 +198,31 @@ test("ordered modifiers materially deform geometry", () => {
   modified.dispose();
 });
 
+test("modifier modulation can fade a deformation across a local axis", () => {
+  const source = createSourceGeometry({
+    type: "revolve",
+    profile: [[20, 0], [24, 30], [24, 60], [20, 90]],
+    segments: 48,
+    profileSegments: 36,
+    radiusOffset: 0,
+    wall: 2,
+    bottomCap: true,
+    bottomThickness: 2.4,
+    topCap: false,
+    topThickness: 2.4,
+    interpolation: "linear",
+    axis: "z",
+  });
+  const zeroed = applyModifiers(source.clone(), [{
+    type: "radialWave", amplitude: 6, count: 5, phaseDeg: 0, axialTurns: 0,
+    modulation: { axis: "z", points: [[0, 0], [1, 0]], interpolation: "linear" },
+  }]);
+  const active = applyModifiers(source.clone(), [{ type: "radialWave", amplitude: 6, count: 5, phaseDeg: 0, axialTurns: 0 }]);
+  assert.deepEqual(geometryBounds(zeroed).map((value) => value.toFixed(4)), geometryBounds(source).map((value) => value.toFixed(4)));
+  assert.notDeepEqual(geometryBounds(active).map((value) => value.toFixed(4)), geometryBounds(source).map((value) => value.toFixed(4)));
+  source.dispose(); zeroed.dispose(); active.dispose();
+});
+
 test("every primitive honors exact outer width, depth, and height", () => {
   for (const [shape, extras] of [
     ["box", {}],
@@ -232,16 +259,48 @@ test("OpenType text honors exact tessellated width, visible height, and total be
       new openTypeRuntime.Glyph({ name: "A", unicode: 65, advanceWidth: 650, path: glyphPath }),
     ],
   });
+  let lowResolutionTriangles = 0;
   for (const bevelSide of ["both", "top", "bottom"] as const) {
     const { geometry } = createTextGeometry(font, {
       text: "A", font: "metric-test", widthMm: 52, sizeMm: 37, depthMm: 5.5,
-      bevelMm: 0.8, bevelSegments: 3, curveSegments: 6, bevelSide,
+      bevelMm: 0.8, bevelSegments: 3, curveSegments: 6, extrudeSegments: 1, bevelSide,
       smoothNormals: true, textCase: "original", fontWeight: "regular", italic: false, underline: false,
     });
     const stats = geometryStats(geometry);
     assert.deepEqual([stats.widthMm, stats.heightMm, stats.depthMm].map((value) => Number(value.toFixed(5))), [52, 37, 5.5], `${bevelSide} bevel text should match its requested outer bounds`);
+    lowResolutionTriangles = Math.max(lowResolutionTriangles, stats.triangles);
     geometry.dispose();
   }
+  const { geometry: segmented } = createTextGeometry(font, {
+    text: "A", font: "metric-test", widthMm: 52, sizeMm: 37, depthMm: 5.5,
+    bevelMm: 0.8, bevelSegments: 3, curveSegments: 6, extrudeSegments: 8, bevelSide: "both",
+    smoothNormals: true, textCase: "original", fontWeight: "regular", italic: false, underline: false,
+  });
+  assert.ok(geometryStats(segmented).triangles > lowResolutionTriangles, "depth subdivisions should add deformation-ready text geometry");
+  assert.deepEqual(geometryBounds(segmented).map((value) => Number(value.toFixed(5))), [52, 37, 5.5]);
+  segmented.dispose();
+});
+
+test("revolve radius offset expands the entire spun profile without changing height", () => {
+  const shared = {
+    type: "revolve" as const,
+    profile: [[18, 0], [24, 35], [20, 80]] as Array<[number, number]>,
+    segments: 64,
+    profileSegments: 40,
+    wall: 2,
+    bottomCap: true,
+    bottomThickness: 2.4,
+    topCap: false,
+    topThickness: 2.4,
+    interpolation: "linear" as const,
+    axis: "z" as const,
+  };
+  const original = createSourceGeometry({ ...shared, radiusOffset: 0 });
+  const expanded = createSourceGeometry({ ...shared, radiusOffset: 5 });
+  const originalBounds = geometryBounds(original);
+  const expandedBounds = geometryBounds(expanded);
+  assert.deepEqual(expandedBounds.map((value) => Number(value.toFixed(4))), [originalBounds[0] + 10, originalBounds[1] + 10, originalBounds[2]].map((value) => Number(value.toFixed(4))));
+  original.dispose(); expanded.dispose();
 });
 
 test("revolved shells support watertight solid bases and top caps with thickness", () => {
@@ -250,6 +309,7 @@ test("revolved shells support watertight solid bases and top caps with thickness
     profile: [[24, 0], [32, 30], [29, 70], [24, 110]] as Array<[number, number]>,
     segments: 72,
     profileSegments: 48,
+    radiusOffset: 0,
     wall: 2,
     interpolation: "catmull-rom" as const,
     axis: "z" as const,
@@ -269,6 +329,7 @@ test("all interior strut patterns fuse into bounded manifold printable geometry"
     profile: [[28, 0], [36, 30], [33, 74], [27, 116]] as Array<[number, number]>,
     segments: 72,
     profileSegments: 48,
+    radiusOffset: 0,
     wall: 2.4,
     bottomCap: true,
     bottomThickness: 3,

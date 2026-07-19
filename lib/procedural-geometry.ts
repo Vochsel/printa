@@ -50,21 +50,25 @@ function createExtrudeGeometry(source: Extract<SourceSpec, { type: "extrude" }>)
 }
 
 function sampleProfile(source: Extract<SourceSpec, { type: "revolve" }>) {
+  const sourceProfile = source.profile.map(([radius, height]) => [
+    Math.max(source.wall + 0.1, radius + source.radiusOffset),
+    height,
+  ] as [number, number]);
   if (source.interpolation === "linear") {
     const output: Array<[number, number]> = [];
-    const segmentCount = source.profile.length - 1;
+    const segmentCount = sourceProfile.length - 1;
     for (let index = 0; index <= source.profileSegments; index += 1) {
       const position = (index / source.profileSegments) * segmentCount;
       const segment = Math.min(segmentCount - 1, Math.floor(position));
       const t = position - segment;
-      const a = source.profile[segment];
-      const b = source.profile[segment + 1];
+      const a = sourceProfile[segment];
+      const b = sourceProfile[segment + 1];
       output.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
     }
     return output;
   }
   const curve = new CatmullRomCurve3(
-    source.profile.map(([radius, height]) => new Vector3(radius, 0, height)),
+    sourceProfile.map(([radius, height]) => new Vector3(radius, 0, height)),
     false,
     "centripetal",
   );
@@ -458,9 +462,35 @@ function boundsFor(geometry: BufferGeometry) {
   geometry.computeBoundingBox();
   const bounds = geometry.boundingBox!;
   return {
+    minX: bounds.min.x,
+    minY: bounds.min.y,
     minZ: bounds.min.z,
+    width: Math.max(1e-6, bounds.max.x - bounds.min.x),
+    depth: Math.max(1e-6, bounds.max.y - bounds.min.y),
     height: Math.max(1e-6, bounds.max.z - bounds.min.z),
   };
+}
+
+function modulationAmount(modifier: ModifierSpec, coordinates: { x: number; y: number; z: number }, bounds: ReturnType<typeof boundsFor>) {
+  if (!("modulation" in modifier) || !modifier.modulation) return 1;
+  const { axis, interpolation } = modifier.modulation;
+  const t = axis === "x"
+    ? (coordinates.x - bounds.minX) / bounds.width
+    : axis === "y"
+      ? (coordinates.y - bounds.minY) / bounds.depth
+      : (coordinates.z - bounds.minZ) / bounds.height;
+  const points = [...modifier.modulation.points].sort((a, b) => a[0] - b[0]);
+  if (t <= points[0][0]) return points[0][1];
+  if (t >= points.at(-1)![0]) return points.at(-1)![1];
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const from = points[index];
+    const to = points[index + 1];
+    if (t > to[0]) continue;
+    let local = (t - from[0]) / Math.max(1e-8, to[0] - from[0]);
+    if (interpolation === "smoothstep") local = local * local * (3 - 2 * local);
+    return from[1] + (to[1] - from[1]) * local;
+  }
+  return 1;
 }
 
 function laplacianSmooth(input: BufferGeometry, iterations: number, strength: number) {
@@ -522,22 +552,24 @@ export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[])
       const t = Math.min(1, Math.max(0, (z - minZ) / height));
       const radius = Math.hypot(x, y);
       const angle = Math.atan2(y, x);
+      const modulation = modulationAmount(modifier, { x, y, z }, bounds);
       if (modifier.type === "twist") {
         const span = Math.max(1e-6, modifier.end - modifier.start);
         const local = Math.min(1, Math.max(0, (t - modifier.start) / span));
-        const nextAngle = angle + modifier.angleDeg * DEG * local;
+        const nextAngle = angle + modifier.angleDeg * DEG * local * modulation;
         x = Math.cos(nextAngle) * radius;
         y = Math.sin(nextAngle) * radius;
       } else if (modifier.type === "taper") {
         const eased = modifier.easing === "smoothstep" ? t * t * (3 - 2 * t) : t;
-        const scale = modifier.from + (modifier.to - modifier.from) * eased;
+        const rawScale = modifier.from + (modifier.to - modifier.from) * eased;
+        const scale = 1 + (rawScale - 1) * modulation;
         x *= scale;
         y *= scale;
       } else if (modifier.type === "radialWave" || modifier.type === "axialWave" || modifier.type === "noise") {
         let amount = 0;
-        if (modifier.type === "radialWave") amount = modifier.amplitude * Math.sin(angle * modifier.count + modifier.phaseDeg * DEG + t * modifier.axialTurns * Math.PI * 2);
-        else if (modifier.type === "axialWave") amount = modifier.amplitude * Math.sin(t * modifier.cycles * Math.PI * 2 + modifier.phaseDeg * DEG);
-        else amount = modifier.amplitude * Math.sin((x + modifier.seed * 17.17) / modifier.scale * 2.13 + Math.sin((y - modifier.seed * 7.31) / modifier.scale * 1.71) + z / modifier.scale * 2.47);
+        if (modifier.type === "radialWave") amount = modifier.amplitude * modulation * Math.sin(angle * modifier.count + modifier.phaseDeg * DEG + t * modifier.axialTurns * Math.PI * 2);
+        else if (modifier.type === "axialWave") amount = modifier.amplitude * modulation * Math.sin(t * modifier.cycles * Math.PI * 2 + modifier.phaseDeg * DEG);
+        else amount = modifier.amplitude * modulation * Math.sin((x + modifier.seed * 17.17) / modifier.scale * 2.13 + Math.sin((y - modifier.seed * 7.31) / modifier.scale * 1.71) + z / modifier.scale * 2.47);
         const nextRadius = Math.max(0.05, radius + amount);
         x = Math.cos(angle) * nextRadius;
         y = Math.sin(angle) * nextRadius;
@@ -548,7 +580,7 @@ export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[])
         const localX = x * cosDirection + y * sinDirection;
         const localY = -x * sinDirection + y * cosDirection;
         const totalAngle = modifier.angleDeg * DEG;
-        const bendAngle = totalAngle * t;
+        const bendAngle = totalAngle * t * modulation;
         const bendRadius = height / totalAngle;
         const bentX = localX * Math.cos(bendAngle) + bendRadius * (1 - Math.cos(bendAngle));
         z = minZ + bendRadius * Math.sin(bendAngle) - localX * Math.sin(bendAngle);
@@ -558,7 +590,7 @@ export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[])
       position.setXYZ(index, x, y, z);
     }
     position.needsUpdate = true;
-    if (modifier.type === "bend") bounds = boundsFor(geometry);
+    bounds = boundsFor(geometry);
   }
   geometry.deleteAttribute("normal");
   geometry.computeVertexNormals();

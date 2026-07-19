@@ -1827,5 +1827,718 @@
         "fullWarmMs": 10.7
       }
     }
+  },
+  {
+    "generatedAt": "2026-07-19T11:21:27.690Z",
+    "revision": "9b0966be11cb+e1773966",
+    "commit": "9b0966be11cb",
+    "subject": "Redesign editor + MCP UI as a crisp design tool on shadcn",
+    "branch": "main",
+    "dirty": true,
+    "target": "local",
+    "runtime": "v25.8.1",
+    "platform": "darwin-arm64",
+    "cases": 21,
+    "builds": 85,
+    "firstMedianServerMs": 42.7,
+    "firstP95ServerMs": 483.1,
+    "warmMedianServerMs": 7.8,
+    "warmP95ServerMs": 28.5,
+    "warmCacheHitRate": 1,
+    "suiteFingerprint": "a3eab5cff1a4",
+    "caseMetrics": {
+      "type-specimen": {
+        "previewFirstMs": 2292.9,
+        "previewTriangles": 8700,
+        "previewBytes": 435084,
+        "previewWarmMs": 7.5,
+        "fullFirstMs": 78.3,
+        "fullTriangles": 15760,
+        "fullBytes": 788084,
+        "fullWarmMs": 5.2
+      },
+      "contour-spiral-vase": {
+        "previewFirstMs": 37.1,
+        "previewTriangles": 27648,
+        "previewBytes": 1382484,
+        "previewWarmMs": 9,
+        "fullFirstMs": 65.4,
+        "fullTriangles": 91392,
+        "fullBytes": 4569684,
+        "fullWarmMs": 26.8
+      },
+      "zenith-twist": {
+        "previewFirstMs": 20.1,
+        "previewTriangles": 27648,
+        "previewBytes": 1382484,
+        "previewWarmMs": 7.5,
+        "fullFirstMs": 58.5,
+        "fullTriangles": 92880,
+        "fullBytes": 4644084,
+        "fullWarmMs": 26.7
+      },
+      "fluted-bud-vase": {
+        "previewFirstMs": 19.3,
+        "previewTriangles": 27840,
+        "previewBytes": 1392084,
+        "previewWarmMs": 8.2,
+        "fullFirstMs": 77.1,
+        "fullTriangles": 86016,
+        "fullBytes": 4300884,
+        "fullWarmMs": 26.4
+      },
+      "ripple-column-vase": {
+        "previewFirstMs": 18.1,
+        "previewTriangles": 27264,
+        "previewBytes": 1363284,
+        "previewWarmMs": 8.8,
+        "fullFirstMs": 78.5,
+        "fullTriangles": 101520,
+        "fullBytes": 5076084,
+        "fullWarmMs": 28.5
+      },
+      "spline-petal-dish": {
+        "previewFirstMs": 8.9,
+        "previewTriangles": 764,
+        "previewBytes": 38284,
+        "previewWarmMs": 0.9,
+        "fullFirstMs": 48.2,
+        "fullTriangles": 1916,
+        "fullBytes": 95884,
+        "fullWarmMs": 1.6
+      },
+      "primitive-totem": {
+        "previewFirstMs": 33,
+        "previewTriangles": 8704,
+        "previewBytes": 435284,
+        "previewWarmMs": 7.6,
+        "fullFirstMs": 42.7,
+        "fullTriangles": 19200,
+        "fullBytes": 960084,
+        "fullWarmMs": 8.7
+      },
+      "water-ripple-tile": {
+        "previewFirstMs": 6.3,
+        "previewTriangles": 6396,
+        "previewBytes": 319884,
+        "previewWarmMs": 2,
+        "fullFirstMs": 11,
+        "fullTriangles": 16380,
+        "fullBytes": 819084,
+        "fullWarmMs": 5
+      },
+      "cloth-drape-study": {
+        "previewFirstMs": 63,
+        "previewTriangles": 2300,
+        "previewBytes": 115084,
+        "previewWarmMs": 0.9,
+        "fullFirstMs": 86.7,
+        "fullTriangles": 3596,
+        "fullBytes": 179884,
+        "fullWarmMs": 1.3
+      },
+      "modulated-offset-vase": {
+        "previewFirstMs": 27.2,
+        "previewTriangles": 27840,
+        "previewBytes": 1392084,
+        "previewWarmMs": 7.6,
+        "fullFirstMs": 41.9,
+        "fullTriangles": 52992,
+        "fullBytes": 2649684,
+        "fullWarmMs": 15.2
+      },
+      "all-primitives-assembly": {
+        "previewFirstMs": 8.3,
+        "previewTriangles": 6540,
+        "previewBytes": 327084,
+        "previewWarmMs": 2.8,
+        "fullFirstMs": 9.7,
+        "fullTriangles": 8220,
+        "fullBytes": 411084,
+        "fullWarmMs": 3.6
+      },
+      "modifier-gauntlet": {
+        "previewFirstMs": 24.1,
+        "previewTriangles": 3968,
+        "previewBytes": 198484,
+        "previewWarmMs": 2.1,
+        "fullFirstMs": 33.8,
+        "fullTriangles": 9024,
+        "fullBytes": 451284,
+        "fullWarmMs": 3.5
+      },
+      "extrude-hole-curves": {
+        "previewFirstMs": 3.2,
+        "previewTriangles": 800,
+        "previewBytes": 40084,
+        "previewWarmMs": 0.8,
+        "fullFirstMs": 7.7,
+        "fullTriangles": 3648,
+        "fullBytes": 182484,
+        "fullWarmMs": 2.6
+      },
+      "deep-repeat-graph": {
+        "previewFirstMs": 35.3,
+        "previewTriangles": 17760,
+        "previewBytes": 888084,
+        "previewWarmMs": 9.5,
+        "fullFirstMs": 10.1,
+        "fullTriangles": 17760,
+        "fullBytes": 888084,
+        "fullWarmMs": 10.1
+      },
+      "styled-google-text": {
+        "previewFirstMs": 138.7,
+        "previewTriangles": 28474,
+        "previewBytes": 1423784,
+        "previewWarmMs": 7.9,
+        "fullFirstMs": 483.1,
+        "fullTriangles": 107746,
+        "fullBytes": 5387384,
+        "fullWarmMs": 47.3
+      },
+      "exact-sphere-centimetres": {
+        "previewFirstMs": 1.2,
+        "previewTriangles": 1258,
+        "previewBytes": 62984,
+        "previewWarmMs": 0.7,
+        "fullFirstMs": 0.8,
+        "fullTriangles": 1258,
+        "fullBytes": 62984,
+        "fullWarmMs": 0.7
+      },
+      "exact-opentype-text": {
+        "previewFirstMs": 64.8,
+        "previewTriangles": 11732,
+        "previewBytes": 586684,
+        "previewWarmMs": 3.3,
+        "fullFirstMs": 111.5,
+        "fullTriangles": 24996,
+        "fullBytes": 1249884,
+        "fullWarmMs": 7.1
+      },
+      "tall-marble-mcp-vase": {
+        "previewFirstMs": 31.6,
+        "previewTriangles": 29696,
+        "previewBytes": 1484884,
+        "previewWarmMs": 12.2,
+        "fullFirstMs": 153.5,
+        "fullTriangles": 149888,
+        "fullBytes": 7494484,
+        "fullWarmMs": 72.1
+      },
+      "struts-cross": {
+        "previewFirstMs": 235,
+        "previewTriangles": 28056,
+        "previewBytes": 1402884,
+        "previewWarmMs": 12.8,
+        "fullFirstMs": 196,
+        "fullTriangles": 36280,
+        "fullBytes": 1814084,
+        "fullWarmMs": 13.1
+      },
+      "struts-diamond": {
+        "previewFirstMs": 310.2,
+        "previewTriangles": 29896,
+        "previewBytes": 1494884,
+        "previewWarmMs": 10.4,
+        "fullFirstMs": 492,
+        "fullTriangles": 38696,
+        "fullBytes": 1934884,
+        "fullWarmMs": 14.5
+      },
+      "struts-radial": {
+        "previewFirstMs": 154.6,
+        "previewTriangles": 28460,
+        "previewBytes": 1423084,
+        "previewWarmMs": 7.8,
+        "fullFirstMs": 208.8,
+        "fullTriangles": 37018,
+        "fullBytes": 1850984,
+        "fullWarmMs": 10.8
+      }
+    }
+  },
+  {
+    "generatedAt": "2026-07-19T11:23:04.835Z",
+    "revision": "9b0966be11cb+8b3c091e",
+    "commit": "9b0966be11cb",
+    "subject": "Redesign editor + MCP UI as a crisp design tool on shadcn",
+    "branch": "main",
+    "dirty": true,
+    "target": "local",
+    "runtime": "v25.8.1",
+    "platform": "darwin-arm64",
+    "cases": 22,
+    "builds": 89,
+    "firstMedianServerMs": 48,
+    "firstP95ServerMs": 489.6,
+    "warmMedianServerMs": 7.8,
+    "warmP95ServerMs": 27.9,
+    "warmCacheHitRate": 1,
+    "suiteFingerprint": "c007021cbaaf",
+    "caseMetrics": {
+      "type-specimen": {
+        "previewFirstMs": 1236.2,
+        "previewTriangles": 8700,
+        "previewBytes": 435084,
+        "previewWarmMs": 7.1,
+        "fullFirstMs": 78.4,
+        "fullTriangles": 15760,
+        "fullBytes": 788084,
+        "fullWarmMs": 5.3
+      },
+      "contour-spiral-vase": {
+        "previewFirstMs": 36.3,
+        "previewTriangles": 27648,
+        "previewBytes": 1382484,
+        "previewWarmMs": 9.6,
+        "fullFirstMs": 62.6,
+        "fullTriangles": 91392,
+        "fullBytes": 4569684,
+        "fullWarmMs": 26.9
+      },
+      "zenith-twist": {
+        "previewFirstMs": 20,
+        "previewTriangles": 27648,
+        "previewBytes": 1382484,
+        "previewWarmMs": 7.5,
+        "fullFirstMs": 59.1,
+        "fullTriangles": 92880,
+        "fullBytes": 4644084,
+        "fullWarmMs": 26.2
+      },
+      "fluted-bud-vase": {
+        "previewFirstMs": 18.6,
+        "previewTriangles": 27840,
+        "previewBytes": 1392084,
+        "previewWarmMs": 8.1,
+        "fullFirstMs": 76.9,
+        "fullTriangles": 86016,
+        "fullBytes": 4300884,
+        "fullWarmMs": 26.3
+      },
+      "ripple-column-vase": {
+        "previewFirstMs": 17.3,
+        "previewTriangles": 27264,
+        "previewBytes": 1363284,
+        "previewWarmMs": 7.9,
+        "fullFirstMs": 65.3,
+        "fullTriangles": 101520,
+        "fullBytes": 5076084,
+        "fullWarmMs": 27.9
+      },
+      "spline-petal-dish": {
+        "previewFirstMs": 9.7,
+        "previewTriangles": 764,
+        "previewBytes": 38284,
+        "previewWarmMs": 0.8,
+        "fullFirstMs": 48,
+        "fullTriangles": 1916,
+        "fullBytes": 95884,
+        "fullWarmMs": 1.3
+      },
+      "primitive-totem": {
+        "previewFirstMs": 30.2,
+        "previewTriangles": 8704,
+        "previewBytes": 435284,
+        "previewWarmMs": 6.4,
+        "fullFirstMs": 40.5,
+        "fullTriangles": 19200,
+        "fullBytes": 960084,
+        "fullWarmMs": 8.1
+      },
+      "water-ripple-tile": {
+        "previewFirstMs": 11.7,
+        "previewTriangles": 6396,
+        "previewBytes": 319884,
+        "previewWarmMs": 3.3,
+        "fullFirstMs": 15.6,
+        "fullTriangles": 16380,
+        "fullBytes": 819084,
+        "fullWarmMs": 6
+      },
+      "cloth-drape-study": {
+        "previewFirstMs": 52.3,
+        "previewTriangles": 2300,
+        "previewBytes": 115084,
+        "previewWarmMs": 0.8,
+        "fullFirstMs": 58,
+        "fullTriangles": 3596,
+        "fullBytes": 179884,
+        "fullWarmMs": 1.5
+      },
+      "modulated-offset-vase": {
+        "previewFirstMs": 26.6,
+        "previewTriangles": 27840,
+        "previewBytes": 1392084,
+        "previewWarmMs": 7.8,
+        "fullFirstMs": 45.5,
+        "fullTriangles": 52992,
+        "fullBytes": 2649684,
+        "fullWarmMs": 18.6
+      },
+      "all-primitives-assembly": {
+        "previewFirstMs": 11.9,
+        "previewTriangles": 6540,
+        "previewBytes": 327084,
+        "previewWarmMs": 4.9,
+        "fullFirstMs": 13.6,
+        "fullTriangles": 8220,
+        "fullBytes": 411084,
+        "fullWarmMs": 6.5
+      },
+      "modifier-gauntlet": {
+        "previewFirstMs": 25.1,
+        "previewTriangles": 3968,
+        "previewBytes": 198484,
+        "previewWarmMs": 2.3,
+        "fullFirstMs": 35.6,
+        "fullTriangles": 9024,
+        "fullBytes": 451284,
+        "fullWarmMs": 4.8
+      },
+      "extrude-hole-curves": {
+        "previewFirstMs": 2.7,
+        "previewTriangles": 800,
+        "previewBytes": 40084,
+        "previewWarmMs": 0.8,
+        "fullFirstMs": 7.9,
+        "fullTriangles": 3648,
+        "fullBytes": 182484,
+        "fullWarmMs": 2.7
+      },
+      "deep-repeat-graph": {
+        "previewFirstMs": 35,
+        "previewTriangles": 17760,
+        "previewBytes": 888084,
+        "previewWarmMs": 9.6,
+        "fullFirstMs": 16.6,
+        "fullTriangles": 17760,
+        "fullBytes": 888084,
+        "fullWarmMs": 10.2
+      },
+      "styled-google-text": {
+        "previewFirstMs": 109.9,
+        "previewTriangles": 20692,
+        "previewBytes": 1034684,
+        "previewWarmMs": 6.1,
+        "fullFirstMs": 334.3,
+        "fullTriangles": 79376,
+        "fullBytes": 3968884,
+        "fullWarmMs": 29.2
+      },
+      "segmented-google-text": {
+        "previewFirstMs": 863.2,
+        "previewTriangles": 23632,
+        "previewBytes": 1181684,
+        "previewWarmMs": 7.7,
+        "fullFirstMs": 177,
+        "fullTriangles": 47720,
+        "fullBytes": 2386084,
+        "fullWarmMs": 13
+      },
+      "exact-sphere-centimetres": {
+        "previewFirstMs": 0.8,
+        "previewTriangles": 1258,
+        "previewBytes": 62984,
+        "previewWarmMs": 0.5,
+        "fullFirstMs": 0.6,
+        "fullTriangles": 1258,
+        "fullBytes": 62984,
+        "fullWarmMs": 0.6
+      },
+      "exact-opentype-text": {
+        "previewFirstMs": 53.4,
+        "previewTriangles": 11732,
+        "previewBytes": 586684,
+        "previewWarmMs": 3.2,
+        "fullFirstMs": 106.6,
+        "fullTriangles": 24996,
+        "fullBytes": 1249884,
+        "fullWarmMs": 6.8
+      },
+      "tall-marble-mcp-vase": {
+        "previewFirstMs": 32.9,
+        "previewTriangles": 29696,
+        "previewBytes": 1484884,
+        "previewWarmMs": 12.3,
+        "fullFirstMs": 138.9,
+        "fullTriangles": 149888,
+        "fullBytes": 7494484,
+        "fullWarmMs": 58.7
+      },
+      "struts-cross": {
+        "previewFirstMs": 214.9,
+        "previewTriangles": 28056,
+        "previewBytes": 1402884,
+        "previewWarmMs": 11.7,
+        "fullFirstMs": 188.6,
+        "fullTriangles": 36280,
+        "fullBytes": 1814084,
+        "fullWarmMs": 12.6
+      },
+      "struts-diamond": {
+        "previewFirstMs": 319.8,
+        "previewTriangles": 29896,
+        "previewBytes": 1494884,
+        "previewWarmMs": 10.3,
+        "fullFirstMs": 489.6,
+        "fullTriangles": 38696,
+        "fullBytes": 1934884,
+        "fullWarmMs": 11.6
+      },
+      "struts-radial": {
+        "previewFirstMs": 159,
+        "previewTriangles": 28460,
+        "previewBytes": 1423084,
+        "previewWarmMs": 10,
+        "fullFirstMs": 224,
+        "fullTriangles": 37018,
+        "fullBytes": 1850984,
+        "fullWarmMs": 10.6
+      }
+    }
+  },
+  {
+    "generatedAt": "2026-07-19T11:24:35.229Z",
+    "revision": "9b0966be11cb+01dea755",
+    "commit": "9b0966be11cb",
+    "subject": "Redesign editor + MCP UI as a crisp design tool on shadcn",
+    "branch": "main",
+    "dirty": true,
+    "target": "local",
+    "runtime": "v25.8.1",
+    "platform": "darwin-arm64",
+    "cases": 22,
+    "builds": 89,
+    "firstMedianServerMs": 48.1,
+    "firstP95ServerMs": 351.1,
+    "warmMedianServerMs": 8.2,
+    "warmP95ServerMs": 26.1,
+    "warmCacheHitRate": 1,
+    "suiteFingerprint": "c007021cbaaf",
+    "caseMetrics": {
+      "type-specimen": {
+        "previewFirstMs": 5465.9,
+        "previewTriangles": 8700,
+        "previewBytes": 435084,
+        "previewWarmMs": 7.7,
+        "fullFirstMs": 77.8,
+        "fullTriangles": 15760,
+        "fullBytes": 788084,
+        "fullWarmMs": 5.2
+      },
+      "contour-spiral-vase": {
+        "previewFirstMs": 35.4,
+        "previewTriangles": 27648,
+        "previewBytes": 1382484,
+        "previewWarmMs": 8.8,
+        "fullFirstMs": 64.8,
+        "fullTriangles": 91392,
+        "fullBytes": 4569684,
+        "fullWarmMs": 26.1
+      },
+      "zenith-twist": {
+        "previewFirstMs": 19.9,
+        "previewTriangles": 27648,
+        "previewBytes": 1382484,
+        "previewWarmMs": 8.1,
+        "fullFirstMs": 58.8,
+        "fullTriangles": 92880,
+        "fullBytes": 4644084,
+        "fullWarmMs": 25.6
+      },
+      "fluted-bud-vase": {
+        "previewFirstMs": 18.2,
+        "previewTriangles": 27840,
+        "previewBytes": 1392084,
+        "previewWarmMs": 8,
+        "fullFirstMs": 74.4,
+        "fullTriangles": 86016,
+        "fullBytes": 4300884,
+        "fullWarmMs": 23.1
+      },
+      "ripple-column-vase": {
+        "previewFirstMs": 16.4,
+        "previewTriangles": 27264,
+        "previewBytes": 1363284,
+        "previewWarmMs": 7.2,
+        "fullFirstMs": 61.6,
+        "fullTriangles": 101520,
+        "fullBytes": 5076084,
+        "fullWarmMs": 28.8
+      },
+      "spline-petal-dish": {
+        "previewFirstMs": 9.4,
+        "previewTriangles": 764,
+        "previewBytes": 38284,
+        "previewWarmMs": 0.7,
+        "fullFirstMs": 52.5,
+        "fullTriangles": 1916,
+        "fullBytes": 95884,
+        "fullWarmMs": 1.7
+      },
+      "primitive-totem": {
+        "previewFirstMs": 26.4,
+        "previewTriangles": 8704,
+        "previewBytes": 435284,
+        "previewWarmMs": 8.9,
+        "fullFirstMs": 33.7,
+        "fullTriangles": 19200,
+        "fullBytes": 960084,
+        "fullWarmMs": 8.2
+      },
+      "water-ripple-tile": {
+        "previewFirstMs": 6.3,
+        "previewTriangles": 6396,
+        "previewBytes": 319884,
+        "previewWarmMs": 1.9,
+        "fullFirstMs": 9.8,
+        "fullTriangles": 16380,
+        "fullBytes": 819084,
+        "fullWarmMs": 5
+      },
+      "cloth-drape-study": {
+        "previewFirstMs": 48.1,
+        "previewTriangles": 2300,
+        "previewBytes": 115084,
+        "previewWarmMs": 0.9,
+        "fullFirstMs": 59.7,
+        "fullTriangles": 3596,
+        "fullBytes": 179884,
+        "fullWarmMs": 1.2
+      },
+      "modulated-offset-vase": {
+        "previewFirstMs": 29.8,
+        "previewTriangles": 27840,
+        "previewBytes": 1392084,
+        "previewWarmMs": 7.6,
+        "fullFirstMs": 42,
+        "fullTriangles": 52992,
+        "fullBytes": 2649684,
+        "fullWarmMs": 15
+      },
+      "all-primitives-assembly": {
+        "previewFirstMs": 8.8,
+        "previewTriangles": 6540,
+        "previewBytes": 327084,
+        "previewWarmMs": 2.9,
+        "fullFirstMs": 9.5,
+        "fullTriangles": 8220,
+        "fullBytes": 411084,
+        "fullWarmMs": 3.6
+      },
+      "modifier-gauntlet": {
+        "previewFirstMs": 24.4,
+        "previewTriangles": 3968,
+        "previewBytes": 198484,
+        "previewWarmMs": 2,
+        "fullFirstMs": 34.5,
+        "fullTriangles": 9024,
+        "fullBytes": 451284,
+        "fullWarmMs": 3.5
+      },
+      "extrude-hole-curves": {
+        "previewFirstMs": 2.5,
+        "previewTriangles": 800,
+        "previewBytes": 40084,
+        "previewWarmMs": 0.8,
+        "fullFirstMs": 8.5,
+        "fullTriangles": 3648,
+        "fullBytes": 182484,
+        "fullWarmMs": 2.5
+      },
+      "deep-repeat-graph": {
+        "previewFirstMs": 35.3,
+        "previewTriangles": 17760,
+        "previewBytes": 888084,
+        "previewWarmMs": 9.3,
+        "fullFirstMs": 9.7,
+        "fullTriangles": 17760,
+        "fullBytes": 888084,
+        "fullWarmMs": 9.7
+      },
+      "styled-google-text": {
+        "previewFirstMs": 104.3,
+        "previewTriangles": 20692,
+        "previewBytes": 1034684,
+        "previewWarmMs": 8.2,
+        "fullFirstMs": 351.1,
+        "fullTriangles": 79376,
+        "fullBytes": 3968884,
+        "fullWarmMs": 22.8
+      },
+      "segmented-google-text": {
+        "previewFirstMs": 126,
+        "previewTriangles": 23632,
+        "previewBytes": 1181684,
+        "previewWarmMs": 8.3,
+        "fullFirstMs": 189.3,
+        "fullTriangles": 47720,
+        "fullBytes": 2386084,
+        "fullWarmMs": 13.3
+      },
+      "exact-sphere-centimetres": {
+        "previewFirstMs": 1,
+        "previewTriangles": 1258,
+        "previewBytes": 62984,
+        "previewWarmMs": 0.6,
+        "fullFirstMs": 0.7,
+        "fullTriangles": 1258,
+        "fullBytes": 62984,
+        "fullWarmMs": 0.7
+      },
+      "exact-opentype-text": {
+        "previewFirstMs": 70.6,
+        "previewTriangles": 11732,
+        "previewBytes": 586684,
+        "previewWarmMs": 4.9,
+        "fullFirstMs": 114.7,
+        "fullTriangles": 24996,
+        "fullBytes": 1249884,
+        "fullWarmMs": 7.1
+      },
+      "tall-marble-mcp-vase": {
+        "previewFirstMs": 33.4,
+        "previewTriangles": 29696,
+        "previewBytes": 1484884,
+        "previewWarmMs": 12.3,
+        "fullFirstMs": 151.8,
+        "fullTriangles": 149888,
+        "fullBytes": 7494484,
+        "fullWarmMs": 66.8
+      },
+      "struts-cross": {
+        "previewFirstMs": 217.4,
+        "previewTriangles": 28056,
+        "previewBytes": 1402884,
+        "previewWarmMs": 12.3,
+        "fullFirstMs": 192.6,
+        "fullTriangles": 36280,
+        "fullBytes": 1814084,
+        "fullWarmMs": 13.5
+      },
+      "struts-diamond": {
+        "previewFirstMs": 313,
+        "previewTriangles": 29896,
+        "previewBytes": 1494884,
+        "previewWarmMs": 9.6,
+        "fullFirstMs": 490,
+        "fullTriangles": 38696,
+        "fullBytes": 1934884,
+        "fullWarmMs": 14.5
+      },
+      "struts-radial": {
+        "previewFirstMs": 156.6,
+        "previewTriangles": 28460,
+        "previewBytes": 1423084,
+        "previewWarmMs": 8.3,
+        "fullFirstMs": 219.5,
+        "fullTriangles": 37018,
+        "fullBytes": 1850984,
+        "fullWarmMs": 11.9
+      }
+    }
   }
 ]

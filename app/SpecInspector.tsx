@@ -163,9 +163,9 @@ function SpecFontPicker({ value, fonts, onChange }: { value: string; fonts: Font
 }
 
 function sourceDefaults(type: SourceSpec["type"]): SourceSpec {
-  if (type === "text") return { type, text: "Printa", font: "Roboto", size: 36, depth: 4, bevel: 0.6, bevelSegments: 3, curveSegments: 10, bevelSide: "both", smoothNormals: true, textCase: "original", weight: "regular", italic: false, underline: false };
+  if (type === "text") return { type, text: "Printa", font: "Roboto", size: 36, depth: 4, bevel: 0.6, bevelSegments: 3, curveSegments: 10, extrudeSegments: 1, bevelSide: "both", smoothNormals: true, textCase: "original", weight: "regular", italic: false, underline: false };
   if (type === "primitive") return { type, shape: "cylinder", radius: 20, height: 60, segments: 64 };
-  if (type === "revolve") return { type, profile: [[24, 0], [32, 30], [29, 70], [24, 110]], segments: 128, profileSegments: 96, wall: 2, bottomCap: true, bottomThickness: 2.4, topCap: false, topThickness: 2.4, interpolation: "catmull-rom", axis: "z" };
+  if (type === "revolve") return { type, profile: [[24, 0], [32, 30], [29, 70], [24, 110]], segments: 128, profileSegments: 96, radiusOffset: 0, wall: 2, bottomCap: true, bottomThickness: 2.4, topCap: false, topThickness: 2.4, interpolation: "catmull-rom", axis: "z" };
   if (type === "extrude") return { type, depth: 8, bevel: 0.8, bevelSegments: 3, curveSegments: 12, direction: [0, 0, 1], path: { commands: [{ op: "move", to: [-25, -25] }, { op: "line", to: [25, -25] }, { op: "line", to: [25, 25] }, { op: "line", to: [-25, 25] }, { op: "close" }], holes: [] } };
   if (type === "water") return { type, width: 100, depth: 80, base: 3, resolution: 56, steps: 50, damping: 0.985, drops: [{ x: 0, y: 0, radius: 8, amplitude: 5 }] };
   return { type: "cloth", width: 100, depth: 100, thickness: 1.2, resolution: 28, steps: 100, startHeight: 35, gravity: 0.18, constraintIterations: 4, pins: "corners" };
@@ -278,6 +278,7 @@ function SourceEditor({ source, fonts, update }: { source: SourceSpec; fonts: Fo
           <NumberField label="Bevel detail" value={source.bevelSegments} min={1} max={12} onChange={(value) => set("bevelSegments", value)} />
           <NumberField label="Curve detail" value={source.curveSegments} min={2} max={24} onChange={(value) => set("curveSegments", value)} />
         </Grid3>
+        <NumberField layout="row" label="Extrusion segments" value={source.extrudeSegments} min={1} max={64} onChange={(value) => set("extrudeSegments", value)} />
         <SelectField label="Bevel faces" value={source.bevelSide} options={["both", "top", "bottom"]} onChange={(value) => set("bevelSide", value)} />
       </>}
       {source.type === "primitive" && <>
@@ -301,6 +302,7 @@ function SourceEditor({ source, fonts, update }: { source: SourceSpec; fonts: Fo
           <NumberField label="Roundness" value={source.segments} min={8} max={512} onChange={(value) => set("segments", value)} />
           <NumberField label="Profile detail" value={source.profileSegments} min={2} max={256} onChange={(value) => set("profileSegments", value)} />
         </Grid3>
+        <NumberField layout="row" label="Global radius offset" value={source.radiusOffset} step={0.5} unit="mm" onChange={(value) => set("radiusOffset", value)} />
         <Grid2>
           <ToggleField label="Solid base" detail="Close the bottom" value={source.bottomCap} onChange={(value) => set("bottomCap", value)} />
           <NumberField label="Base thickness" value={source.bottomThickness} min={0.1} step={0.1} unit="mm" onChange={(value) => set("bottomThickness", value)} />
@@ -506,7 +508,7 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
             </SectionHead>
             <p className="mb-2 text-[10px] text-muted-foreground">{MODIFIER_META[selectedModifier.type].hint}. Modifiers apply top to bottom.</p>
             <Grid2>
-              {Object.entries(selectedModifier).filter(([key]) => key !== "type").map(([key, value]) => {
+              {Object.entries(selectedModifier).filter(([key]) => key !== "type" && key !== "modulation").map(([key, value]) => {
                 const meta = MODIFIER_FIELDS[key] ?? { label: key };
                 const write = (next: unknown) => mutateNode((node) => { (node.modifiers[modifierIndex] as unknown as Record<string, unknown>)[key] = next; });
                 return typeof value === "number" ? (
@@ -516,6 +518,25 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
                 );
               })}
             </Grid2>
+            {selectedModifier.type !== "smooth" && <div className="mt-2 grid gap-2 border-t border-border pt-2">
+              <ToggleField
+                label="Vary amount over shape"
+                detail="Normalized keyframes along a local axis"
+                value={Boolean(selectedModifier.modulation)}
+                onChange={(enabled) => mutateNode((node) => {
+                  const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" }>;
+                  if (enabled) modifier.modulation = { axis: "z", points: [[0, 0], [0.2, 1], [0.8, 1], [1, 0]], interpolation: "smoothstep" };
+                  else delete modifier.modulation;
+                })}
+              />
+              {selectedModifier.modulation && <>
+                <Grid2>
+                  <SelectField label="Modulation axis" value={selectedModifier.modulation.axis} options={["x", "y", "z"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" }>; if (modifier.modulation) modifier.modulation.axis = value as "x" | "y" | "z"; })} />
+                  <SelectField label="Interpolation" value={selectedModifier.modulation.interpolation} options={["linear", "smoothstep"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" }>; if (modifier.modulation) modifier.modulation.interpolation = value as "linear" | "smoothstep"; })} />
+                </Grid2>
+                <PointListField label="Amount curve · normalized" columns={["Position 0–1", "Multiplier"]} value={selectedModifier.modulation.points} onChange={(points) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" }>; if (modifier.modulation) modifier.modulation.points = points; })} />
+              </>}
+            </div>}
           </>
         ) : (
           <>
@@ -572,8 +593,9 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
             ))}
           </Grid3>
           <ToggleField label="Auto center" detail="Keep the model centered on the plate" value={document.print.autoCenter} onChange={(value) => mutate((draft) => { draft.print.autoCenter = value; })} />
+          <ToggleField label="Preview build plate" detail={`${document.print.buildVolume[0]} × ${document.print.buildVolume[1]} mm`} value={document.display.buildPlate} onChange={(value) => mutate((draft) => { draft.display.buildPlate = value; })} />
           <div className="mt-1 grid gap-2.5 border-t border-border pt-3">
-            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground"><Settings2 size={12} /> Interior struts</span>
+            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground"><Settings2 size={12} /> Internal lattice</span>
             <ToggleField
               label="Structural lattice inside"
               detail={supportsInteriorStruts ? "Included in the preview and STL" : "Needs a hollow spun-profile layer"}

@@ -15,6 +15,7 @@ root:
     profile: [[31, 0], [39, 50], [36, 92], [27, 145]]
     segments: 192
     profileSegments: 110
+    radiusOffset: 2
     wall: 2.2
     bottomCap: true
     bottomThickness: 3
@@ -22,7 +23,15 @@ root:
     topThickness: 2.4
     interpolation: catmull-rom
   modifiers:
-    - { type: radialWave, amplitude: 1.7, count: 18, phaseDeg: 0, axialTurns: 0 }
+    - type: radialWave
+      amplitude: 1.7
+      count: 18
+      phaseDeg: 0
+      axialTurns: 0
+      modulation:
+        axis: z
+        points: [[0, 0.25], [0.15, 1], [0.82, 1], [1, 0]]
+        interpolation: smoothstep
     - { type: twist, angleDeg: 220, start: 0, end: 1 }
   material: pla-matte
 print:

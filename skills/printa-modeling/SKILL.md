@@ -13,6 +13,17 @@ Use the streamable HTTP MCP endpoint at `https://printa.vochsel.com/mcp`.
 
 Read the machine schema at `https://printa.vochsel.com/api/model/schema` when exact field validation is needed. Read [the spec reference](https://printa.vochsel.com/skills/spec-reference) for field semantics and [the examples](https://printa.vochsel.com/skills/examples) for reusable patterns.
 
+## Direct STL fallback
+
+If the MCP server or MCP UI is not installed or does not return its tool result correctly, generate the same model without the plugin:
+
+1. Complete and validate the full Printa JSON document locally.
+2. UTF-8 encode the compact JSON and convert it to unpadded base64url.
+3. Append it as `spec` to `https://printa.vochsel.com/make/model.stl?spec=ENCODED_SPEC`.
+4. Return that URL as the direct binary STL download.
+
+The endpoint evaluates the model when requested and returns `Content-Type: model/stl`. It also accepts a URL-encoded raw JSON or YAML document in `spec`, but base64url is preferred because punctuation survives chat clients and Markdown safely. Keep direct URLs comfortably below common URL-length limits; use the MCP tool or POST `/api/model/stl` for unusually large documents.
+
 ## Model workflow
 
 1. Translate the request into one source node or a small graph of nodes.
@@ -33,6 +44,7 @@ Read the machine schema at `https://printa.vochsel.com/api/model/schema` when ex
 - Use `primitive` for structural parts and assembly building blocks.
 - Treat primitive `width`, `depth`, and `height` as exact outer bounds. For text, set `height` and `depth` for exact final dimensions and add `width` only when stretching or fitting to an exact width is intended.
 - Use `text` for any Google-Font solid. Font, weight, case, italic, underline, bevel faces, smoothing, and curve resolution all belong in the source spec.
+- Use `extrudeSegments` when text needs subdivisions through its depth, especially before deformations; `curveSegments` controls glyph outlines and `bevelSegments` controls rounded edges.
 - Use `water` to freeze a deterministic damped-wave simulation into a solid tile.
 - Use `cloth` to drape a thickened printable sheet over a spherical collider.
 - Use `repeat` for radial-looking stacks, columns, ribs made from parts, and regular arrays.
@@ -42,6 +54,8 @@ Read the machine schema at `https://printa.vochsel.com/api/model/schema` when ex
 Represent the silhouette as `[radius, height]` profile points in a `revolve` source. Set `wall` to create a hollow printable shell, keep `bottomCap: true` with a suitable `bottomThickness` for a usable vessel, and enable `topCap` only for sealed forms. Then:
 
 - Add `radialWave` for flutes or lobes.
+- Use `radiusOffset` to expand or contract every spun-profile radius without rewriting its control points.
+- Add a `modulation` envelope to make flute or deformation amount vary over normalized height. Four keyframes are usually enough.
 - Add `twist` after `radialWave` to turn those ribs into helices.
 - Add `taper` after the ribs when the whole upper section should narrow.
 - Use three or four large lobes for sculptural twists; use 12–24 shallow lobes for fine fluting.
@@ -66,6 +80,7 @@ Represent the silhouette as `[radius, height]` profile points in a `revolve` sou
 - Use descriptive node ids such as `outer-vessel`, `rim`, or `water-surface`.
 - Add a concise document description and metadata family.
 - Set `display.dimensions` when W/H floor gizmos should be visible in the editor handoff.
+- Set `display.buildPlate: true` when the editor should preview the configured `print.buildVolume` footprint.
 - Prefer 4–9 profile control points and smooth interpolation over dense profiles.
 - Use one modifier per conceptual change.
 - Return a complete document beginning with `version: "1.0"`; never return a fragment unless explicitly requested.

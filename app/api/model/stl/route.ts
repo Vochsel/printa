@@ -11,7 +11,10 @@ async function inputFromRequest(request: Request) {
   const demo = getDemoModel(url.searchParams.get("demo"));
   if (demo) return { input: demo, preview };
   const encoded = url.searchParams.get("spec");
-  if (encoded) return { input: decodeModelDocument(encoded), preview };
+  if (encoded) {
+    try { return { input: decodeModelDocument(encoded), preview }; }
+    catch { return { input: parseModelDocument(encoded), preview }; }
+  }
   if (request.method === "POST") {
     const text = await request.text();
     const contentType = request.headers.get("content-type") ?? "";
@@ -21,11 +24,12 @@ async function inputFromRequest(request: Request) {
     }
     return { input: parseModelDocument(text), preview: false };
   }
-  throw new Error("Provide a demo id or encoded model spec.");
+  throw new Error("Provide a demo id or model spec as base64url JSON, URL-encoded JSON, or URL-encoded YAML.");
 }
 
 async function createResponse(request: Request) {
   try {
+    const directGeneration = new URL(request.url).pathname === "/make/model.stl";
     const requestInput = await inputFromRequest(request);
     const normalized = "input" in requestInput ? requestInput : { input: requestInput, preview: false };
     const startedAt = performance.now();
@@ -42,7 +46,7 @@ async function createResponse(request: Request) {
         "Content-Type": "model/stl",
         "Content-Disposition": `attachment; filename="${makeProceduralFilename(document.name)}"`,
         "Content-Length": String(bytes.byteLength),
-        "Cache-Control": request.method === "GET" ? "public, max-age=3600, s-maxage=86400" : "no-store",
+        "Cache-Control": directGeneration || request.method !== "GET" ? "no-store" : "public, max-age=3600, s-maxage=86400",
         "X-Printa-Dimensions": `${stats.widthMm.toFixed(2)},${stats.depthMm.toFixed(2)},${stats.heightMm.toFixed(2)}`,
         "X-Printa-Triangles": String(stats.triangles),
         "X-Printa-Volume": stats.volumeEstimateMm3.toFixed(2),
