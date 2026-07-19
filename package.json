@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "benchmark": "npm run build && npm run benchmark:model",
+    "benchmark:model": "tsx benchmarks/model-build.ts",
     "start": "next start",
     "test": "npm run build && npm run test:unit",
     "test:unit": "node --test tests/project.test.mjs && node --import tsx --test tests/model-spec.test.ts",

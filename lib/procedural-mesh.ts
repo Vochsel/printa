@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { Box3, BufferGeometry, Mesh, Vector3 } from "three";
 import { STLExporter } from "three/addons/exporters/STLExporter.js";
 import { createTextServerGeometry } from "@/lib/text-mesh";
@@ -23,6 +24,79 @@ export type ProceduralModelStats = {
   volumeEstimateMm3: number;
 };
 
+export type ProceduralBuildOptions = { quality?: "full" | "preview" };
+
+type GeometryCacheEntry = { geometry: BufferGeometry; bytes: number };
+const geometryCache = new Map<string, GeometryCacheEntry>();
+const geometryInflight = new Map<string, Promise<BufferGeometry>>();
+const sourceInflight = new Map<string, Promise<BufferGeometry>>();
+const GEOMETRY_CACHE_MAX_BYTES = 48 * 1024 * 1024;
+const GEOMETRY_CACHE_MAX_ENTRIES = 48;
+let geometryCacheBytes = 0;
+let geometryCacheHits = 0;
+let geometryCacheMisses = 0;
+let geometryCoalescedBuilds = 0;
+
+function fingerprint(...parts: Array<string | undefined>) {
+  const hash = createHash("sha256");
+  parts.forEach((part) => hash.update(part ?? "").update("\0"));
+  return hash.digest("base64url");
+}
+
+function nodeFingerprint(node: ModelNode, memo: WeakMap<object, string>): string {
+  const known = memo.get(node);
+  if (known) return known;
+  let key: string;
+  if (node.kind === "shape") key = fingerprint("shape", JSON.stringify(node));
+  else if (node.kind === "assembly") {
+    key = fingerprint("assembly", node.id, JSON.stringify(node.transform), JSON.stringify(node.modifiers), ...node.children.map((child) => nodeFingerprint(child, memo)));
+  } else {
+    key = fingerprint("repeat", node.id, String(node.count), JSON.stringify(node.step), JSON.stringify(node.transform), JSON.stringify(node.modifiers), nodeFingerprint(node.child, memo));
+  }
+  memo.set(node, key);
+  return key;
+}
+
+function geometryByteLength(geometry: BufferGeometry) {
+  let bytes = geometry.index?.array.byteLength ?? 0;
+  for (const attribute of Object.values(geometry.attributes)) bytes += attribute.array.byteLength;
+  return bytes;
+}
+
+function cachedGeometry(key: string) {
+  const cached = geometryCache.get(key);
+  if (!cached) { geometryCacheMisses += 1; return null; }
+  geometryCacheHits += 1;
+  geometryCache.delete(key);
+  geometryCache.set(key, cached);
+  return cached.geometry.clone();
+}
+
+function cacheGeometry(key: string, geometry: BufferGeometry) {
+  const bytes = geometryByteLength(geometry);
+  if (bytes > GEOMETRY_CACHE_MAX_BYTES / 4) return;
+  const previous = geometryCache.get(key);
+  if (previous) {
+    geometryCacheBytes -= previous.bytes;
+    previous.geometry.dispose();
+    geometryCache.delete(key);
+  }
+  geometryCache.set(key, { geometry: geometry.clone(), bytes });
+  geometryCacheBytes += bytes;
+  while (geometryCache.size > GEOMETRY_CACHE_MAX_ENTRIES || geometryCacheBytes > GEOMETRY_CACHE_MAX_BYTES) {
+    const oldestKey = geometryCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    const oldest = geometryCache.get(oldestKey)!;
+    geometryCacheBytes -= oldest.bytes;
+    oldest.geometry.dispose();
+    geometryCache.delete(oldestKey);
+  }
+}
+
+export function proceduralCacheMetrics() {
+  return { hits: geometryCacheHits, misses: geometryCacheMisses, coalesced: geometryCoalescedBuilds, entries: geometryCache.size, bytes: geometryCacheBytes };
+}
+
 function firstMaterial(node: ModelNode): "pla-orange" | "pla-matte" | "pla-silk" | "petg" | "resin" {
   if (node.kind === "shape") return node.material ?? "pla-orange";
   if (node.kind === "repeat") return firstMaterial(node.child);
@@ -30,55 +104,117 @@ function firstMaterial(node: ModelNode): "pla-orange" | "pla-matte" | "pla-silk"
 }
 
 async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>) {
-  let geometry: BufferGeometry;
-  if (node.source.type === "text") {
-    const result = await createTextServerGeometry({
-      text: node.source.text,
-      font: node.source.font,
-      sizeMm: node.source.size,
-      depthMm: node.source.depth,
-      bevelMm: node.source.bevel,
-      bevelSegments: node.source.bevelSegments,
-      curveSegments: node.source.curveSegments,
-      bevelSide: node.source.bevelSide,
-      textCase: node.source.textCase,
-      fontWeight: node.source.weight,
-      italic: node.source.italic,
-      underline: node.source.underline,
-      smoothNormals: node.source.smoothNormals,
-    });
-    geometry = result.geometry;
-  } else {
-    geometry = createSourceGeometry(node.source);
+  const sourceKey = `source:${fingerprint(JSON.stringify(node.source))}`;
+  let geometry = cachedGeometry(sourceKey);
+  if (!geometry) {
+    const inflight = sourceInflight.get(sourceKey);
+    if (inflight) {
+      geometryCoalescedBuilds += 1;
+      geometry = (await inflight).clone();
+    } else {
+      const build = (async () => {
+        if (node.source.type === "text") {
+          const result = await createTextServerGeometry({
+            text: node.source.text,
+            font: node.source.font,
+            sizeMm: node.source.size,
+            depthMm: node.source.depth,
+            bevelMm: node.source.bevel,
+            bevelSegments: node.source.bevelSegments,
+            curveSegments: node.source.curveSegments,
+            bevelSide: node.source.bevelSide,
+            textCase: node.source.textCase,
+            fontWeight: node.source.weight,
+            italic: node.source.italic,
+            underline: node.source.underline,
+            smoothNormals: node.source.smoothNormals,
+          });
+          return result.geometry;
+        }
+        return createSourceGeometry(node.source);
+      })();
+      sourceInflight.set(sourceKey, build);
+      try { geometry = await build; } finally { sourceInflight.delete(sourceKey); }
+    }
   }
-  geometry = applyModifiers(geometry, node.modifiers);
+  if (!geometry) throw new Error("Could not evaluate shape source.");
+  if (!geometryCache.has(sourceKey)) cacheGeometry(sourceKey, geometry);
+  if (node.modifiers.length) {
+    const modifierKey = `modifiers:${fingerprint(sourceKey, JSON.stringify(node.modifiers))}`;
+    const modified = cachedGeometry(modifierKey);
+    if (modified) { geometry.dispose(); geometry = modified; }
+    else { geometry = applyModifiers(geometry, node.modifiers); cacheGeometry(modifierKey, geometry); }
+  }
   applyTransform(geometry, node.transform);
   return geometry;
 }
 
-async function nodeGeometry(node: ModelNode): Promise<BufferGeometry> {
-  if (node.kind === "shape") return shapeGeometry(node);
-  if (node.kind === "assembly") {
-    const children = await Promise.all(node.children.map(nodeGeometry));
-    const geometry = mergeModelGeometries(children);
-    children.forEach((child) => {
-      if (child !== geometry) child.dispose();
-    });
-    return applyTransform(applyModifiers(geometry, node.modifiers), node.transform);
+async function nodeGeometry(node: ModelNode, fingerprints: WeakMap<object, string>): Promise<BufferGeometry> {
+  const nodeKey = `node:${nodeFingerprint(node, fingerprints)}`;
+  const cached = cachedGeometry(nodeKey);
+  if (cached) return cached;
+  const inflight = geometryInflight.get(nodeKey);
+  if (inflight) {
+    geometryCoalescedBuilds += 1;
+    return (await inflight).clone();
   }
-  const source = await nodeGeometry(node.child);
-  const copies: BufferGeometry[] = [];
-  for (let index = 0; index < node.count; index += 1) {
-    const copy = source.clone();
-    applyTransform(copy, repeatedTransform(node.step, index));
-    copies.push(copy);
+  const build = (async () => {
+    let result: BufferGeometry;
+    if (node.kind === "shape") result = await shapeGeometry(node);
+    else if (node.kind === "assembly") {
+      const children = await Promise.all(node.children.map((child) => nodeGeometry(child, fingerprints)));
+      const geometry = mergeModelGeometries(children);
+      children.forEach((child) => {
+        if (child !== geometry) child.dispose();
+      });
+      result = applyTransform(applyModifiers(geometry, node.modifiers), node.transform);
+    } else {
+      const source = await nodeGeometry(node.child, fingerprints);
+      const copies: BufferGeometry[] = [];
+      for (let index = 0; index < node.count; index += 1) {
+        const copy = source.clone();
+        applyTransform(copy, repeatedTransform(node.step, index));
+        copies.push(copy);
+      }
+      source.dispose();
+      const geometry = mergeModelGeometries(copies);
+      copies.forEach((copy) => {
+        if (copy !== geometry) copy.dispose();
+      });
+      result = applyTransform(applyModifiers(geometry, node.modifiers), node.transform);
+    }
+    cacheGeometry(nodeKey, result);
+    return result;
+  })();
+  geometryInflight.set(nodeKey, build);
+  try { return await build; } finally { geometryInflight.delete(nodeKey); }
+}
+
+function previewNode(node: ModelNode): ModelNode {
+  const next = structuredClone(node);
+  if (next.kind === "assembly") next.children = next.children.map(previewNode);
+  if (next.kind === "repeat") next.child = previewNode(next.child);
+  if (next.kind !== "shape") return next;
+  const source = next.source;
+  if (source.type === "text") {
+    source.curveSegments = Math.min(source.curveSegments, 8);
+    source.bevelSegments = Math.min(source.bevelSegments, 3);
+  } else if (source.type === "primitive") source.segments = Math.min(source.segments, 64);
+  else if (source.type === "extrude") {
+    source.curveSegments = Math.min(source.curveSegments, 12);
+    source.bevelSegments = Math.min(source.bevelSegments, 3);
+  } else if (source.type === "revolve") {
+    source.segments = Math.min(source.segments, 96);
+    source.profileSegments = Math.min(source.profileSegments, 72);
+  } else if (source.type === "water") {
+    source.resolution = Math.min(source.resolution, 40);
+    source.steps = Math.min(source.steps, 60);
+  } else if (source.type === "cloth") {
+    source.resolution = Math.min(source.resolution, 24);
+    source.steps = Math.min(source.steps, 70);
+    source.constraintIterations = Math.min(source.constraintIterations, 4);
   }
-  source.dispose();
-  const geometry = mergeModelGeometries(copies);
-  copies.forEach((copy) => {
-    if (copy !== geometry) copy.dispose();
-  });
-  return applyTransform(applyModifiers(geometry, node.modifiers), node.transform);
+  return next;
 }
 
 function unitScale(units: ModelDocument["units"]) {
@@ -108,33 +244,38 @@ function finishGeometry(geometry: BufferGeometry, document: ModelDocument) {
   return geometry;
 }
 
-export async function createProceduralGeometry(input: string | unknown) {
+export async function createProceduralGeometry(input: string | unknown, options: ProceduralBuildOptions = {}) {
   const document = parseModelDocument(input);
-  const geometry = finishGeometry(await nodeGeometry(document.root), document);
+  const renderRoot = options.quality === "preview" ? previewNode(document.root) : document.root;
+  const geometry = finishGeometry(await nodeGeometry(renderRoot, new WeakMap()), document);
   return { document, geometry };
 }
 
 function signedVolume(geometry: BufferGeometry) {
-  const source = geometry.index ? geometry.toNonIndexed() : geometry;
-  const position = source.getAttribute("position");
+  const position = geometry.getAttribute("position");
+  const index = geometry.index;
+  const triangleCount = Math.floor((index?.count ?? position.count) / 3);
   let volume = 0;
-  for (let index = 0; index < position.count; index += 3) {
-    const ax = position.getX(index);
-    const ay = position.getY(index);
-    const az = position.getZ(index);
-    const bx = position.getX(index + 1);
-    const by = position.getY(index + 1);
-    const bz = position.getZ(index + 1);
-    const cx = position.getX(index + 2);
-    const cy = position.getY(index + 2);
-    const cz = position.getZ(index + 2);
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+    const offset = triangle * 3;
+    const a = index ? index.getX(offset) : offset;
+    const b = index ? index.getX(offset + 1) : offset + 1;
+    const c = index ? index.getX(offset + 2) : offset + 2;
+    const ax = position.getX(a);
+    const ay = position.getY(a);
+    const az = position.getZ(a);
+    const bx = position.getX(b);
+    const by = position.getY(b);
+    const bz = position.getZ(b);
+    const cx = position.getX(c);
+    const cy = position.getY(c);
+    const cz = position.getZ(c);
     volume += ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx);
   }
-  if (source !== geometry) source.dispose();
   return Math.abs(volume / 6);
 }
 
-export function proceduralGeometryStats(geometry: BufferGeometry): ProceduralModelStats {
+export function proceduralGeometryStats(geometry: BufferGeometry, options: { includeVolume?: boolean } = {}): ProceduralModelStats {
   geometry.computeBoundingBox();
   const bounds = geometry.boundingBox ?? new Box3();
   return {
@@ -142,7 +283,7 @@ export function proceduralGeometryStats(geometry: BufferGeometry): ProceduralMod
     depthMm: bounds.max.y - bounds.min.y,
     heightMm: bounds.max.z - bounds.min.z,
     triangles: Math.floor((geometry.index?.count ?? geometry.getAttribute("position").count) / 3),
-    volumeEstimateMm3: signedVolume(geometry),
+    volumeEstimateMm3: options.includeVolume === false ? 0 : signedVolume(geometry),
   };
 }
 
@@ -159,9 +300,9 @@ export async function inspectProceduralModel(input: string | unknown) {
   return { document, stats, materialPreset: firstMaterial(document.root), exceedsBuildVolume, warnings };
 }
 
-export async function createProceduralStl(input: string | unknown) {
-  const { document, geometry } = await createProceduralGeometry(input);
-  const stats = proceduralGeometryStats(geometry);
+export async function createProceduralStl(input: string | unknown, options: ProceduralBuildOptions = {}) {
+  const { document, geometry } = await createProceduralGeometry(input, options);
+  const stats = proceduralGeometryStats(geometry, { includeVolume: options.quality !== "preview" });
   const mesh = new Mesh(geometry);
   mesh.updateMatrixWorld(true);
   const view = new STLExporter().parse(mesh, { binary: true });

@@ -36,6 +36,25 @@ type InspectResult = {
 };
 
 type FontSummary = { id: string; family: string; category: string };
+type PreviewSource = { key: string; url?: string; buffer?: ArrayBuffer };
+
+function encodeDocument(document: ModelDocument) {
+  const bytes = new TextEncoder().encode(JSON.stringify(document));
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function geometryKey(document: ModelDocument) {
+  const root = JSON.stringify(document.root, (key, value) => key === "id" || key === "material" ? undefined : value);
+  return `${document.units}:${document.print.autoCenter}:${document.print.placeOnBed}:${root}`;
+}
+
+function documentMaterial(node: ModelDocument["root"]): PrintMaterialPreset {
+  if (node.kind === "shape") return node.material ?? "pla-orange";
+  if (node.kind === "repeat") return documentMaterial(node.child);
+  return documentMaterial(node.children[0]);
+}
 
 function createDimensionLabel(text: string, color: string, worldSize: number) {
   const canvas = document.createElement("canvas");
@@ -128,10 +147,42 @@ function disposeObject(object: THREE.Object3D | null) {
   });
 }
 
-function ModelViewport({ stlUrl, materialPreset, display, units, onReady }: { stlUrl: string; materialPreset: PrintMaterialPreset; display: ModelDocument["display"]; units: ModelDocument["units"]; onReady?: () => void }) {
+function createPreviewMaterial(materialPreset: PrintMaterialPreset) {
+  const preset = printMaterialPreset(materialPreset);
+  return new THREE.MeshPhysicalMaterial({
+    color: preset.color,
+    roughness: preset.roughness,
+    metalness: preset.metalness,
+    clearcoat: preset.clearcoat,
+    transmission: preset.transmission,
+    thickness: preset.transmission ? 2.2 : 0,
+    emissive: preset.id === "pla-orange" ? "#401006" : "#000000",
+    emissiveIntensity: preset.id === "pla-orange" ? 0.12 : 0,
+  });
+}
+
+function ModelViewport({ source, materialPreset, display, units, onReady }: { source: PreviewSource; materialPreset: PrintMaterialPreset; display: ModelDocument["display"]; units: ModelDocument["units"]; onReady?: () => void }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<() => void>(() => undefined);
-  const cameraPoseRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const floorRef = useRef<THREE.Mesh | null>(null);
+  const gridRef = useRef<THREE.GridHelper | null>(null);
+  const modelRef = useRef<THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial> | null>(null);
+  const dimensionsRef = useRef<THREE.Group | null>(null);
+  const invalidateRef = useRef<(frames?: number) => void>(() => undefined);
+  const hasFramedRef = useRef(false);
+  const displayRef = useRef(display);
+  const unitsRef = useRef(units);
+  const materialPresetRef = useRef(materialPreset);
+
+  useEffect(() => {
+    displayRef.current = display;
+    unitsRef.current = units;
+    materialPresetRef.current = materialPreset;
+  }, [display, materialPreset, units]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -139,9 +190,11 @@ function ModelViewport({ stlUrl, materialPreset, display, units, onReady }: { st
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#11110f");
     scene.fog = new THREE.Fog("#11110f", 440, 900);
+    sceneRef.current = scene;
     const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 3000);
     camera.up.set(0, 0, 1);
     camera.position.set(170, -210, 150);
+    cameraRef.current = camera;
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -150,11 +203,13 @@ function ModelViewport({ stlUrl, materialPreset, display, units, onReady }: { st
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
     mount.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.065;
     controls.target.set(0, 0, 55);
+    controlsRef.current = controls;
 
     scene.add(new THREE.HemisphereLight("#fff7e8", "#182241", 2.5));
     const key = new THREE.DirectionalLight("#fff0d5", 5.4);
@@ -172,21 +227,42 @@ function ModelViewport({ stlUrl, materialPreset, display, units, onReady }: { st
     );
     floor.receiveShadow = true;
     floor.position.z = -0.3;
-    floor.visible = display.floor;
     scene.add(floor);
+    floorRef.current = floor;
     const grid = new THREE.GridHelper(420, 42, "#363631", "#272724");
     grid.rotation.x = Math.PI / 2;
     grid.position.z = 0.05;
-    grid.visible = display.grid;
     scene.add(grid);
+    gridRef.current = grid;
 
-    let model: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> | null = null;
-    let dimensions: THREE.Group | null = null;
-    let disposed = false;
+    let animationFrame = 0;
+    let interacting = false;
+    let remainingFrames = 0;
+    const render = () => {
+      controls.update();
+      renderer.render(scene, camera);
+      if (interacting || remainingFrames > 0) {
+        remainingFrames = Math.max(0, remainingFrames - 1);
+        animationFrame = requestAnimationFrame(render);
+      } else animationFrame = 0;
+    };
+    const invalidate = (frames = 2) => {
+      remainingFrames = Math.max(remainingFrames, frames);
+      if (!animationFrame) animationFrame = requestAnimationFrame(render);
+    };
+    invalidateRef.current = invalidate;
+    const startInteraction = () => { interacting = true; invalidate(2); };
+    const endInteraction = () => { interacting = false; invalidate(24); };
+    const change = () => invalidate(2);
+    controls.addEventListener("start", startInteraction);
+    controls.addEventListener("end", endInteraction);
+    controls.addEventListener("change", change);
+
     const frame = () => {
+      const model = modelRef.current;
       if (!model) return;
       const box = new THREE.Box3().setFromObject(model);
-      if (dimensions) box.expandByObject(dimensions);
+      if (dimensionsRef.current) box.expandByObject(dimensionsRef.current);
       const sphere = box.getBoundingSphere(new THREE.Sphere());
       const distance = Math.max(45, sphere.radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.22);
       camera.position.set(sphere.center.x + distance * 0.78, sphere.center.y - distance, sphere.center.z + distance * 0.66);
@@ -195,80 +271,112 @@ function ModelViewport({ stlUrl, materialPreset, display, units, onReady }: { st
       camera.updateProjectionMatrix();
       controls.target.copy(sphere.center);
       controls.update();
+      invalidate(24);
     };
     frameRef.current = frame;
-
-    fetch(stlUrl)
-      .then((response) => {
-        if (!response.ok) throw new Error("Model could not be loaded.");
-        return response.arrayBuffer();
-      })
-      .then((buffer) => {
-        if (disposed) return;
-        const geometry = new STLLoader().parse(buffer);
-        geometry.computeVertexNormals();
-        geometry.computeBoundingBox();
-        const preset = printMaterialPreset(materialPreset);
-        model = new THREE.Mesh(geometry, new THREE.MeshPhysicalMaterial({
-          color: preset.color,
-          roughness: preset.roughness,
-          metalness: preset.metalness,
-          clearcoat: preset.clearcoat,
-          transmission: preset.transmission,
-          thickness: preset.transmission ? 2.2 : 0,
-          emissive: preset.id === "pla-orange" ? "#401006" : "#000000",
-          emissiveIntensity: preset.id === "pla-orange" ? 0.12 : 0,
-        }));
-        model.castShadow = true;
-        model.receiveShadow = true;
-        scene.add(model);
-        if (display.dimensions.visible && geometry.boundingBox) {
-          dimensions = createGroundDimensions(geometry.boundingBox, display, units);
-          scene.add(dimensions);
-        }
-        const savedPose = cameraPoseRef.current;
-        if (savedPose) {
-          camera.position.copy(savedPose.position);
-          controls.target.copy(savedPose.target);
-          controls.update();
-        } else {
-          frame();
-        }
-        onReady?.();
-      });
 
     const resize = () => {
       const bounds = mount.getBoundingClientRect();
       renderer.setSize(bounds.width, bounds.height, false);
       camera.aspect = bounds.width / Math.max(bounds.height, 1);
       camera.updateProjectionMatrix();
+      invalidate(2);
     };
     const observer = new ResizeObserver(resize);
     observer.observe(mount);
     resize();
-    let animation = 0;
-    const render = () => {
-      animation = requestAnimationFrame(render);
-      controls.update();
-      renderer.render(scene, camera);
-    };
-    render();
+    invalidate(2);
     return () => {
-      disposed = true;
-      cameraPoseRef.current = { position: camera.position.clone(), target: controls.target.clone() };
-      cancelAnimationFrame(animation);
+      cancelAnimationFrame(animationFrame);
       observer.disconnect();
+      controls.removeEventListener("start", startInteraction);
+      controls.removeEventListener("end", endInteraction);
+      controls.removeEventListener("change", change);
       controls.dispose();
-      model?.geometry.dispose();
-      model?.material.dispose();
-      disposeObject(dimensions);
+      modelRef.current?.geometry.dispose();
+      modelRef.current?.material.dispose();
+      disposeObject(dimensionsRef.current);
       floor.geometry.dispose();
       (floor.material as THREE.Material).dispose();
       renderer.dispose();
       renderer.domElement.remove();
       scene.clear();
+      sceneRef.current = null;
+      cameraRef.current = null;
+      rendererRef.current = null;
+      controlsRef.current = null;
+      floorRef.current = null;
+      gridRef.current = null;
+      modelRef.current = null;
+      dimensionsRef.current = null;
     };
-  }, [display, materialPreset, onReady, stlUrl, units]);
+  }, []);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const controller = new AbortController();
+    let active = true;
+    const load = source.buffer
+      ? Promise.resolve(source.buffer)
+      : fetch(source.url!, { signal: controller.signal }).then((response) => {
+          if (!response.ok) throw new Error("Model could not be loaded.");
+          return response.arrayBuffer();
+        });
+    void load.then((buffer) => {
+      if (!active || !sceneRef.current) return;
+      const geometry = new STLLoader().parse(buffer);
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      const model = new THREE.Mesh(geometry, createPreviewMaterial(materialPresetRef.current));
+      model.castShadow = true;
+      model.receiveShadow = true;
+      if (modelRef.current) {
+        scene.remove(modelRef.current);
+        modelRef.current.geometry.dispose();
+        modelRef.current.material.dispose();
+      }
+      if (dimensionsRef.current) {
+        scene.remove(dimensionsRef.current);
+        disposeObject(dimensionsRef.current);
+      }
+      modelRef.current = model;
+      scene.add(model);
+      const currentDisplay = displayRef.current;
+      const currentUnits = unitsRef.current;
+      dimensionsRef.current = currentDisplay.dimensions.visible && geometry.boundingBox ? createGroundDimensions(geometry.boundingBox, currentDisplay, currentUnits) : null;
+      if (dimensionsRef.current) scene.add(dimensionsRef.current);
+      if (!hasFramedRef.current) {
+        hasFramedRef.current = true;
+        frameRef.current();
+      } else invalidateRef.current(4);
+      onReady?.();
+    }).catch((error) => { if (error?.name !== "AbortError") console.error(error); });
+    return () => { active = false; controller.abort(); };
+  }, [onReady, source]);
+
+  useEffect(() => {
+    const model = modelRef.current;
+    if (!model) return;
+    const previous = model.material;
+    model.material = createPreviewMaterial(materialPreset);
+    previous.dispose();
+    invalidateRef.current(3);
+  }, [materialPreset]);
+
+  useEffect(() => {
+    if (floorRef.current) floorRef.current.visible = display.floor;
+    if (gridRef.current) gridRef.current.visible = display.grid;
+    const scene = sceneRef.current;
+    const model = modelRef.current;
+    if (scene && model) {
+      if (dimensionsRef.current) { scene.remove(dimensionsRef.current); disposeObject(dimensionsRef.current); }
+      model.geometry.computeBoundingBox();
+      dimensionsRef.current = display.dimensions.visible && model.geometry.boundingBox ? createGroundDimensions(model.geometry.boundingBox, display, units) : null;
+      if (dimensionsRef.current) scene.add(dimensionsRef.current);
+    }
+    invalidateRef.current(3);
+  }, [display, units]);
 
   return (
     <div className="studio-viewer">
@@ -284,16 +392,25 @@ export function ProceduralStudio() {
   const [spec, setSpec] = useState("");
   const [result, setResult] = useState<InspectResult | null>(null);
   const [document, setDocument] = useState<ModelDocument | null>(null);
+  const [preview, setPreview] = useState<PreviewSource | null>(null);
   const [fonts, setFonts] = useState<FontSummary[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [liveUpdating, setLiveUpdating] = useState(false);
+  const [previewQuality, setPreviewQuality] = useState(false);
+  const [compileInfo, setCompileInfo] = useState("");
   const [modelReady, setModelReady] = useState(false);
   const liveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const liveAbortRef = useRef<AbortController | null>(null);
+  const liveSequenceRef = useRef(0);
+  const compiledGeometryKeyRef = useRef("");
   const handleModelReady = useCallback(() => setModelReady(true), []);
 
-  const inspect = useCallback(async (payload: { demo?: string; spec?: string | ModelDocument }, live = false) => {
+  const inspect = useCallback(async (payload: { demo?: string; spec?: string | ModelDocument; encoded?: string }) => {
+    liveAbortRef.current?.abort();
+    liveSequenceRef.current += 1;
     setLoading(true);
-    if (!live) setModelReady(false);
+    setModelReady(false);
     setError("");
     try {
       const response = await fetch("/api/model/inspect", {
@@ -306,6 +423,10 @@ export function ProceduralStudio() {
       setResult(data);
       setDocument(data.document);
       setSpec(data.spec);
+      setPreview({ key: data.stlUrl, url: data.stlUrl });
+      compiledGeometryKeyRef.current = geometryKey(data.document);
+      setPreviewQuality(false);
+      setCompileInfo("");
       if (data.studioUrl) window.history.replaceState(window.history.state, "", data.studioUrl.replace(window.location.origin, ""));
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Model spec is invalid.");
@@ -314,45 +435,113 @@ export function ProceduralStudio() {
     }
   }, []);
 
+  const compileLive = useCallback(async (next: ModelDocument) => {
+    const sequence = ++liveSequenceRef.current;
+    liveAbortRef.current?.abort();
+    const controller = new AbortController();
+    liveAbortRef.current = controller;
+    setLiveUpdating(true);
+    setError("");
+    try {
+      const response = await fetch("/api/model/stl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: next, preview: true }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(data?.error ?? "Model preview could not be compiled.");
+      }
+      const buffer = await response.arrayBuffer();
+      if (sequence !== liveSequenceRef.current) return;
+      const dimensions = (response.headers.get("X-Printa-Dimensions") ?? "0,0,0").split(",").map(Number);
+      const encoded = encodeDocument(next);
+      const stlUrl = `/api/model/stl?spec=${encoded}`;
+      const studioUrl = `/editor?spec=${encoded}`;
+      const material = response.headers.get("X-Printa-Material") as PrintMaterialPreset | null;
+      const exceedsBuildVolume = response.headers.get("X-Printa-Exceeds") === "true";
+      setResult({
+        document: next,
+        spec: JSON.stringify(next, null, 2),
+        stlUrl,
+        studioUrl,
+        stats: {
+          widthMm: dimensions[0] ?? 0,
+          depthMm: dimensions[1] ?? 0,
+          heightMm: dimensions[2] ?? 0,
+          triangles: Number(response.headers.get("X-Printa-Triangles") ?? 0),
+          volumeEstimateMm3: Number(response.headers.get("X-Printa-Volume") ?? 0),
+        },
+        exceedsBuildVolume,
+        warnings: exceedsBuildVolume ? [`Model exceeds the ${next.print.buildVolume.join(" × ")} mm reference build volume.`] : [],
+        materialPreset: material ?? "pla-orange",
+      });
+      setPreview({ key: `live-${sequence}`, buffer });
+      compiledGeometryKeyRef.current = geometryKey(next);
+      setPreviewQuality(true);
+      setCompileInfo(`${response.headers.get("Server-Timing")?.replace("compile;dur=", "") ?? "—"} ms · ${response.headers.get("X-Printa-Cache") ?? "cold graph"}`);
+      window.history.replaceState(window.history.state, "", studioUrl);
+    } catch (nextError) {
+      if (nextError instanceof DOMException && nextError.name === "AbortError") return;
+      if (sequence === liveSequenceRef.current) setError(nextError instanceof Error ? nextError.message : "Model preview could not be compiled.");
+    } finally {
+      if (sequence === liveSequenceRef.current) setLiveUpdating(false);
+    }
+  }, []);
+
   const updateDocument = useCallback((next: ModelDocument) => {
     setDocument(next);
-    setSpec(JSON.stringify(next, null, 2));
+    const nextSpec = JSON.stringify(next, null, 2);
+    setSpec(nextSpec);
+    liveAbortRef.current?.abort();
     if (liveTimerRef.current) clearTimeout(liveTimerRef.current);
-    liveTimerRef.current = setTimeout(() => void inspect({ spec: next }, true), 320);
-  }, [inspect]);
+    if (geometryKey(next) === compiledGeometryKeyRef.current) {
+      liveSequenceRef.current += 1;
+      setLiveUpdating(false);
+      const encoded = encodeDocument(next);
+      const studioUrl = `/editor?spec=${encoded}`;
+      setResult((previous) => previous ? {
+        ...previous,
+        document: next,
+        spec: nextSpec,
+        stlUrl: `/api/model/stl?spec=${encoded}`,
+        studioUrl,
+        materialPreset: documentMaterial(next.root),
+        exceedsBuildVolume: previous.stats.widthMm > next.print.buildVolume[0]
+          || previous.stats.depthMm > next.print.buildVolume[1]
+          || previous.stats.heightMm > next.print.buildVolume[2],
+      } : previous);
+      setCompileInfo("View/spec update · mesh reused");
+      window.history.replaceState(window.history.state, "", studioUrl);
+      return;
+    }
+    liveTimerRef.current = setTimeout(() => void compileLive(next), 170);
+  }, [compileLive]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const encoded = params.get("spec");
-    if (encoded) {
-      void fetch("/api/model/inspect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ encoded, format: "yaml" }),
-      }).then(async (response) => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
-        setResult(data);
-        setDocument(data.document);
-        setSpec(data.spec);
-        setLoading(false);
-      }).catch((nextError) => {
-        setError(nextError instanceof Error ? nextError.message : "Could not decode model spec.");
-        setLoading(false);
-      });
-      return;
-    }
     const demo = params.get("demo") as DemoModelId | null;
     const mode = params.get("mode");
     const fallback = mode === "procedural" ? "contour-spiral-vase" : "type-specimen";
     const nextDemo = DEMO_MODEL_CARDS.some((card) => card.id === demo) ? demo! : fallback;
-    setActiveDemo(nextDemo);
-    void inspect({ demo: nextDemo });
+    const timer = window.setTimeout(() => {
+      if (encoded) void inspect({ encoded });
+      else {
+        setActiveDemo(nextDemo);
+        void inspect({ demo: nextDemo });
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [inspect]);
 
   useEffect(() => {
     void fetch("/api/fonts").then((response) => response.json()).then((data: { fonts: FontSummary[] }) => setFonts(data.fonts));
-    return () => { if (liveTimerRef.current) clearTimeout(liveTimerRef.current); };
+    return () => {
+      if (liveTimerRef.current) clearTimeout(liveTimerRef.current);
+      liveAbortRef.current?.abort();
+    };
   }, []);
 
   const selectDemo = (id: DemoModelId) => {
@@ -396,18 +585,19 @@ export function ProceduralStudio() {
         <section className="studio-stage">
           <div className="studio-stage-head">
             <div><span className="eyebrow"><Sparkles size={13} /> Generated solid</span><h2>{result?.document.name ?? "Building form…"}</h2></div>
+            {result && <span className={`studio-compile-state${liveUpdating ? " is-active" : ""}`}>{liveUpdating ? <LoaderCircle className="is-spinning" size={13} /> : <Check size={13} />}{liveUpdating ? "Compiling preview…" : compileInfo || "Graph ready"}</span>}
             {result && <a className="studio-download" href={result.stlUrl}><Download size={15} /> Download STL</a>}
           </div>
           <div className="studio-stage-body">
-            {result && <ModelViewport stlUrl={result.stlUrl} materialPreset={result.materialPreset} display={result.document.display} units={result.document.units} onReady={handleModelReady} />}
-            {(loading || !modelReady) && <div className="studio-loading"><LoaderCircle className="is-spinning" size={19} /> {loading ? "Evaluating model graph…" : "Loading printable mesh…"}</div>}
+            {result && preview && document && <ModelViewport source={preview} materialPreset={result.materialPreset} display={document.display} units={document.units} onReady={handleModelReady} />}
+            {!modelReady && <div className="studio-loading"><LoaderCircle className="is-spinning" size={19} /> {loading ? "Evaluating model graph…" : "Loading printable mesh…"}</div>}
           </div>
           <div className="studio-stage-foot">
             {result ? (
               <>
                 <span><small>Bounds</small><strong>{result.stats.widthMm.toFixed(1)} × {result.stats.depthMm.toFixed(1)} × {result.stats.heightMm.toFixed(1)} mm</strong></span>
-                <span><small>Mesh</small><strong>{result.stats.triangles.toLocaleString()} triangles</strong></span>
-                <span><small>Volume est.</small><strong>{(result.stats.volumeEstimateMm3 / 1000).toFixed(1)} cm³</strong></span>
+                <span><small>Mesh{previewQuality ? " preview" : ""}</small><strong>{result.stats.triangles.toLocaleString()} triangles</strong></span>
+                <span><small>Volume est.</small><strong>{previewQuality ? "On full STL build" : `${(result.stats.volumeEstimateMm3 / 1000).toFixed(1)} cm³`}</strong></span>
                 <span className={result.exceedsBuildVolume ? "is-warning" : "is-ready"}><Check size={13} /> {result.exceedsBuildVolume ? "Check build volume" : "Ready for slicer"}</span>
               </>
             ) : <span>Waiting for a valid model spec.</span>}

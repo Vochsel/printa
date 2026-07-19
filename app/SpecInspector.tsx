@@ -122,14 +122,13 @@ function ToggleInput({ label, detail, value, onChange }: { label: string; detail
 }
 
 function JsonInput({ label, value, onChange }: { label: string; value: unknown; onChange: (value: unknown) => void }) {
-  const [draft, setDraft] = useState(() => JSON.stringify(value, null, 2));
-  const [invalid, setInvalid] = useState(false);
   const serialized = JSON.stringify(value, null, 2);
-  useEffect(() => { setDraft(serialized); setInvalid(false); }, [serialized]);
-  return <label className={`spec-field spec-json${invalid ? " is-invalid" : ""}`}><span>{label}</span><textarea value={draft} spellCheck={false} onChange={(event) => {
+  const [draftState, setDraftState] = useState(() => ({ source: serialized, draft: serialized, invalid: false }));
+  const current = draftState.source === serialized ? draftState : { source: serialized, draft: serialized, invalid: false };
+  return <label className={`spec-field spec-json${current.invalid ? " is-invalid" : ""}`}><span>{label}</span><textarea value={current.draft} spellCheck={false} onChange={(event) => {
     const next = event.target.value;
-    setDraft(next);
-    try { onChange(JSON.parse(next)); setInvalid(false); } catch { setInvalid(true); }
+    try { onChange(JSON.parse(next)); setDraftState({ source: serialized, draft: next, invalid: false }); }
+    catch { setDraftState({ source: serialized, draft: next, invalid: true }); }
   }} /></label>;
 }
 
@@ -169,14 +168,13 @@ function SourceEditor({ source, fonts, update }: { source: SourceSpec; fonts: Fo
 export function SpecInspector({ document, fonts, onChange }: { document: ModelDocument; fonts: FontSummary[]; onChange: (document: ModelDocument) => void }) {
   const entries = useMemo(() => collectNodes(document.root), [document]);
   const [selection, setSelection] = useState<Selection>({ kind: "node", nodeId: document.root.id });
-  const selectedNode = findNode(document.root, selection.nodeId) ?? document.root;
-  const modifierIndex = selection.kind === "modifier" ? selection.index : -1;
+  const selectionExists = findNode(document.root, selection.nodeId);
+  const activeSelection: Selection = selectionExists ? selection : { kind: "node", nodeId: document.root.id };
+  const selectedNode = selectionExists ?? document.root;
+  const modifierIndex = activeSelection.kind === "modifier" ? activeSelection.index : -1;
   const selectedModifier = modifierIndex >= 0 ? selectedNode.modifiers[modifierIndex] : null;
 
   const mutate = (recipe: (draft: ModelDocument) => void) => { const draft = structuredClone(document); recipe(draft); onChange(draft); };
-  useEffect(() => {
-    if (!findNode(document.root, selection.nodeId)) setSelection({ kind: "node", nodeId: document.root.id });
-  }, [document.root, selection.nodeId]);
   const mutateNode = (recipe: (node: ModelNode) => void) => mutate((draft) => { updateNode(draft.root, selectedNode.id, recipe); });
   const addLayer = () => mutate((draft) => {
     const node: ModelNode = { kind: "shape", id: `shape-${Date.now().toString(36)}`, source: sourceDefaults("primitive"), modifiers: [], material: "pla-orange" };
@@ -185,7 +183,7 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
     setSelection({ kind: "node", nodeId: node.id });
   });
   const duplicateLayer = () => mutate((draft) => {
-    const target = findNode(draft.root, selection.nodeId);
+    const target = findNode(draft.root, activeSelection.nodeId);
     if (!target) return;
     const copy = structuredClone(target); copy.id = `${copy.id}-copy-${Date.now().toString(36)}`;
     if (draft.root.kind === "assembly") draft.root.children.push(copy);
@@ -194,7 +192,7 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
   });
   const deleteLayer = () => mutate((draft) => {
     if (draft.root.kind !== "assembly" || draft.root.children.length <= 1) return;
-    draft.root.children = draft.root.children.filter((child) => child.id !== selection.nodeId);
+    draft.root.children = draft.root.children.filter((child) => child.id !== activeSelection.nodeId);
     setSelection({ kind: "node", nodeId: draft.root.id });
   });
 
@@ -210,8 +208,8 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
 
     <section className="spec-layer-section">
       <div className="studio-section-head"><strong>Layers</strong><button type="button" onClick={addLayer}><Plus size={13} /> Add layer</button></div>
-      <div className="spec-layer-list">{entries.map(({ node, depth }) => <div key={node.id} className="spec-layer-wrap"><button type="button" className={`spec-layer${selection.kind === "node" && selection.nodeId === node.id ? " is-active" : ""}`} style={{ paddingLeft: `${12 + depth * 18}px` }} onClick={() => setSelection({ kind: "node", nodeId: node.id })}><GripVertical size={12} />{nodeIcon(node)}<span><strong>{node.id}</strong><small>{node.kind === "shape" ? node.source.type : node.kind}</small></span></button>{node.modifiers.map((modifier, index) => <button key={`${node.id}-${index}`} type="button" className={`spec-modifier-layer${selection.kind === "modifier" && selection.nodeId === node.id && selection.index === index ? " is-active" : ""}`} style={{ paddingLeft: `${42 + depth * 18}px` }} onClick={() => setSelection({ kind: "modifier", nodeId: node.id, index })}><span>↳ {modifier.type}</span></button>)}</div>)}</div>
-      <div className="spec-layer-actions"><button type="button" onClick={duplicateLayer}><Copy size={13} /> Duplicate</button><button type="button" onClick={deleteLayer} disabled={document.root.kind !== "assembly" || selection.nodeId === document.root.id}><Trash2 size={13} /> Delete</button></div>
+      <div className="spec-layer-list">{entries.map(({ node, depth }) => <div key={node.id} className="spec-layer-wrap"><button type="button" className={`spec-layer${activeSelection.kind === "node" && activeSelection.nodeId === node.id ? " is-active" : ""}`} style={{ paddingLeft: `${12 + depth * 18}px` }} onClick={() => setSelection({ kind: "node", nodeId: node.id })}><GripVertical size={12} />{nodeIcon(node)}<span><strong>{node.id}</strong><small>{node.kind === "shape" ? node.source.type : node.kind}</small></span></button>{node.modifiers.map((modifier, index) => <button key={`${node.id}-${index}`} type="button" className={`spec-modifier-layer${activeSelection.kind === "modifier" && activeSelection.nodeId === node.id && activeSelection.index === index ? " is-active" : ""}`} style={{ paddingLeft: `${42 + depth * 18}px` }} onClick={() => setSelection({ kind: "modifier", nodeId: node.id, index })}><span>↳ {modifier.type}</span></button>)}</div>)}</div>
+      <div className="spec-layer-actions"><button type="button" onClick={duplicateLayer}><Copy size={13} /> Duplicate</button><button type="button" onClick={deleteLayer} disabled={document.root.kind !== "assembly" || activeSelection.nodeId === document.root.id}><Trash2 size={13} /> Delete</button></div>
     </section>
 
     <section className="spec-inspector-section">

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { BufferGeometry } from "three";
 import { DEMO_MODELS } from "../lib/demo-models";
+import { BENCHMARK_SPECS, REQUIRED_BENCHMARK_COVERAGE } from "../benchmarks/specs";
 import {
   decodeModelDocument,
   encodeModelDocument,
@@ -94,6 +95,16 @@ test("publishes a machine-readable schema with every source family", () => {
     assert.match(schema, new RegExp(textField));
   }
   assert.match(schema, /dimensions/);
+});
+
+test("benchmark matrix touches every evaluator family and validates every spec", () => {
+  const serialized = JSON.stringify(BENCHMARK_SPECS);
+  for (const family of Object.values(REQUIRED_BENCHMARK_COVERAGE).flat()) {
+    assert.match(serialized, new RegExp(`\"(?:type|shape|kind|op)\":\"${family}\"`), `benchmark coverage should include ${family}`);
+  }
+  for (const [name, spec] of Object.entries(BENCHMARK_SPECS)) {
+    assert.doesNotThrow(() => parseModelDocument(spec), `${name} should be a valid benchmark document`);
+  }
 });
 
 test("rejects graphs that expand beyond the safe node limit", () => {

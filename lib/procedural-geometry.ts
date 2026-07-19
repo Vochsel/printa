@@ -3,7 +3,6 @@ import {
   BufferAttribute,
   BufferGeometry,
   CatmullRomCurve3,
-  ConeGeometry,
   CylinderGeometry,
   Euler,
   ExtrudeGeometry,
@@ -333,7 +332,7 @@ function boundsFor(geometry: BufferGeometry) {
 }
 
 function laplacianSmooth(input: BufferGeometry, iterations: number, strength: number) {
-  let geometry = mergeVertices(input.clone(), 1e-5);
+  const geometry = mergeVertices(input.clone(), 1e-5);
   const index = geometry.index;
   if (!index) return geometry;
   const position = geometry.getAttribute("position") as BufferAttribute;
@@ -372,16 +371,18 @@ function laplacianSmooth(input: BufferGeometry, iterations: number, strength: nu
 
 export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[]) {
   let geometry = input;
+  let bounds = boundsFor(geometry);
   for (const modifier of modifiers) {
     if (modifier.type === "smooth") {
       const previous = geometry;
       const next = laplacianSmooth(geometry, modifier.iterations, modifier.strength);
       geometry = next;
       if (previous !== geometry) previous.dispose();
+      bounds = boundsFor(geometry);
       continue;
     }
     const position = geometry.getAttribute("position") as BufferAttribute;
-    const { minZ, height } = boundsFor(geometry);
+    const { minZ, height } = bounds;
     for (let index = 0; index < position.count; index += 1) {
       let x = position.getX(index);
       let y = position.getY(index);
@@ -425,6 +426,7 @@ export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[])
       position.setXYZ(index, x, y, z);
     }
     position.needsUpdate = true;
+    if (modifier.type === "bend") bounds = boundsFor(geometry);
   }
   geometry.deleteAttribute("normal");
   geometry.computeVertexNormals();
@@ -466,7 +468,6 @@ export function mergeModelGeometries(geometries: BufferGeometry[]) {
     for (const name of Object.keys(geometry.attributes)) {
       if (name !== "position") geometry.deleteAttribute(name);
     }
-    geometry.computeVertexNormals();
     return geometry;
   });
   const merged = mergeGeometries(clean, false);

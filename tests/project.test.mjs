@@ -96,6 +96,11 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(demos, /contour-spiral-vase/);
   assert.match(demos, /cloth-drape-study/);
   assert.match(modelStlRoute, /createProceduralStl/);
+  assert.match(modelStlRoute, /X-Printa-Cache/);
+  assert.match(modelStlRoute, /Server-Timing/);
+  assert.match(studio, /AbortController/);
+  assert.match(studio, /preview: true/);
+  assert.match(studio, /PreviewSource/);
   assert.match(skillRoute, /text\/markdown/);
   assert.match(stlRoute, /Content-Type.*model\/stl/s);
   assert.match(mcpRoute, /create_extruded_text/);
