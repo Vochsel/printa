@@ -1,15 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --paper: #f2efe6;
-  --paper-deep: #e8e3d7;
-  --ink: #151512;
-  --muted: #747269;
-  --line: #d2cdc0;
-  --orange: #ff5d2e;
-  --orange-deep: #d94319;
-  --blue: #5470ff;
-  --panel: #f8f5ed;
+  --paper: #fffaf0;
+  --paper-deep: #f5f0e0;
+  --ink: #0a0a0a;
+  --muted: #6a6a6a;
+  --line: #e5dfd0;
+  --orange: #ff4d8b;
+  --orange-deep: #c92f69;
+  --blue: #7b63ce;
+  --panel: #faf5e8;
 }
 
 * { box-sizing: border-box; }
@@ -21,7 +21,7 @@ body {
   overflow-x: clip;
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--font-geist-sans), Arial, sans-serif;
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 }
 
 button, input, select { font: inherit; }
@@ -474,4 +474,147 @@ h2 { font-size: 22px; line-height: 1.1; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}
+
+/* ===== Unified editor — Clay product UI from DESIGN.md ===== */
+.app-shell,
+.studio-shell {
+  --editor-canvas: #fffaf0;
+  --editor-soft: #faf5e8;
+  --editor-card: #f5f0e0;
+  --editor-strong: #ebe6d6;
+  --editor-ink: #0a0a0a;
+  --editor-body: #3a3a3a;
+  --editor-muted: #6a6a6a;
+  --editor-hair: #e5dfd0;
+  --editor-pink: #ff4d8b;
+  --editor-teal: #1a3a3a;
+  --editor-lavender: #b8a4ed;
+  --editor-peach: #ffb084;
+  --editor-mint: #a4d4c5;
+  height: 100dvh;
+  background: var(--editor-canvas);
+  color: var(--editor-ink);
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.app-shell { grid-template-rows: 64px minmax(0, 1fr); background: var(--editor-canvas); }
+.topbar,
+.studio-topbar {
+  height: 64px;
+  padding: 0 22px;
+  border-color: var(--editor-hair);
+  background: var(--editor-canvas);
+  backdrop-filter: none;
+}
+.brand { gap: 9px; color: var(--editor-ink); font-size: 14px; font-weight: 700; letter-spacing: .1em; }
+.brand-mark { width: 34px; height: 34px; border-radius: 12px; background: var(--editor-ink); color: #fff; transform: none; }
+.brand em { padding: 5px 8px; border: 0; border-radius: 999px; background: var(--editor-card); color: var(--editor-muted); font-size: 8px; }
+.editor-mode-switch { gap: 4px; padding: 4px; border-radius: 14px; background: var(--editor-strong); }
+.editor-mode-switch .mode-pill,
+.studio-topbar-center.editor-mode-switch .mode-pill {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--editor-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.editor-mode-switch .mode-pill.is-active,
+.studio-topbar-center.editor-mode-switch .mode-pill.is-active { background: var(--editor-canvas); color: var(--editor-ink); }
+.editor-mode-switch .autosave { padding: 0 8px 0 5px; font-family: var(--font-inter); font-size: 10px; }
+.mcp-link,
+.studio-topbar nav a { min-height: 38px; border-color: var(--editor-hair); border-radius: 12px; background: var(--editor-soft); color: var(--editor-muted); font-family: var(--font-inter); font-size: 10px; }
+
+.workspace { grid-template-columns: minmax(330px, 390px) minmax(0, 1fr); }
+.control-panel {
+  padding: 24px 22px 28px;
+  border-color: var(--editor-hair);
+  background: var(--editor-canvas);
+  scrollbar-color: #c7bda7 transparent;
+}
+.panel-heading { margin-bottom: 20px; }
+.panel-heading h1,
+.studio-intro h1 { color: var(--editor-ink); font-size: 31px; font-weight: 500; letter-spacing: -.04em; }
+.eyebrow { color: var(--editor-pink); font-family: var(--font-inter); font-size: 9px; font-weight: 700; }
+.control-panel .control-group {
+  gap: 17px;
+  margin-bottom: 14px;
+  padding: 18px;
+  border: 1px solid var(--editor-hair);
+  border-radius: 16px;
+  background: var(--editor-soft);
+}
+.control-panel .measurements { background: var(--editor-card); }
+.control-panel .preview-controls { background: #f2eefd; }
+.control-label,
+.advanced-heading { color: var(--editor-body); font-size: 10px; font-weight: 600; }
+.input-wrap,
+.font-picker-trigger,
+.select-control select,
+.advanced-heading select { border-color: var(--editor-hair); border-radius: 12px; background: var(--editor-canvas); }
+.input-wrap { min-height: 44px; }
+.font-picker-trigger,
+.select-control select { min-height: 44px; height: 44px; }
+.font-results { border-color: var(--editor-hair); border-radius: 16px; background: var(--editor-canvas); box-shadow: 0 22px 52px -28px rgba(60,50,30,.34); }
+.font-popover-search { background: var(--editor-soft); }
+.toggle-control { border-radius: 12px; }
+.toggle-control input:checked + i { background: var(--editor-pink); }
+.range-control input[type="range"] { accent-color: var(--editor-pink); }
+.print-check { border-radius: 16px; background: #e9f3ef; border-color: #d4e7df; }
+.download-button { min-height: 46px; border-radius: 12px; background: var(--editor-ink); color: #fff; box-shadow: none; }
+.download-button:hover { background: #282828; }
+.stage-panel { padding: 22px 22px 16px; background: var(--editor-soft); }
+.stage-heading h2 { font-weight: 500; }
+.viewer-shell { border: 0; border-radius: 24px; background: var(--editor-teal); box-shadow: none; }
+.viewer-toolbar span { border-radius: 999px; }
+.stage-footer { color: var(--editor-muted); font-family: var(--font-inter); }
+
+.studio-shell { grid-template-rows: 64px minmax(0,1fr); }
+.studio-topbar-center.editor-mode-switch { color: var(--editor-muted); font-family: var(--font-inter); }
+.studio-topbar-center.editor-mode-switch > i { margin: 0 8px; }
+.studio-workspace { grid-template-columns: minmax(370px, 430px) minmax(0,1fr); }
+.studio-sidebar { padding: 24px 22px 30px; border-color: var(--editor-hair); background: var(--editor-canvas); scrollbar-color: #c7bda7 transparent; }
+.studio-intro { padding: 18px; border: 1px solid var(--editor-hair); border-radius: 20px; background: var(--editor-soft); }
+.studio-intro p { color: var(--editor-muted); font-size: 12px; }
+.studio-demo-section,
+.studio-spec-section { padding-top: 20px; }
+.studio-section-head { color: var(--editor-body); font-family: var(--font-inter); font-size: 9px; }
+.studio-demo-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+.studio-demo-grid button { min-height: 86px; padding: 12px; border-color: var(--editor-hair); border-radius: 14px; background: var(--editor-soft); }
+.studio-demo-grid button:hover { transform: translateY(-1px); border-color: #c8bca0; background: var(--editor-card); }
+.studio-demo-grid button.is-active { border-color: transparent; background: var(--editor-lavender); box-shadow: none; }
+.studio-demo-grid button span { font-size: 10px; font-weight: 650; }
+.studio-demo-grid button span svg { color: var(--editor-ink); }
+.studio-demo-grid button small { color: var(--editor-muted); font-family: var(--font-inter); font-size: 8px; }
+.studio-spec-section textarea { min-height: 330px; border: 0; border-radius: 16px; background: #152724; color: #f8f2e7; caret-color: var(--editor-pink); }
+.studio-spec-section textarea:focus { border: 0; box-shadow: 0 0 0 3px rgba(184,164,237,.4); }
+.studio-apply { min-height: 44px; border-radius: 12px; background: var(--editor-ink); color: #fff; font-weight: 700; }
+.studio-apply:hover { background: #282828; }
+.studio-stage { padding: 22px 22px 16px; background: var(--editor-soft); }
+.studio-stage-head h2 { color: var(--editor-ink); font-weight: 500; }
+.studio-stage-head .eyebrow { color: var(--editor-pink); }
+.studio-download { min-height: 42px; padding: 0 15px; border-radius: 12px; background: var(--editor-ink); color: #fff; box-shadow: none; }
+.studio-stage-body { border: 0; border-radius: 24px; background: var(--editor-teal); box-shadow: none; }
+.studio-orbit-hint { border-radius: 999px; }
+.studio-stage-foot { color: var(--editor-muted); font-family: var(--font-inter); }
+.studio-stage-foot strong { color: var(--editor-body); }
+
+@media (max-width: 960px) {
+  .workspace { grid-template-columns: minmax(310px, 38%) minmax(0,1fr); }
+  .studio-workspace { grid-template-columns: minmax(330px, 42%) minmax(0,1fr); }
+  .editor-mode-switch .autosave { display: none; }
+}
+
+@media (max-width: 700px) {
+  .app-shell,
+  .studio-shell { grid-template-rows: 58px minmax(0,1fr); }
+  .topbar,
+  .studio-topbar { height: 58px; padding: 0 12px; }
+  .editor-mode-switch .mode-pill,
+  .studio-topbar-center.editor-mode-switch .mode-pill { min-height: 32px; padding: 0 9px; }
+  .studio-demo-grid { grid-template-columns: 1fr 1fr; }
+  .studio-spec-section { display: block; }
 }

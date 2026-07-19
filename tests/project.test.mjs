@@ -25,12 +25,15 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
 
   assert.match(page, /<HomePage\s*\/>/);
   assert.match(home, /LayerVisualizer/);
-  assert.match(home, /const WORDS = \["PRINTA", "HELLO", "MAKER", "TYPE"\]/);
-  assert.match(home, /buildPrintStudies/);
+  assert.match(home, /const PRINT_WORDS = \[/);
+  assert.match(home, /text: "PRINTA"/);
+  assert.match(home, /text: "HELLO"/);
   assert.match(home, /STUDY_PALETTE/);
-  assert.match(home, /textGeometryFor/);
+  assert.match(home, /loadTextGeometry/);
   assert.match(home, /setStudyIndex/);
   assert.match(home, /href="\/editor"/);
+  assert.match(editor, /mode === "procedural"/);
+  assert.match(editor, /<ProceduralStudio\s*\/>/);
   assert.match(editor, /<TextPlayground\s*\/>/);
   assert.match(playground, /Download STL/);
   assert.match(playground, /OrbitControls/);
@@ -50,7 +53,8 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(playground, /three-gpu-pathtracer/);
   assert.match(playground, /High quality/);
   assert.match(playground, /Print material/);
-  assert.match(studio, /Procedural studio/);
+  assert.match(studio, /editor-mode-switch/);
+  assert.match(studio, /Model in layers/);
   assert.match(studio, /JSON \/ YAML spec/);
   assert.match(studio, /Download STL/);
   assert.match(widget, /font-menu/);
@@ -71,7 +75,9 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(widget, /app settings-collapsed/);
   assert.match(widget, /requestDisplayMode\(\{mode:target\}\)/);
   assert.match(widget, /Three\.js/);
-  assert.match(modelWidget, /Procedural solid/);
+  assert.match(modelWidget, /Shape in layers/);
+  assert.match(modelWidget, /create_procedural_model/);
+  assert.match(modelWidget, /JSON \/ YAML spec/);
   assert.match(modelWidget, /STLLoader/);
   assert.match(modelSpec, /MODEL_SPEC_VERSION/);
   assert.match(modelSpec, /radialWave/);

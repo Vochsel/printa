@@ -36,6 +36,7 @@ type InspectResult = {
 function ModelViewport({ stlUrl, materialPreset, onReady }: { stlUrl: string; materialPreset: PrintMaterialPreset; onReady?: () => void }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<() => void>(() => undefined);
+  const cameraPoseRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -122,7 +123,14 @@ function ModelViewport({ stlUrl, materialPreset, onReady }: { stlUrl: string; ma
         model.castShadow = true;
         model.receiveShadow = true;
         scene.add(model);
-        frame();
+        const savedPose = cameraPoseRef.current;
+        if (savedPose) {
+          camera.position.copy(savedPose.position);
+          controls.target.copy(savedPose.target);
+          controls.update();
+        } else {
+          frame();
+        }
         onReady?.();
       });
 
@@ -144,6 +152,7 @@ function ModelViewport({ stlUrl, materialPreset, onReady }: { stlUrl: string; ma
     render();
     return () => {
       disposed = true;
+      cameraPoseRef.current = { position: camera.position.clone(), target: controls.target.clone() };
       cancelAnimationFrame(animation);
       observer.disconnect();
       controls.dispose();
@@ -232,7 +241,11 @@ export function ProceduralStudio() {
     <main className="studio-shell">
       <header className="studio-topbar">
         <Link className="brand" href="/" aria-label="Printa home"><span className="brand-mark"><Layers3 size={18} /></span><span>PRINTA</span><em>SPEC 1.0</em></Link>
-        <div className="studio-topbar-center"><span><Sparkles size={13} /> Procedural studio</span><i /> Deterministic geometry</div>
+        <div className="studio-topbar-center editor-mode-switch" aria-label="Editor mode">
+          <Link className="mode-pill" href="/editor?mode=text"><span>Text</span></Link>
+          <Link className="mode-pill is-active" href="/editor?mode=procedural"><Waves size={14} /> Procedural</Link>
+          <i />
+        </div>
         <nav><a href="/skills" target="_blank"><ScrollText size={14} /> Skill</a><a href="/api/model/schema" target="_blank"><Braces size={14} /> Schema</a></nav>
       </header>
 

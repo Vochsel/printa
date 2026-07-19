@@ -19,7 +19,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TEMPLATE_URI = "ui://widget/printa-extruded-text-v8.html";
-const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v1.html";
+const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v2.html";
 
 function createServer(origin: string) {
   const server = new McpServer(
@@ -70,7 +70,7 @@ function createServer(origin: string) {
             resourceDomains: [origin, "https://cdn.jsdelivr.net"],
           },
         },
-        "openai/widgetDescription": "An interactive 3D preview for composable Printa procedural models, including generated bounds, mesh statistics, warnings, Studio handoff, and STL download.",
+        "openai/widgetDescription": "A complete procedural modeling workbench with editable JSON/YAML, built-in form and simulation demos, live 3D preview, bounds, mesh warnings, editor handoff, and STL download.",
         "openai/widgetPrefersBorder": false,
         "openai/widgetCSP": {
           connect_domains: [origin, "https://cdn.jsdelivr.net"],
@@ -262,7 +262,7 @@ function createServer(origin: string) {
       const result = await inspectProceduralModel(input);
       const encoded = encodeModelDocument(result.document);
       const stlUrl = `${origin}/api/model/stl?spec=${encoded}`;
-      const studioUrl = `${origin}/studio?spec=${encoded}`;
+      const studioUrl = `${origin}/editor?mode=procedural&spec=${encoded}`;
       const structuredContent = {
         name: result.document.name,
         description: result.document.description,
@@ -283,7 +283,7 @@ function createServer(origin: string) {
         structuredContent,
         content: [{
           type: "text" as const,
-          text: `Created ${structuredContent.filename}: ${structuredContent.widthMm} × ${structuredContent.depthMm} × ${structuredContent.heightMm} mm, ${structuredContent.triangles.toLocaleString()} triangles.${structuredContent.warnings.length ? ` ${structuredContent.warnings.join(" ")}` : ""} [Download STL](${stlUrl}) or [continue editing in Printa Studio](${studioUrl}).`,
+          text: `Created ${structuredContent.filename}: ${structuredContent.widthMm} × ${structuredContent.depthMm} × ${structuredContent.heightMm} mm, ${structuredContent.triangles.toLocaleString()} triangles.${structuredContent.warnings.length ? ` ${structuredContent.warnings.join(" ")}` : ""} [Download STL](${stlUrl}) or [continue editing in Printa](${studioUrl}).`,
         }],
         _meta: { specVersion: "1.0", generatedAt: new Date().toISOString() },
       };

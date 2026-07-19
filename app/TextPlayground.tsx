@@ -115,6 +115,7 @@ function readEditorQuery() {
 
 function editorQuery(model: ModelState, units: "mm" | "cm", materialPreset: PrintMaterialPreset, highQuality: boolean) {
   return new URLSearchParams({
+    mode: "text",
     text: model.text,
     font: model.font,
     size: String(model.sizeMm),
@@ -817,9 +818,10 @@ export function TextPlayground() {
           <span>PRINTA</span>
           <em>ALPHA</em>
         </Link>
-        <div className="topbar-center">
-          <span className="mode-pill"><Box size={14} /> Extruded text</span>
-          <span className="autosave"><i /> Live geometry</span>
+        <div className="topbar-center editor-mode-switch" aria-label="Editor mode">
+          <Link className="mode-pill is-active" href="/editor?mode=text"><Type size={14} /> Text</Link>
+          <Link className="mode-pill" href="/editor?mode=procedural"><Box size={14} /> Procedural</Link>
+          <span className="autosave"><i /> Live</span>
         </div>
         <a className="mcp-link" href="/mcp" target="_blank" rel="noreferrer">
           <span>MCP</span> /mcp

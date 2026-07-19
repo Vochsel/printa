@@ -1,6 +1,6 @@
 ---
 name: printa-modeling
-description: Create, revise, validate, preview, and export composable Printa Spec 1.0 JSON or YAML models through the Printa MCP server. Use for printable primitives, custom-curve extrusion, text, revolved profiles and vases, ordered deformation modifiers, assemblies, repeated forms, deterministic water surfaces, cloth drapes, Studio previews, and STL output.
+description: Create, revise, validate, preview, and export composable Printa Spec 1.0 JSON or YAML models through the Printa MCP server. Use for printable primitives, custom-curve extrusion, text, revolved profiles and vases, ordered deformation modifiers, assemblies, repeated forms, deterministic water surfaces, cloth drapes, editor previews, and STL output.
 ---
 
 # Printa procedural modeling
@@ -24,7 +24,7 @@ Read the machine schema at `https://printa.vochsel.com/api/model/schema` when ex
 7. Call `create_procedural_model` with the complete JSON or YAML document.
 8. Inspect dimensions, triangle count, volume estimate, and warnings.
 9. Refine the profile, amplitude, twist, resolution, wall, or transforms as needed.
-10. Return both the Studio link and STL link.
+10. Return both the Printa editor link (`/editor?mode=procedural`) and STL link.
 
 ## Choose a construction
 
