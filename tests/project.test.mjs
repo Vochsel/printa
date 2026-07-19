@@ -149,9 +149,37 @@ test("production build contains every public route", async () => {
     access(new URL(".next/server/app/health/route.js", root)),
     access(new URL("public/og.png", root)),
     access(new URL("public/printa-logo-square.jpg", root)),
+    access(new URL("public/benchmarks/index.html", root)),
     readFile(new URL("public/printa-logo.png", root)),
   ]);
   const logoPng = assets.at(-1);
   assert.ok(logoPng);
   assert.ok(logoPng.byteLength <= 10 * 1024, "PNG logo stays within the 10 KB asset budget");
+});
+
+test("tracks benchmark history and mandates compatible baseline comparisons", async () => {
+  const [runner, report, readme, agents, claude] = await Promise.all([
+    readFile(new URL("benchmarks/model-build.ts", root), "utf8"),
+    readFile(new URL("public/benchmarks/index.html", root), "utf8"),
+    readFile(new URL("benchmarks/README.md", root), "utf8"),
+    readFile(new URL("AGENTS.md", root), "utf8"),
+    readFile(new URL("CLAUDE.md", root), "utf8"),
+  ]);
+
+  assert.match(runner, /suiteFingerprint/);
+  assert.match(runner, /historicalPoints/);
+  assert.match(runner, /updateHistory/);
+  assert.match(runner, /public\/benchmarks\/history\.js/);
+  assert.match(report, /PRINTA_BENCHMARK_HISTORY/);
+  assert.match(report, /Baseline comparison/);
+  assert.match(report, /Workload history/);
+  assert.match(report, /15% and 5 ms review threshold/);
+  assert.match(readme, /most recent run that has the same suite fingerprint/);
+  for (const instructions of [agents, claude]) {
+    assert.match(instructions, /npm run benchmark/);
+    assert.match(instructions, /compatible/);
+    assert.match(instructions, /15% and 5 ms/);
+    assert.match(instructions, /npm test/);
+    assert.match(instructions, /npm run lint/);
+  }
 });
