@@ -61,6 +61,11 @@ const port = Number(process.env.PRINTA_BENCH_PORT ?? 4317);
 const externalUrl = process.env.PRINTA_BENCH_URL;
 const baseUrl = externalUrl ?? `http://127.0.0.1:${port}`;
 const serverState: { process: ChildProcess | null } = { process: null };
+const generatedResultPathspecs = [
+  ":(exclude)benchmarks/results/latest.json",
+  ":(exclude)benchmarks/results/history.json",
+  ":(exclude)public/benchmarks/history.js",
+];
 
 function git(args: string[], fallback = "unknown") {
   try { return execFileSync("git", args, { cwd: projectRoot, encoding: "utf8" }).trim() || fallback; }
@@ -76,9 +81,9 @@ function currentRevisionMetadata(): RevisionMetadata {
   const commit = git(["rev-parse", "--short=12", "HEAD"]);
   const subject = git(["show", "-s", "--format=%s", "HEAD"]);
   const branch = git(["branch", "--show-current"], "detached");
-  const status = git(["status", "--porcelain", "--untracked-files=all"], "");
+  const status = git(["status", "--porcelain", "--untracked-files=all", "--", ".", ...generatedResultPathspecs], "");
   const dirty = Boolean(status);
-  const worktree = `${git(["diff", "--binary", "HEAD"], "")}\n${status}`;
+  const worktree = `${git(["diff", "--binary", "HEAD", "--", ".", ...generatedResultPathspecs], "")}\n${status}`;
   const revision = dirty ? `${commit}+${createHash("sha256").update(worktree).digest("hex").slice(0, 8)}` : commit;
   return { commit, subject, branch, dirty, revision };
 }

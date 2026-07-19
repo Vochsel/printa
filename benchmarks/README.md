@@ -18,4 +18,6 @@ Each successful run updates three artifacts:
 
 The runner seeds history from earlier committed `latest.json` reports when needed, then compares the new result with the most recent run that has the same suite fingerprint. Its console summary reports first-build and warm-cache deltas. The report charts suite and workload history, supports explicit compatible-baseline selection, and flags latency regressions larger than both 15% and 5 ms for review.
 
+Generated result files are excluded from the working-tree fingerprint. This means a same-commit rerun replaces that revision's point instead of manufacturing a dirty revision, while any source, fixture, or configuration edit still receives an explicit working-tree fingerprint.
+
 Do not edit generated benchmark result files by hand. Run the suite, inspect the console comparison, and use the static report to understand whether a change is a real regression, ordinary measurement noise, or an intentional tradeoff.
