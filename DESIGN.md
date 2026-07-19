@@ -94,7 +94,7 @@ document
     └── repeat(child + count + step + ordered modifiers + transform)
 ```
 
-Sources currently include primitives, curve extrusion, axis revolution, Google-font text, deterministic water, and deterministic cloth. Modifiers run in declared order: twist, taper, radial wave, axial wave, bend, noise, and smoothing.
+Sources currently include primitives, curve extrusion, axis revolution, Google-font text, deterministic water, and deterministic cloth. Revolved shells expose wall thickness, a solid bottom/base with independent thickness, and an optional solid top cap with independent thickness. Modifiers run in declared order: twist, taper, radial wave, axial wave, bend, noise, and smoothing.
 
 IDs are editor identity; they do not alter geometry. Materials and display settings are presentation metadata and should not force a mesh rebuild.
 

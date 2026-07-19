@@ -87,9 +87,15 @@ profile: [[28, 0], [40, 45], [30, 100], [25, 130]]
 segments: 160
 profileSegments: 100
 wall: 2.2
+bottomCap: true
+bottomThickness: 3
+topCap: false
+topThickness: 2.4
 interpolation: catmull-rom # linear | catmull-rom
 axis: z # x | y | z
 ```
+
+`wall` controls the side shell. `bottomCap: true` creates a solid base whose interior floor is raised by `bottomThickness`. `topCap: true` seals the form and lowers the interior ceiling by `topThickness`. With either cap disabled, that end remains open but receives a watertight annular rim. Ordinary vases normally use a solid bottom and open top; sculptures and enclosed forms can enable both caps.
 
 ### Extrude
 

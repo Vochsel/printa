@@ -115,7 +115,11 @@ const revolveSourceSchema = z.object({
   profile: z.array(z.tuple([nonNegative, finite])).min(2).max(64).describe("[radius, height] control points"),
   segments: z.number().int().min(8).max(512).default(128),
   profileSegments: z.number().int().min(2).max(256).default(96),
-  wall: positive.default(2),
+  wall: positive.default(2).describe("Shell wall thickness"),
+  bottomCap: z.boolean().default(true).describe("Close the vessel with a solid printable base"),
+  bottomThickness: positive.default(2.4).describe("Solid base thickness"),
+  topCap: z.boolean().default(false).describe("Close the top of the vessel with a solid cap"),
+  topThickness: positive.default(2.4).describe("Solid top cap thickness"),
   interpolation: z.enum(["linear", "catmull-rom"]).default("catmull-rom"),
   axis: z.enum(["x", "y", "z"]).default("z"),
 }).strict();

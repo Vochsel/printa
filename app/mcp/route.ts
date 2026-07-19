@@ -26,7 +26,7 @@ function createServer(origin: string) {
     { name: "printa", version: "0.4.0" },
     {
       instructions:
-        `Create ready-to-print geometry with create_procedural_model or use create_extruded_text for the focused text workflow. Printa Spec 1.0 composes primitive, custom-curve extrusion, revolve, text, water, and cloth sources with ordered modifiers, assemblies, repeats, and transforms. JSON and YAML are accepted. Read the modeling skill at ${origin}/skills and the JSON Schema at ${origin}/api/model/schema.`,
+        `Create ready-to-print geometry with create_procedural_model or use create_extruded_text for the focused text workflow. Printa Spec 1.0 composes primitive, custom-curve extrusion, revolve, text, water, and cloth sources with ordered modifiers, assemblies, repeats, and transforms. Revolved vases support wall thickness, solid bases, and optional solid top caps. JSON and YAML are accepted. Read the modeling skill at ${origin}/skills and the JSON Schema at ${origin}/api/model/schema.`,
     },
   );
 
@@ -227,7 +227,7 @@ function createServer(origin: string) {
     "create_procedural_model",
     {
       title: "Create a procedural printable model",
-      description: "Validate and build a Printa Spec 1.0 document supplied as JSON or YAML, then show the result as an interactive 3D model with STL download. Use sources for primitives, custom Bézier extrusion, profile revolution, text, water simulation, or cloth simulation. Compose ordered twist, taper, radialWave, axialWave, bend, noise, and smooth modifiers; merge assemblies; or repeat transformed nodes. For a quick start, choose one of the built-in demos.",
+      description: "Validate and build a Printa Spec 1.0 document supplied as JSON or YAML, then show the result as an interactive 3D model with STL download. Use sources for primitives, custom Bézier extrusion, profile revolution, text, water simulation, or cloth simulation. Revolved vessels support wall thickness, solid bottom bases, optional top caps, and independent base/cap thickness. Compose ordered twist, taper, radialWave, axialWave, bend, noise, and smooth modifiers; merge assemblies; or repeat transformed nodes. For a quick start, choose one of the built-in demos.",
       inputSchema: {
         spec: z.string().min(20).max(6_000).optional().describe("Complete Printa Spec 1.0 document as JSON or YAML. Prefer YAML for readability. Omit only when using a built-in demo."),
         demo: z.enum(["type-specimen", "contour-spiral-vase", "zenith-twist", "fluted-bud-vase", "ripple-column-vase", "spline-petal-dish", "primitive-totem", "water-ripple-tile", "cloth-drape-study"]).default("type-specimen").describe("Built-in starting model used when spec is omitted"),

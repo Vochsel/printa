@@ -73,54 +73,93 @@ function sampleProfile(source: Extract<SourceSpec, { type: "revolve" }>) {
 
 function createRevolveGeometry(source: Extract<SourceSpec, { type: "revolve" }>) {
   const profile = sampleProfile(source);
-  const rings = profile.length;
+  if (profile.at(-1)![1] < profile[0][1]) profile.reverse();
   const radial = source.segments;
   const positions: number[] = [];
   const indices: number[] = [];
-
-  for (const [radius, height] of profile) {
-    for (let side = 0; side < 2; side += 1) {
-      const ringRadius = side === 0 ? radius : Math.max(0.1, radius - source.wall);
-      for (let segment = 0; segment < radial; segment += 1) {
-        const angle = (segment / radial) * Math.PI * 2;
-        positions.push(Math.cos(angle) * ringRadius, Math.sin(angle) * ringRadius, height);
+  const addRing = (radius: number, height: number) => {
+    const start = positions.length / 3;
+    for (let segment = 0; segment < radial; segment += 1) {
+      const angle = (segment / radial) * Math.PI * 2;
+      positions.push(Math.cos(angle) * radius, Math.sin(angle) * radius, height);
+    }
+    return start;
+  };
+  const outerRings = profile.map(([radius, height]) => addRing(radius, height));
+  const radiusAt = (height: number) => {
+    for (let index = 0; index < profile.length - 1; index += 1) {
+      const current = profile[index];
+      const next = profile[index + 1];
+      if (height >= current[1] && height <= next[1]) {
+        const t = (height - current[1]) / Math.max(1e-8, next[1] - current[1]);
+        return current[0] + (next[0] - current[0]) * t;
       }
     }
+    return height <= profile[0][1] ? profile[0][0] : profile.at(-1)![0];
+  };
+  const bottomHeight = profile[0][1];
+  const topHeight = profile.at(-1)![1];
+  const totalHeight = Math.max(0.01, topHeight - bottomHeight);
+  let bottomThickness = source.bottomCap ? Math.min(source.bottomThickness, totalHeight * 0.95) : 0;
+  let topThickness = source.topCap ? Math.min(source.topThickness, totalHeight * 0.95) : 0;
+  if (bottomThickness + topThickness > totalHeight * 0.99) {
+    const scale = totalHeight * 0.99 / (bottomThickness + topThickness);
+    bottomThickness *= scale;
+    topThickness *= scale;
   }
+  const interiorBottom = bottomHeight + bottomThickness;
+  const interiorTop = topHeight - topThickness;
+  const innerProfile: Array<[number, number]> = [[Math.max(0.1, radiusAt(interiorBottom) - source.wall), interiorBottom]];
+  for (const [radius, height] of profile) {
+    if (height > interiorBottom + 1e-6 && height < interiorTop - 1e-6) innerProfile.push([Math.max(0.1, radius - source.wall), height]);
+  }
+  innerProfile.push([Math.max(0.1, radiusAt(interiorTop) - source.wall), interiorTop]);
+  const innerRings = innerProfile.map(([radius, height]) => addRing(radius, height));
+  const at = (ring: number, segment: number) => ring + segment % radial;
+  const connectRings = (rings: number[], inward = false) => {
+    for (let ring = 0; ring < rings.length - 1; ring += 1) {
+      for (let segment = 0; segment < radial; segment += 1) {
+        const next = (segment + 1) % radial;
+        const a = at(rings[ring], segment);
+        const b = at(rings[ring], next);
+        const c = at(rings[ring + 1], next);
+        const d = at(rings[ring + 1], segment);
+        if (inward) indices.push(a, d, b, b, d, c);
+        else indices.push(a, b, d, b, c, d);
+      }
+    }
+  };
+  connectRings(outerRings);
+  connectRings(innerRings, true);
 
-  const outer = (ring: number, segment: number) => ring * radial * 2 + segment % radial;
-  const inner = (ring: number, segment: number) => ring * radial * 2 + radial + segment % radial;
-  for (let ring = 0; ring < rings - 1; ring += 1) {
+  const addDisk = (ring: number, height: number, upward: boolean) => {
+    const center = positions.length / 3;
+    positions.push(0, 0, height);
     for (let segment = 0; segment < radial; segment += 1) {
       const next = (segment + 1) % radial;
-      const a = outer(ring, segment);
-      const b = outer(ring, next);
-      const c = outer(ring + 1, next);
-      const d = outer(ring + 1, segment);
-      indices.push(a, b, d, b, c, d);
-
-      const ia = inner(ring, segment);
-      const ib = inner(ring, next);
-      const ic = inner(ring + 1, next);
-      const id = inner(ring + 1, segment);
-      indices.push(ia, id, ib, ib, id, ic);
+      if (upward) indices.push(center, at(ring, segment), at(ring, next));
+      else indices.push(center, at(ring, next), at(ring, segment));
     }
-  }
-
-  for (let segment = 0; segment < radial; segment += 1) {
-    const next = (segment + 1) % radial;
-    const bottomOuter = outer(0, segment);
-    const bottomOuterNext = outer(0, next);
-    const bottomInner = inner(0, segment);
-    const bottomInnerNext = inner(0, next);
-    indices.push(bottomOuter, bottomInnerNext, bottomOuterNext, bottomOuter, bottomInner, bottomInnerNext);
-
-    const topOuter = outer(rings - 1, segment);
-    const topOuterNext = outer(rings - 1, next);
-    const topInner = inner(rings - 1, segment);
-    const topInnerNext = inner(rings - 1, next);
-    indices.push(topOuter, topOuterNext, topInnerNext, topOuter, topInnerNext, topInner);
-  }
+  };
+  const addRim = (outerRing: number, innerRing: number, top: boolean) => {
+    for (let segment = 0; segment < radial; segment += 1) {
+      const next = (segment + 1) % radial;
+      const outer = at(outerRing, segment);
+      const outerNext = at(outerRing, next);
+      const inner = at(innerRing, segment);
+      const innerNext = at(innerRing, next);
+      if (top) indices.push(outer, outerNext, innerNext, outer, innerNext, inner);
+      else indices.push(outer, innerNext, outerNext, outer, inner, innerNext);
+    }
+  };
+  if (source.bottomCap) {
+    addDisk(outerRings[0], bottomHeight, false);
+    addDisk(innerRings[0], interiorBottom, true);
+  } else addRim(outerRings[0], innerRings[0], false);
+  if (source.topCap) {
+    addDisk(outerRings.at(-1)!, topHeight, true);
+    addDisk(innerRings.at(-1)!, interiorTop, false);
+  } else addRim(outerRings.at(-1)!, innerRings.at(-1)!, true);
 
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));

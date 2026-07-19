@@ -91,6 +91,8 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(modelSpec, /waterSourceSchema/);
   assert.match(modelSpec, /clothSourceSchema/);
   assert.match(modelSpec, /bevelSide/);
+  assert.match(modelSpec, /bottomThickness/);
+  assert.match(modelSpec, /topThickness/);
   assert.match(modelSpec, /display: z\.object/);
   assert.match(demos, /type-specimen/);
   assert.match(demos, /contour-spiral-vase/);

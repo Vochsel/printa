@@ -64,6 +64,20 @@ function boundaryEdgeCount(geometry: BufferGeometry) {
   return [...edges.values()].filter((count) => count !== 2).length;
 }
 
+function meshVolume(geometry: BufferGeometry) {
+  const source = geometry.index ? geometry.toNonIndexed() : geometry;
+  const position = source.getAttribute("position");
+  let volume = 0;
+  for (let index = 0; index < position.count; index += 3) {
+    const ax = position.getX(index); const ay = position.getY(index); const az = position.getZ(index);
+    const bx = position.getX(index + 1); const by = position.getY(index + 1); const bz = position.getZ(index + 1);
+    const cx = position.getX(index + 2); const cy = position.getY(index + 2); const cz = position.getZ(index + 2);
+    volume += ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx);
+  }
+  if (source !== geometry) source.dispose();
+  return Math.abs(volume / 6);
+}
+
 test("parses equivalent JSON and YAML Printa documents", () => {
   const yaml = `
 version: "1.0"
@@ -104,6 +118,9 @@ test("benchmark matrix touches every evaluator family and validates every spec",
   }
   for (const [name, spec] of Object.entries(BENCHMARK_SPECS)) {
     assert.doesNotThrow(() => parseModelDocument(spec), `${name} should be a valid benchmark document`);
+  }
+  for (const shellField of ["wall", "bottomCap", "bottomThickness", "topCap", "topThickness"]) {
+    assert.match(serialized, new RegExp(`\"${shellField}\"`), `benchmark coverage should include ${shellField}`);
   }
 });
 
@@ -154,6 +171,25 @@ test("ordered modifiers materially deform geometry", () => {
   assert.notDeepEqual(geometryBounds(modified).map((value) => value.toFixed(3)), original.map((value) => value.toFixed(3)));
   source.dispose();
   modified.dispose();
+});
+
+test("revolved shells support watertight solid bases and top caps with thickness", () => {
+  const shared = {
+    type: "revolve" as const,
+    profile: [[24, 0], [32, 30], [29, 70], [24, 110]] as Array<[number, number]>,
+    segments: 72,
+    profileSegments: 48,
+    wall: 2,
+    interpolation: "catmull-rom" as const,
+    axis: "z" as const,
+  };
+  const open = createSourceGeometry({ ...shared, bottomCap: false, bottomThickness: 2.4, topCap: false, topThickness: 2.4 });
+  const based = createSourceGeometry({ ...shared, bottomCap: true, bottomThickness: 5, topCap: false, topThickness: 2.4 });
+  const sealed = createSourceGeometry({ ...shared, bottomCap: true, bottomThickness: 5, topCap: true, topThickness: 6 });
+  for (const geometry of [open, based, sealed]) assert.equal(boundaryEdgeCount(geometry), 0, "every cap mode should remain watertight");
+  assert.ok(meshVolume(based) > meshVolume(open), "a solid base should add material volume");
+  assert.ok(meshVolume(sealed) > meshVolume(based), "a solid top cap should add material volume");
+  open.dispose(); based.dispose(); sealed.dispose();
 });
 
 test("every bundled demo produces finite, closed, printable-scale geometry", async (t) => {

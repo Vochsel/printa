@@ -23,7 +23,7 @@ Read the machine schema at `https://printa.vochsel.com/api/model/schema` when ex
 6. Keep the graph compact. Prefer modifiers and repeats over enumerating many nodes.
 7. Call `create_procedural_model` with the complete JSON or YAML document.
 8. Inspect dimensions, triangle count, volume estimate, and warnings.
-9. Refine the profile, amplitude, twist, resolution, wall, or transforms as needed.
+9. Refine the profile, amplitude, twist, resolution, wall, base/cap thickness, or transforms as needed.
 10. Return both the unified Printa editor link (`/editor`) and STL link.
 
 ## Choose a construction
@@ -38,13 +38,15 @@ Read the machine schema at `https://printa.vochsel.com/api/model/schema` when ex
 
 ## Shape vases
 
-Represent the silhouette as `[radius, height]` profile points in a `revolve` source. Set `wall` to create a hollow printable shell. Then:
+Represent the silhouette as `[radius, height]` profile points in a `revolve` source. Set `wall` to create a hollow printable shell, keep `bottomCap: true` with a suitable `bottomThickness` for a usable vessel, and enable `topCap` only for sealed forms. Then:
 
 - Add `radialWave` for flutes or lobes.
 - Add `twist` after `radialWave` to turn those ribs into helices.
 - Add `taper` after the ribs when the whole upper section should narrow.
 - Use three or four large lobes for sculptural twists; use 12–24 shallow lobes for fine fluting.
 - Keep the smallest inside radius larger than the wall.
+- Use a solid base at least as thick as the wall; 2.4–3.2 mm is a practical FDM default.
+- Use `topThickness` when `topCap: true`; open vases should keep `topCap: false`.
 
 ## Preserve printability
 

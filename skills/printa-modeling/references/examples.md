@@ -16,6 +16,10 @@ root:
     segments: 192
     profileSegments: 110
     wall: 2.2
+    bottomCap: true
+    bottomThickness: 3
+    topCap: false
+    topThickness: 2.4
     interpolation: catmull-rom
   modifiers:
     - { type: radialWave, amplitude: 1.7, count: 18, phaseDeg: 0, axialTurns: 0 }
