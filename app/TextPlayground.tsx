@@ -20,6 +20,12 @@ import {
 } from "lucide-react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import type { WebGLPathTracer } from "three-gpu-pathtracer";
+import {
+  PRINT_MATERIAL_PRESETS,
+  printMaterialPreset,
+  type PrintMaterialPreset,
+} from "@/lib/material-presets";
 import {
   createTextGeometry,
   BUILD_VOLUME_WARNING_MM,
@@ -102,10 +108,12 @@ function readEditorQuery() {
   return {
     model: { ...normalized, text: rawText } satisfies ModelState,
     units: params.get("units") === "cm" ? "cm" as const : "mm" as const,
+    materialPreset: printMaterialPreset(params.get("material") ?? "pla-orange").id,
+    highQuality: queryBoolean(params, "highQuality", false),
   };
 }
 
-function editorQuery(model: ModelState, units: "mm" | "cm") {
+function editorQuery(model: ModelState, units: "mm" | "cm", materialPreset: PrintMaterialPreset, highQuality: boolean) {
   return new URLSearchParams({
     text: model.text,
     font: model.font,
@@ -121,6 +129,8 @@ function editorQuery(model: ModelState, units: "mm" | "cm") {
     italic: String(model.italic),
     underline: String(model.underline),
     units,
+    material: materialPreset,
+    highQuality: String(highQuality),
   });
 }
 
@@ -186,6 +196,20 @@ function buildDownloadUrl(model: ModelState) {
     underline: String(model.underline),
   });
   return `/api/stl?${params.toString()}`;
+}
+
+function createPreviewMaterial(id: PrintMaterialPreset) {
+  const preset = printMaterialPreset(id);
+  return new THREE.MeshPhysicalMaterial({
+    color: preset.color,
+    roughness: preset.roughness,
+    metalness: preset.metalness,
+    clearcoat: preset.clearcoat,
+    clearcoatRoughness: Math.min(0.5, preset.roughness + 0.08),
+    transmission: preset.transmission,
+    thickness: preset.transmission > 0 ? 1.4 : 0,
+    ior: 1.46,
+  });
 }
 
 function createDimensionLabel(text: string, color: string, worldSize: number) {
@@ -280,14 +304,83 @@ function disposeObject(group: THREE.Object3D) {
   });
 }
 
-function Viewer({ model, onStats }: { model: ModelState; onStats: (stats: TextModelStats) => void }) {
+function createPathTraceScene(mesh: THREE.Mesh) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color("#111315");
+  const tracedModel = new THREE.Mesh(mesh.geometry, (mesh.material as THREE.MeshPhysicalMaterial).clone());
+  tracedModel.castShadow = true;
+  tracedModel.receiveShadow = true;
+  tracedModel.name = "path-model";
+  scene.add(tracedModel);
+
+  const bounds = new THREE.Box3().setFromObject(mesh);
+  const span = Math.max(180, bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y);
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(span * 2.4, span * 2),
+    new THREE.MeshStandardMaterial({ color: "#171714", roughness: 0.82, metalness: 0.04 }),
+  );
+  floor.position.z = -0.08;
+  floor.receiveShadow = true;
+  floor.name = "path-floor";
+  scene.add(floor);
+
+  const key = new THREE.DirectionalLight("#fff1d5", 4.5);
+  key.position.set(-90, -120, 180);
+  scene.add(key);
+  const fill = new THREE.DirectionalLight("#9caeff", 2.2);
+  fill.position.set(110, 70, 100);
+  scene.add(fill);
+  const front = new THREE.PointLight("#ffffff", 1100, span * 4, 1.8);
+  front.position.set(0, -span, span * 0.8);
+  scene.add(front);
+  return scene;
+}
+
+function disposePathTraceScene(scene: THREE.Scene | null) {
+  scene?.environment?.dispose();
+  scene?.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    if (child.name === "path-floor") child.geometry.dispose();
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.forEach((material) => material.dispose());
+  });
+}
+
+function Viewer({
+  model,
+  materialPreset,
+  highQuality,
+  onStats,
+  onSamples,
+}: {
+  model: ModelState;
+  materialPreset: PrintMaterialPreset;
+  highQuality: boolean;
+  onStats: (stats: TextModelStats) => void;
+  onSamples: (samples: number) => void;
+}) {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const modelRef = useRef<THREE.Mesh | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const dimensionsRef = useRef<THREE.Group | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const pathTracerRef = useRef<WebGLPathTracer | null>(null);
+  const pathSceneRef = useRef<THREE.Scene | null>(null);
+  const pathTraceTokenRef = useRef(0);
+  const highQualityRef = useRef(highQuality);
+  const restartPathTracingRef = useRef<() => void>(() => undefined);
+  const onSamplesRef = useRef(onSamples);
   const hasFramedRef = useRef(false);
+
+  useEffect(() => {
+    highQualityRef.current = highQuality;
+  }, [highQuality]);
+
+  useEffect(() => {
+    onSamplesRef.current = onSamples;
+  }, [onSamples]);
 
   const frameModel = useCallback(() => {
     const mesh = modelRef.current;
@@ -321,9 +414,12 @@ function Viewer({ model, onStats }: { model: ModelState; onStats: (stats: TextMo
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     mount.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -359,27 +455,98 @@ function Viewer({ model, onStats }: { model: ModelState; onStats: (stats: TextMo
     rim.position.set(100, 80, 90);
     scene.add(rim);
 
+    const disposePathTracer = () => {
+      pathTracerRef.current?.dispose();
+      pathTracerRef.current = null;
+      disposePathTraceScene(pathSceneRef.current);
+      pathSceneRef.current = null;
+    };
+    restartPathTracingRef.current = () => {
+      const token = ++pathTraceTokenRef.current;
+      disposePathTracer();
+      onSamplesRef.current(0);
+      const currentMesh = modelRef.current;
+      if (!highQualityRef.current || !currentMesh) return;
+      void import("three-gpu-pathtracer").then(({ GradientEquirectTexture, WebGLPathTracer }) => {
+        if (token !== pathTraceTokenRef.current || !highQualityRef.current || !modelRef.current) return;
+        const pathScene = createPathTraceScene(modelRef.current);
+        const environment = new GradientEquirectTexture(64);
+        environment.topColor.set("#fff4dc");
+        environment.bottomColor.set("#35415b");
+        environment.exponent = 1.4;
+        environment.update();
+        pathScene.environment = environment;
+        pathScene.environmentIntensity = 0.72;
+        const tracer = new WebGLPathTracer(renderer);
+        tracer.tiles.set(4, 4);
+        tracer.bounces = 4;
+        tracer.filterGlossyFactor = 0.22;
+        tracer.renderDelay = 0;
+        tracer.fadeDuration = 220;
+        tracer.minSamples = 2;
+        tracer.renderScale = Math.min(0.75, 1 / renderer.getPixelRatio());
+        tracer.dynamicLowRes = false;
+        tracer.rasterizeScene = true;
+        tracer.rasterizeSceneCallback = () => renderer.render(scene, camera);
+        tracer.setScene(pathScene, camera);
+        pathSceneRef.current = pathScene;
+        pathTracerRef.current = tracer;
+      }).catch(() => {
+        if (token === pathTraceTokenRef.current) {
+          disposePathTracer();
+          onSamplesRef.current(-1);
+        }
+      });
+    };
+    const updatePathCamera = () => {
+      if (!pathTracerRef.current) return;
+      pathTracerRef.current.updateCamera();
+      onSamplesRef.current(0);
+    };
+    controls.addEventListener("change", updatePathCamera);
+
     const resize = () => {
       const { width, height } = mount.getBoundingClientRect();
       renderer.setSize(width, height, false);
       camera.aspect = width / Math.max(height, 1);
       camera.updateProjectionMatrix();
+      updatePathCamera();
     };
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(mount);
     resize();
 
     let animationFrame = 0;
+    let reportedSamples = -1;
     const animate = () => {
       animationFrame = requestAnimationFrame(animate);
       controls.update();
-      renderer.render(scene, camera);
+      const tracer = pathTracerRef.current;
+      if (highQualityRef.current && tracer) {
+        try {
+          if (tracer.samples < 96) tracer.renderSample();
+          const samples = Math.floor(tracer.samples);
+          if (samples !== reportedSamples) {
+            reportedSamples = samples;
+            onSamplesRef.current(samples);
+          }
+        } catch {
+          disposePathTracer();
+          onSamplesRef.current(-1);
+          renderer.render(scene, camera);
+        }
+      } else {
+        renderer.render(scene, camera);
+      }
     };
     animate();
 
     return () => {
       cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
+      pathTraceTokenRef.current += 1;
+      controls.removeEventListener("change", updatePathCamera);
+      disposePathTracer();
       if (dimensionsRef.current) disposeObject(dimensionsRef.current);
       dimensionsRef.current = null;
       controls.dispose();
@@ -389,6 +556,7 @@ function Viewer({ model, onStats }: { model: ModelState; onStats: (stats: TextMo
       sceneRef.current = null;
       cameraRef.current = null;
       controlsRef.current = null;
+      rendererRef.current = null;
     };
   }, []);
 
@@ -400,13 +568,7 @@ function Viewer({ model, onStats }: { model: ModelState; onStats: (stats: TextMo
     void loadClientFont(model.font, normalizedModel.text, model.fontWeight, model.italic).then((loaded) => {
       if (!active || !sceneRef.current) return;
       const { geometry } = createTextGeometry(loaded.font, normalizedModel, { syntheticItalic: loaded.syntheticItalic });
-      const material = new THREE.MeshPhysicalMaterial({
-        color: "#ff5d2e",
-        roughness: 0.38,
-        metalness: 0.02,
-        clearcoat: 0.28,
-        clearcoatRoughness: 0.45,
-      });
+      const material = createPreviewMaterial(materialPreset);
       const mesh = new THREE.Mesh(geometry, material);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -426,6 +588,7 @@ function Viewer({ model, onStats }: { model: ModelState; onStats: (stats: TextMo
       dimensionsRef.current = createGroundDimensions(geometry.boundingBox!);
       sceneRef.current.add(dimensionsRef.current);
       onStats(geometryStats(geometry));
+      restartPathTracingRef.current();
 
       if (!hasFramedRef.current) {
         hasFramedRef.current = true;
@@ -436,7 +599,7 @@ function Viewer({ model, onStats }: { model: ModelState; onStats: (stats: TextMo
     return () => {
       active = false;
     };
-  }, [model, frameModel, onStats]);
+  }, [model, materialPreset, highQuality, frameModel, onStats]);
 
   return (
     <div className="viewer-shell">
@@ -444,6 +607,7 @@ function Viewer({ model, onStats }: { model: ModelState; onStats: (stats: TextMo
       <div className="viewer-toolbar" aria-hidden="true">
         <span><MousePointer2 size={14} /> Orbit</span>
         <span><Rotate3D size={14} /> Drag to inspect</span>
+        {highQuality && <span className="quality-badge">Path tracing</span>}
       </div>
       <button className="icon-button focus-button" type="button" onClick={frameModel} aria-label="Frame model">
         <Focus size={18} />
@@ -504,12 +668,17 @@ export function TextPlayground() {
   const [fontQuery, setFontQuery] = useState("");
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [activeFontIndex, setActiveFontIndex] = useState(0);
+  const [fontVisibleCount, setFontVisibleCount] = useState(40);
   const [stats, setStats] = useState<TextModelStats>({ widthMm: 0, heightMm: 0, depthMm: 0, triangles: 0 });
   const [downloading, setDownloading] = useState(false);
   const [units, setUnits] = useState<"mm" | "cm">("mm");
+  const [materialPreset, setMaterialPreset] = useState<PrintMaterialPreset>("pla-orange");
+  const [highQuality, setHighQuality] = useState(false);
+  const [pathSamples, setPathSamples] = useState(0);
   const fontPickerRef = useRef<HTMLDivElement>(null);
   const fontSearchRef = useRef<HTMLInputElement>(null);
   const stableSetStats = useCallback((next: TextModelStats) => setStats(next), []);
+  const stableSetPathSamples = useCallback((samples: number) => setPathSamples(samples), []);
   const downloadUrl = useMemo(() => buildDownloadUrl(model), [model]);
   const displayText = useMemo(() => normalizeTextModelOptions(model).text, [model]);
   const exceedsBuildVolume = stats.widthMm > BUILD_VOLUME_WARNING_MM || stats.heightMm > BUILD_VOLUME_WARNING_MM || stats.depthMm > BUILD_VOLUME_WARNING_MM;
@@ -532,7 +701,7 @@ export function TextPlayground() {
     return [selectedFont, ...matches.filter((font) => font.id !== selectedFont.id)];
   }, [fontQuery, fonts, selectedFont]);
 
-  const visibleFonts = useMemo(() => matchingFonts.slice(0, 30), [matchingFonts]);
+  const visibleFonts = useMemo(() => matchingFonts.slice(0, fontVisibleCount), [fontVisibleCount, matchingFonts]);
   const formatUnit = useCallback((value: number) => (
     units === "cm" ? `${(value / 10).toFixed(value < 10 ? 2 : 1)} cm` : `${value.toFixed(value < 10 ? 1 : 0)} mm`
   ), [units]);
@@ -544,6 +713,8 @@ export function TextPlayground() {
       const restored = readEditorQuery();
       setModel(restored.model);
       setUnits(restored.units);
+      setMaterialPreset(restored.materialPreset);
+      setHighQuality(restored.highQuality);
       setQueryReady(true);
     });
     return () => window.cancelAnimationFrame(frame);
@@ -551,10 +722,10 @@ export function TextPlayground() {
 
   useEffect(() => {
     if (!queryReady) return;
-    const params = editorQuery(model, units);
+    const params = editorQuery(model, units, materialPreset, highQuality);
     const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
     window.history.replaceState(window.history.state, "", nextUrl);
-  }, [model, queryReady, units]);
+  }, [model, queryReady, units, materialPreset, highQuality]);
 
   useEffect(() => {
     void fetch("/api/fonts")
@@ -586,6 +757,7 @@ export function TextPlayground() {
 
   const chooseFont = (font: FontSummary) => {
     setFontQuery("");
+    setFontVisibleCount(40);
     update("font", font.id);
     setFontPickerOpen(false);
     setActiveFontIndex(0);
@@ -595,7 +767,11 @@ export function TextPlayground() {
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setFontPickerOpen(true);
-      setActiveFontIndex((current) => Math.min(current + 1, visibleFonts.length - 1));
+      const nextIndex = Math.min(activeFontIndex + 1, matchingFonts.length - 1);
+      if (nextIndex >= visibleFonts.length - 3) {
+        setFontVisibleCount((count) => Math.min(count + 40, matchingFonts.length));
+      }
+      setActiveFontIndex(nextIndex);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setActiveFontIndex((current) => Math.max(current - 1, 0));
@@ -606,6 +782,12 @@ export function TextPlayground() {
       setFontPickerOpen(false);
       setFontQuery("");
     }
+  };
+
+  const loadMoreFontsOnScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const list = event.currentTarget;
+    if (list.scrollTop + list.clientHeight < list.scrollHeight - 100) return;
+    setFontVisibleCount((count) => Math.min(count + 40, matchingFonts.length));
   };
 
   const download = async () => {
@@ -662,19 +844,19 @@ export function TextPlayground() {
 
             <div className="font-control" ref={fontPickerRef}>
               <span className="control-label"><span>Google font</span><small>{fonts.length ? `${fonts.length.toLocaleString()} families` : "Loading…"}</small></span>
-              <button type="button" className={`font-picker-trigger${fontPickerOpen ? " is-open" : ""}`} onClick={() => setFontPickerOpen((open) => !open)} aria-haspopup="listbox" aria-expanded={fontPickerOpen}>
+              <button type="button" className={`font-picker-trigger${fontPickerOpen ? " is-open" : ""}`} onClick={() => { setFontVisibleCount(40); setFontPickerOpen((open) => !open); }} aria-haspopup="listbox" aria-expanded={fontPickerOpen}>
                 <span style={{ fontFamily: selectedFont ? `"${previewFontFamily(selectedFont.id)}", sans-serif` : undefined }}>{selectedFont?.family ?? "Roboto"}</span>
                 <small>{selectedFont?.category ?? "Google Font"}</small>
                 <ChevronDown size={16} />
               </button>
               {fontPickerOpen && (
                 <div className="font-results" id="google-font-results" role="listbox" aria-label="Google Fonts">
-                  <div className="font-popover-search"><Search size={15} /><input ref={fontSearchRef} id="google-font-search" value={fontQuery} onChange={(event) => { setFontQuery(event.target.value); setActiveFontIndex(0); }} onKeyDown={handleFontKeyDown} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="google-font-results" aria-activedescendant={visibleFonts[activeFontIndex] ? `font-${visibleFonts[activeFontIndex].id}` : undefined} aria-label="Search all Google Fonts" placeholder="Search Google Fonts…" autoComplete="off" /></div>
+                  <div className="font-popover-search"><Search size={15} /><input ref={fontSearchRef} id="google-font-search" value={fontQuery} onChange={(event) => { setFontQuery(event.target.value); setFontVisibleCount(40); setActiveFontIndex(0); }} onKeyDown={handleFontKeyDown} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="google-font-results" aria-activedescendant={visibleFonts[activeFontIndex] ? `font-${visibleFonts[activeFontIndex].id}` : undefined} aria-label="Search all Google Fonts" placeholder="Search Google Fonts…" autoComplete="off" /></div>
                   <div className="font-results-summary">
                     <span>{matchingFonts.length.toLocaleString()} {matchingFonts.length === 1 ? "font" : "fonts"}</span>
-                    {matchingFonts.length > visibleFonts.length && <small>Keep typing to narrow</small>}
+                    <small>{visibleFonts.length.toLocaleString()} shown{matchingFonts.length > visibleFonts.length ? " · scroll for all" : ""}</small>
                   </div>
-                  <div className="font-results-list">
+                  <div className="font-results-list" onScroll={loadMoreFontsOnScroll}>
                     {visibleFonts.map((font, index) => (
                       <button
                         key={font.id}
@@ -720,6 +902,22 @@ export function TextPlayground() {
             <label className="toggle-control"><span><strong>Smooth normals</strong><small>Soft preview shading</small></span><input type="checkbox" checked={model.smoothNormals} onChange={(event) => update("smoothNormals", event.target.checked)} /><i /></label>
           </div>
 
+          <div className="control-group preview-controls">
+            <div className="advanced-heading"><span><Sparkles size={13} /> Preview</span>{highQuality && <em>{pathSamples < 0 ? "Unavailable" : `${pathSamples} spp`}</em>}</div>
+            <label className="select-control">
+              <span className="control-label"><span>Print material</span></span>
+              <select value={materialPreset} onChange={(event) => setMaterialPreset(event.target.value as PrintMaterialPreset)}>
+                {PRINT_MATERIAL_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+              </select>
+            </label>
+            <label className="toggle-control quality-toggle">
+              <span><strong>High quality</strong><small>Progressive GPU path tracing</small></span>
+              <input type="checkbox" checked={highQuality} onChange={(event) => setHighQuality(event.target.checked)} />
+              <i />
+            </label>
+            {highQuality && <div className="quality-progress"><i /><span>{pathSamples < 0 ? "Path tracing needs WebGL 2" : pathSamples === 0 ? "Preparing path tracer…" : pathSamples >= 96 ? "Path trace complete" : "Rendering progressively—leave it running for a cleaner image"}</span></div>}
+          </div>
+
           <div className={`print-check${exceedsBuildVolume ? " is-warning" : ""}`}>
             <div className="check-icon">{exceedsBuildVolume ? <TriangleAlert size={17} /> : <Check size={17} />}</div>
             <div>
@@ -750,9 +948,9 @@ export function TextPlayground() {
               <span><small>D</small>{formatMm(stats.depthMm)}</span>
             </div>
           </div>
-          <Viewer model={model} onStats={stableSetStats} />
+          <Viewer model={model} materialPreset={materialPreset} highQuality={highQuality} onStats={stableSetStats} onSamples={stableSetPathSamples} />
           <footer className="stage-footer">
-            <span><i className="status-dot" /> Geometry compiled</span>
+            <span><i className={`status-dot${highQuality && pathSamples >= 0 && pathSamples < 96 ? " is-rendering" : ""}`} /> {highQuality ? pathSamples < 0 ? "Realtime fallback" : pathSamples > 0 ? `Path tracing · ${pathSamples} spp` : "Starting path tracer" : "Geometry compiled"}</span>
             <span>{stats.triangles.toLocaleString()} triangles</span>
             <span>Units: mm</span>
             <span className="stage-file">{downloadUrl.includes("?") ? "printa-text.stl" : "STL"}</span>

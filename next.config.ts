@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  outputFileTracingIncludes: {
+    "/skills": ["./skills/printa-modeling/SKILL.md"],
+    "/skills/[document]": ["./skills/printa-modeling/references/*.md"],
+  },
 };
 
 export default nextConfig;

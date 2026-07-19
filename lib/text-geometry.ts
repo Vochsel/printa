@@ -117,7 +117,7 @@ function createShapes(
     }
   }
 
-  const shapes = target.toShapes();
+  const shapes = target.toShapes(false);
   if (style.underline) {
     const bounds = source.getBoundingBox();
     const start = bounds.x1;
