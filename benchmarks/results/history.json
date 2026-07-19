@@ -1164,5 +1164,226 @@
         "fullWarmMs": 12.1
       }
     }
+  },
+  {
+    "generatedAt": "2026-07-19T09:38:48.926Z",
+    "revision": "2a633aa01bc5+9cb2567d",
+    "commit": "2a633aa01bc5",
+    "subject": "Add benchmark history dashboard",
+    "branch": "main",
+    "dirty": true,
+    "target": "local",
+    "runtime": "v25.8.1",
+    "platform": "darwin-arm64",
+    "cases": 20,
+    "builds": 81,
+    "firstMedianServerMs": 34.5,
+    "firstP95ServerMs": 502.9,
+    "warmMedianServerMs": 7.4,
+    "warmP95ServerMs": 27.2,
+    "warmCacheHitRate": 1,
+    "suiteFingerprint": "ed5ffb51b52d",
+    "caseMetrics": {
+      "type-specimen": {
+        "previewFirstMs": 1249.8,
+        "previewTriangles": 8700,
+        "previewBytes": 435084,
+        "previewWarmMs": 8,
+        "fullFirstMs": 80.6,
+        "fullTriangles": 15760,
+        "fullBytes": 788084,
+        "fullWarmMs": 5.3
+      },
+      "contour-spiral-vase": {
+        "previewFirstMs": 34.5,
+        "previewTriangles": 27648,
+        "previewBytes": 1382484,
+        "previewWarmMs": 9.1,
+        "fullFirstMs": 62.7,
+        "fullTriangles": 91392,
+        "fullBytes": 4569684,
+        "fullWarmMs": 25.8
+      },
+      "zenith-twist": {
+        "previewFirstMs": 18.2,
+        "previewTriangles": 27648,
+        "previewBytes": 1382484,
+        "previewWarmMs": 7.4,
+        "fullFirstMs": 54.2,
+        "fullTriangles": 92880,
+        "fullBytes": 4644084,
+        "fullWarmMs": 25.4
+      },
+      "fluted-bud-vase": {
+        "previewFirstMs": 18,
+        "previewTriangles": 27840,
+        "previewBytes": 1392084,
+        "previewWarmMs": 7.3,
+        "fullFirstMs": 48.9,
+        "fullTriangles": 86016,
+        "fullBytes": 4300884,
+        "fullWarmMs": 22.3
+      },
+      "ripple-column-vase": {
+        "previewFirstMs": 16.2,
+        "previewTriangles": 27264,
+        "previewBytes": 1363284,
+        "previewWarmMs": 6.9,
+        "fullFirstMs": 62.3,
+        "fullTriangles": 101520,
+        "fullBytes": 5076084,
+        "fullWarmMs": 27.2
+      },
+      "spline-petal-dish": {
+        "previewFirstMs": 3.6,
+        "previewTriangles": 764,
+        "previewBytes": 38284,
+        "previewWarmMs": 0.9,
+        "fullFirstMs": 6,
+        "fullTriangles": 1916,
+        "fullBytes": 95884,
+        "fullWarmMs": 1.6
+      },
+      "primitive-totem": {
+        "previewFirstMs": 27,
+        "previewTriangles": 8704,
+        "previewBytes": 435284,
+        "previewWarmMs": 7.7,
+        "fullFirstMs": 33.8,
+        "fullTriangles": 19200,
+        "fullBytes": 960084,
+        "fullWarmMs": 9
+      },
+      "water-ripple-tile": {
+        "previewFirstMs": 6.1,
+        "previewTriangles": 6396,
+        "previewBytes": 319884,
+        "previewWarmMs": 1.9,
+        "fullFirstMs": 10.1,
+        "fullTriangles": 16380,
+        "fullBytes": 819084,
+        "fullWarmMs": 4.7
+      },
+      "cloth-drape-study": {
+        "previewFirstMs": 52.9,
+        "previewTriangles": 2300,
+        "previewBytes": 115084,
+        "previewWarmMs": 0.9,
+        "fullFirstMs": 56.8,
+        "fullTriangles": 3596,
+        "fullBytes": 179884,
+        "fullWarmMs": 1.2
+      },
+      "all-primitives-assembly": {
+        "previewFirstMs": 9.1,
+        "previewTriangles": 6540,
+        "previewBytes": 327084,
+        "previewWarmMs": 3,
+        "fullFirstMs": 9.5,
+        "fullTriangles": 8220,
+        "fullBytes": 411084,
+        "fullWarmMs": 3.6
+      },
+      "modifier-gauntlet": {
+        "previewFirstMs": 23.3,
+        "previewTriangles": 3968,
+        "previewBytes": 198484,
+        "previewWarmMs": 2.1,
+        "fullFirstMs": 32.5,
+        "fullTriangles": 9024,
+        "fullBytes": 451284,
+        "fullWarmMs": 3.5
+      },
+      "extrude-hole-curves": {
+        "previewFirstMs": 3.2,
+        "previewTriangles": 800,
+        "previewBytes": 40084,
+        "previewWarmMs": 0.9,
+        "fullFirstMs": 7.7,
+        "fullTriangles": 3648,
+        "fullBytes": 182484,
+        "fullWarmMs": 2.6
+      },
+      "deep-repeat-graph": {
+        "previewFirstMs": 31.6,
+        "previewTriangles": 17760,
+        "previewBytes": 888084,
+        "previewWarmMs": 9.7,
+        "fullFirstMs": 10.1,
+        "fullTriangles": 17760,
+        "fullBytes": 888084,
+        "fullWarmMs": 10.3
+      },
+      "styled-google-text": {
+        "previewFirstMs": 107.1,
+        "previewTriangles": 20692,
+        "previewBytes": 1034684,
+        "previewWarmMs": 7.3,
+        "fullFirstMs": 348.2,
+        "fullTriangles": 79376,
+        "fullBytes": 3968884,
+        "fullWarmMs": 22.2
+      },
+      "exact-sphere-centimetres": {
+        "previewFirstMs": 1,
+        "previewTriangles": 1258,
+        "previewBytes": 62984,
+        "previewWarmMs": 0.6,
+        "fullFirstMs": 0.6,
+        "fullTriangles": 1258,
+        "fullBytes": 62984,
+        "fullWarmMs": 0.7
+      },
+      "exact-opentype-text": {
+        "previewFirstMs": 83.6,
+        "previewTriangles": 11732,
+        "previewBytes": 586684,
+        "previewWarmMs": 5.1,
+        "fullFirstMs": 118.7,
+        "fullTriangles": 24996,
+        "fullBytes": 1249884,
+        "fullWarmMs": 6.8
+      },
+      "tall-marble-mcp-vase": {
+        "previewFirstMs": 33.7,
+        "previewTriangles": 29696,
+        "previewBytes": 1484884,
+        "previewWarmMs": 12.8,
+        "fullFirstMs": 156.9,
+        "fullTriangles": 149888,
+        "fullBytes": 7494484,
+        "fullWarmMs": 69
+      },
+      "struts-cross": {
+        "previewFirstMs": 223.1,
+        "previewTriangles": 28056,
+        "previewBytes": 1402884,
+        "previewWarmMs": 11,
+        "fullFirstMs": 195.5,
+        "fullTriangles": 36280,
+        "fullBytes": 1814084,
+        "fullWarmMs": 13.4
+      },
+      "struts-diamond": {
+        "previewFirstMs": 326.5,
+        "previewTriangles": 29896,
+        "previewBytes": 1494884,
+        "previewWarmMs": 11.2,
+        "fullFirstMs": 502.9,
+        "fullTriangles": 38696,
+        "fullBytes": 1934884,
+        "fullWarmMs": 13.1
+      },
+      "struts-radial": {
+        "previewFirstMs": 166.9,
+        "previewTriangles": 28460,
+        "previewBytes": 1423084,
+        "previewWarmMs": 10,
+        "fullFirstMs": 226.7,
+        "fullTriangles": 37018,
+        "fullBytes": 1850984,
+        "fullWarmMs": 11.9
+      }
+    }
   }
 ]

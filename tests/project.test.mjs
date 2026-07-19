@@ -170,6 +170,7 @@ test("tracks benchmark history and mandates compatible baseline comparisons", as
   assert.match(runner, /historicalPoints/);
   assert.match(runner, /updateHistory/);
   assert.match(runner, /public\/benchmarks\/history\.js/);
+  assert.ok(runner.indexOf("const revisionMetadata = currentRevisionMetadata()") < runner.indexOf("await startServer()"), "captures the Git revision before benchmark outputs change the worktree");
   assert.match(report, /PRINTA_BENCHMARK_HISTORY/);
   assert.match(report, /Baseline comparison/);
   assert.match(report, /Workload history/);

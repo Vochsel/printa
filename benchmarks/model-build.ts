@@ -54,6 +54,8 @@ type HistoryPoint = Omit<BenchmarkSummary, "samples" | "baseUrl"> & {
   }>;
 };
 
+type RevisionMetadata = Pick<HistoryPoint, "revision" | "commit" | "subject" | "branch" | "dirty">;
+
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const port = Number(process.env.PRINTA_BENCH_PORT ?? 4317);
 const externalUrl = process.env.PRINTA_BENCH_URL;
@@ -68,6 +70,17 @@ function git(args: string[], fallback = "unknown") {
 function suiteFingerprint(samples: Sample[]) {
   const names = [...new Set(samples.map((sample) => sample.name))].sort().join("|");
   return createHash("sha256").update(names).digest("hex").slice(0, 12);
+}
+
+function currentRevisionMetadata(): RevisionMetadata {
+  const commit = git(["rev-parse", "--short=12", "HEAD"]);
+  const subject = git(["show", "-s", "--format=%s", "HEAD"]);
+  const branch = git(["branch", "--show-current"], "detached");
+  const status = git(["status", "--porcelain", "--untracked-files=all"], "");
+  const dirty = Boolean(status);
+  const worktree = `${git(["diff", "--binary", "HEAD"], "")}\n${status}`;
+  const revision = dirty ? `${commit}+${createHash("sha256").update(worktree).digest("hex").slice(0, 8)}` : commit;
+  return { commit, subject, branch, dirty, revision };
 }
 
 function compactCaseMetrics(samples: Sample[]) {
@@ -91,7 +104,7 @@ function compactCaseMetrics(samples: Sample[]) {
   return output;
 }
 
-function historyPoint(summary: BenchmarkSummary, metadata: { commit: string; subject: string; branch: string; dirty: boolean; revision: string }): HistoryPoint {
+function historyPoint(summary: BenchmarkSummary, metadata: RevisionMetadata): HistoryPoint {
   return {
     generatedAt: summary.generatedAt,
     revision: metadata.revision,
@@ -133,7 +146,7 @@ async function historicalPoints(): Promise<HistoryPoint[]> {
   return points;
 }
 
-async function updateHistory(summary: BenchmarkSummary) {
+async function updateHistory(summary: BenchmarkSummary, metadata: RevisionMetadata) {
   const resultsDirectory = new URL("./results/", import.meta.url);
   const publicDirectory = new URL("../public/benchmarks/", import.meta.url);
   await Promise.all([mkdir(resultsDirectory, { recursive: true }), mkdir(publicDirectory, { recursive: true })]);
@@ -141,14 +154,7 @@ async function updateHistory(summary: BenchmarkSummary) {
   try { history = JSON.parse(await readFile(new URL("history.json", resultsDirectory), "utf8")) as HistoryPoint[]; }
   catch { history = await historicalPoints(); }
 
-  const commit = git(["rev-parse", "--short=12", "HEAD"]);
-  const subject = git(["show", "-s", "--format=%s", "HEAD"]);
-  const branch = git(["branch", "--show-current"], "detached");
-  const status = git(["status", "--porcelain", "--untracked-files=all"], "");
-  const dirty = Boolean(status);
-  const worktree = `${git(["diff", "--binary", "HEAD"], "")}\n${status}`;
-  const revision = dirty ? `${commit}+${createHash("sha256").update(worktree).digest("hex").slice(0, 8)}` : commit;
-  const point = historyPoint(summary, { commit, subject, branch, dirty, revision });
+  const point = historyPoint(summary, metadata);
   const existing = history.findIndex((item) => item.revision === point.revision && item.suiteFingerprint === point.suiteFingerprint);
   if (existing >= 0) history[existing] = point;
   else history.push(point);
@@ -256,6 +262,7 @@ function printTable(samples: Sample[]) {
 }
 
 async function main() {
+  const revisionMetadata = currentRevisionMetadata();
   await startServer();
   const samples: Sample[] = [];
   for (const [name, spec] of Object.entries(BENCHMARK_SPECS)) {
@@ -294,7 +301,7 @@ async function main() {
   const outputDirectory = new URL("./results/", import.meta.url);
   await mkdir(outputDirectory, { recursive: true });
   await writeFile(new URL("latest.json", outputDirectory), `${JSON.stringify(summary, null, 2)}\n`);
-  await updateHistory(summary);
+  await updateHistory(summary, revisionMetadata);
   console.log("Wrote benchmarks/results/latest.json");
 }
 
