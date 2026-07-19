@@ -9,7 +9,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "npm run build && node --test tests/project.test.mjs",
+    "test": "npm run build && npm run test:unit",
+    "test:unit": "node --test tests/project.test.mjs && node --import tsx --test tests/model-spec.test.ts",
     "lint": "eslint . --ignore-pattern .next"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "react-dom": "19.2.6",
     "three": "0.181.2",
     "three-gpu-pathtracer": "0.0.24",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -34,6 +36,7 @@
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "4.2.1",
+    "tsx": "^4.23.1",
     "typescript": "5.9.3"
   },
   "overrides": {

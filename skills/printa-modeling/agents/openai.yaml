@@ -1,0 +1,13 @@
+interface:
+  display_name: "Printa Procedural Modeling"
+  short_description: "Compose promptable, printable 3D model specs"
+  default_prompt: "Use $printa-modeling to create a printable procedural vase spec."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "printa"
+      description: "Printa procedural modeling and STL generation"
+      transport: "streamable_http"
+      url: "https://printa.vochsel.com/mcp"
+policy:
+  allow_implicit_invocation: true

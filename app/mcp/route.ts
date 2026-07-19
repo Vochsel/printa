@@ -3,6 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { createWidgetHtml } from "@/lib/mcp-widget";
+import { createModelWidgetHtml } from "@/lib/mcp-model-widget";
 import { BUILD_VOLUME_WARNING_MM } from "@/lib/text-geometry";
 import {
   getTextModelStats,
@@ -10,18 +11,22 @@ import {
   normalizeTextModelOptions,
 } from "@/lib/text-mesh";
 import { resolveGoogleFont } from "@/lib/google-fonts";
+import { getDemoModel } from "@/lib/demo-models";
+import { encodeModelDocument, parseModelDocument, stringifyModelDocument } from "@/lib/model-spec";
+import { inspectProceduralModel, makeProceduralFilename } from "@/lib/procedural-mesh";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TEMPLATE_URI = "ui://widget/printa-extruded-text-v8.html";
+const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v1.html";
 
 function createServer(origin: string) {
   const server = new McpServer(
-    { name: "printa", version: "0.2.0" },
+    { name: "printa", version: "0.3.0" },
     {
       instructions:
-        "Create ready-to-print extruded text with create_extruded_text. Dimensions are expressed in millimetres. Convert centimetres to millimetres when needed. Google Font family names are supported. Keep text at 24 characters or fewer.",
+        `Create ready-to-print geometry with create_procedural_model or use create_extruded_text for the focused text workflow. Printa Spec 1.0 composes primitive, custom-curve extrusion, revolve, text, water, and cloth sources with ordered modifiers, assemblies, repeats, and transforms. JSON and YAML are accepted. Read the modeling skill at ${origin}/skills and the JSON Schema at ${origin}/api/model/schema.`,
     },
   );
 
@@ -40,7 +45,7 @@ function createServer(origin: string) {
               resourceDomains: [origin, "https://cdn.jsdelivr.net"],
             },
           },
-          "openai/widgetDescription": "A full 3D text editor with searchable live Google Font previews, print-material presets, progressive path tracing, unit-aware controls, and STL download.",
+        "openai/widgetDescription": "A full 3D text editor with searchable live Google Font previews, print-material presets, progressive path tracing, unit-aware controls, and STL download.",
           "openai/widgetPrefersBorder": false,
           "openai/widgetCSP": {
             connect_domains: [origin, "https://cdn.jsdelivr.net"],
@@ -49,6 +54,30 @@ function createServer(origin: string) {
         },
       },
     ],
+  }));
+
+  registerAppResource(server, "printa-procedural-model", MODEL_TEMPLATE_URI, {}, async () => ({
+    contents: [{
+      uri: MODEL_TEMPLATE_URI,
+      mimeType: RESOURCE_MIME_TYPE,
+      text: createModelWidgetHtml(origin),
+      _meta: {
+        ui: {
+          prefersBorder: false,
+          domain: origin,
+          csp: {
+            connectDomains: [origin, "https://cdn.jsdelivr.net"],
+            resourceDomains: [origin, "https://cdn.jsdelivr.net"],
+          },
+        },
+        "openai/widgetDescription": "An interactive 3D preview for composable Printa procedural models, including generated bounds, mesh statistics, warnings, Studio handoff, and STL download.",
+        "openai/widgetPrefersBorder": false,
+        "openai/widgetCSP": {
+          connect_domains: [origin, "https://cdn.jsdelivr.net"],
+          resource_domains: [origin, "https://cdn.jsdelivr.net"],
+        },
+      },
+    }],
   }));
 
   registerAppTool(
@@ -189,6 +218,74 @@ function createServer(origin: string) {
           },
         ],
         _meta: { generatedAt: new Date().toISOString() },
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
+    "create_procedural_model",
+    {
+      title: "Create a procedural printable model",
+      description: "Validate and build a Printa Spec 1.0 document supplied as JSON or YAML, then show the result as an interactive 3D model with STL download. Use sources for primitives, custom Bézier extrusion, profile revolution, text, water simulation, or cloth simulation. Compose ordered twist, taper, radialWave, axialWave, bend, noise, and smooth modifiers; merge assemblies; or repeat transformed nodes. For a quick start, choose one of the built-in demos.",
+      inputSchema: {
+        spec: z.string().min(20).max(6_000).optional().describe("Complete Printa Spec 1.0 document as JSON or YAML. Prefer YAML for readability. Omit only when using a built-in demo."),
+        demo: z.enum(["contour-spiral-vase", "zenith-twist", "fluted-bud-vase", "ripple-column-vase", "spline-petal-dish", "primitive-totem", "water-ripple-tile", "cloth-drape-study"]).default("contour-spiral-vase").describe("Built-in starting model used when spec is omitted"),
+      },
+      outputSchema: {
+        name: z.string(),
+        description: z.string(),
+        spec: z.string(),
+        widthMm: z.number(),
+        depthMm: z.number(),
+        heightMm: z.number(),
+        triangles: z.number(),
+        volumeEstimateMm3: z.number(),
+        materialPreset: z.enum(["pla-orange", "pla-matte", "pla-silk", "petg", "resin"]),
+        filename: z.string(),
+        stlUrl: z.string().url(),
+        studioUrl: z.string().url(),
+        exceedsBuildVolume: z.boolean(),
+        warnings: z.array(z.string()),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      _meta: {
+        ui: { resourceUri: MODEL_TEMPLATE_URI, visibility: ["model", "app"] },
+        "openai/outputTemplate": MODEL_TEMPLATE_URI,
+        "openai/toolInvocation/invoking": "Evaluating the model graph…",
+        "openai/toolInvocation/invoked": "Printable model ready.",
+      },
+    },
+    async ({ spec, demo }) => {
+      const input = spec ? parseModelDocument(spec) : getDemoModel(demo);
+      if (!input) throw new Error(`Unknown demo: ${demo}`);
+      const result = await inspectProceduralModel(input);
+      const encoded = encodeModelDocument(result.document);
+      const stlUrl = `${origin}/api/model/stl?spec=${encoded}`;
+      const studioUrl = `${origin}/studio?spec=${encoded}`;
+      const structuredContent = {
+        name: result.document.name,
+        description: result.document.description,
+        spec: stringifyModelDocument(result.document, "yaml"),
+        widthMm: Number(result.stats.widthMm.toFixed(2)),
+        depthMm: Number(result.stats.depthMm.toFixed(2)),
+        heightMm: Number(result.stats.heightMm.toFixed(2)),
+        triangles: result.stats.triangles,
+        volumeEstimateMm3: Number(result.stats.volumeEstimateMm3.toFixed(2)),
+        materialPreset: result.materialPreset,
+        filename: makeProceduralFilename(result.document.name),
+        stlUrl,
+        studioUrl,
+        exceedsBuildVolume: result.exceedsBuildVolume,
+        warnings: result.warnings,
+      };
+      return {
+        structuredContent,
+        content: [{
+          type: "text" as const,
+          text: `Created ${structuredContent.filename}: ${structuredContent.widthMm} × ${structuredContent.depthMm} × ${structuredContent.heightMm} mm, ${structuredContent.triangles.toLocaleString()} triangles.${structuredContent.warnings.length ? ` ${structuredContent.warnings.join(" ")}` : ""} [Download STL](${stlUrl}) or [continue editing in Printa Studio](${studioUrl}).`,
+        }],
+        _meta: { specVersion: "1.0", generatedAt: new Date().toISOString() },
       };
     },
   );

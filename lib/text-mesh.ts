@@ -33,7 +33,7 @@ async function loadFont(requestedFont: string, text: string, fontWeight: "regula
   return { font: await fontCache.get(cacheKey)!, resolved: font, syntheticItalic: variant.syntheticItalic };
 }
 
-async function createServerGeometry(input: Partial<TextModelOptions>) {
+export async function createTextServerGeometry(input: Partial<TextModelOptions>) {
   const resolved = await resolveGoogleFont(input.font);
   const options = normalizeTextModelOptions({ ...input, font: resolved.id });
   const loaded = await loadFont(resolved.id, options.text, options.fontWeight, options.italic);
@@ -41,14 +41,14 @@ async function createServerGeometry(input: Partial<TextModelOptions>) {
 }
 
 export async function getTextModelStats(input: Partial<TextModelOptions>) {
-  const { geometry } = await createServerGeometry(input);
+  const { geometry } = await createTextServerGeometry(input);
   const stats = geometryStats(geometry);
   geometry.dispose();
   return stats;
 }
 
 export async function createBinaryStl(input: Partial<TextModelOptions>) {
-  const { geometry, options } = await createServerGeometry(input);
+  const { geometry, options } = await createTextServerGeometry(input);
   const mesh = new Mesh(geometry);
   mesh.updateMatrixWorld(true);
   const view = new STLExporter().parse(mesh, { binary: true });
