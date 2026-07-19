@@ -1,4 +1,4 @@
-import type { ModelDocument } from "@/lib/model-spec";
+import type { ModelDocumentInput } from "@/lib/model-spec";
 
 const printDefaults = {
   buildVolume: [256, 256, 256] as [number, number, number],
@@ -7,6 +7,41 @@ const printDefaults = {
 };
 
 export const DEMO_MODELS = {
+  "type-specimen": {
+    version: "1.0",
+    name: "Type specimen",
+    description: "A fully spec-driven Google Font wordmark with printable styling and live dimensions.",
+    units: "mm",
+    root: {
+      kind: "shape",
+      id: "wordmark",
+      source: {
+        type: "text",
+        text: "Printa",
+        font: "Space Grotesk",
+        size: 42,
+        depth: 6,
+        bevel: 0.8,
+        bevelSegments: 4,
+        curveSegments: 12,
+        bevelSide: "both",
+        smoothNormals: true,
+        textCase: "original",
+        weight: "bold",
+        italic: false,
+        underline: false,
+      },
+      modifiers: [],
+      material: "pla-orange",
+    },
+    print: printDefaults,
+    display: {
+      floor: true,
+      grid: true,
+      dimensions: { visible: true, width: true, height: true, offset: 9, precision: 1 },
+    },
+    metadata: { family: "text", font: "Space Grotesk" },
+  },
   "contour-spiral-vase": {
     version: "1.0",
     name: "Contour spiral vase",
@@ -245,7 +280,7 @@ export const DEMO_MODELS = {
     print: printDefaults,
     metadata: { family: "simulation", solver: "verlet-cloth" },
   },
-} as const satisfies Record<string, ModelDocument>;
+} as const satisfies Record<string, ModelDocumentInput>;
 
 export type DemoModelId = keyof typeof DEMO_MODELS;
 

@@ -38,9 +38,14 @@ async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>) {
       sizeMm: node.source.size,
       depthMm: node.source.depth,
       bevelMm: node.source.bevel,
+      bevelSegments: node.source.bevelSegments,
+      curveSegments: node.source.curveSegments,
+      bevelSide: node.source.bevelSide,
+      textCase: node.source.textCase,
       fontWeight: node.source.weight,
       italic: node.source.italic,
-      smoothNormals: true,
+      underline: node.source.underline,
+      smoothNormals: node.source.smoothNormals,
     });
     geometry = result.geometry;
   } else {

@@ -14,6 +14,15 @@ print:
   buildVolume: [256, 256, 256]
   autoCenter: true
   placeOnBed: true
+display:
+  floor: true
+  grid: true
+  dimensions:
+    visible: true
+    width: true
+    height: true # footprint height/depth on the floor plane
+    offset: 9
+    precision: 1
 metadata:
   family: vase
 ```
@@ -115,9 +124,21 @@ font: Space Grotesk
 size: 36
 depth: 4
 bevel: 0.6
+bevelSegments: 4
+curveSegments: 12
+bevelSide: both # both | top | bottom
+smoothNormals: true
+textCase: original # original | uppercase | lowercase | titlecase
 weight: bold
 italic: false
+underline: false
 ```
+
+`font` accepts any Google Fonts family. All typography and printable styling fields are part of the source, so the editor, MCP tool, preview, and STL generator use the same values.
+
+## Display
+
+`display` is non-geometric preview state stored with the model. `floor` and `grid` control the build plate. `display.dimensions` controls the floor-plane W/H arrows, labels, spacing, and numeric precision. These settings do not add triangles to the exported STL.
 
 ### Water
 

@@ -5,12 +5,13 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("ships the homepage, advanced editors, MCP widgets, skills, icons, and generation routes", async () => {
-  const [page, home, editor, playground, studio, widget, modelWidget, modelSpec, demos, modelStlRoute, skillRoute, stlRoute, mcpRoute, fontRoute, icon] = await Promise.all([
+  const [page, home, editor, playground, studio, inspector, widget, modelWidget, modelSpec, demos, modelStlRoute, skillRoute, stlRoute, mcpRoute, fontRoute, icon] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/HomePage.tsx", root), "utf8"),
     readFile(new URL("app/editor/page.tsx", root), "utf8"),
     readFile(new URL("app/TextPlayground.tsx", root), "utf8"),
     readFile(new URL("app/ProceduralStudio.tsx", root), "utf8"),
+    readFile(new URL("app/SpecInspector.tsx", root), "utf8"),
     readFile(new URL("lib/mcp-widget.ts", root), "utf8"),
     readFile(new URL("lib/mcp-model-widget.ts", root), "utf8"),
     readFile(new URL("lib/model-spec.ts", root), "utf8"),
@@ -32,9 +33,7 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(home, /loadTextGeometry/);
   assert.match(home, /setStudyIndex/);
   assert.match(home, /href="\/editor"/);
-  assert.match(editor, /mode === "procedural"/);
   assert.match(editor, /<ProceduralStudio\s*\/>/);
-  assert.match(editor, /<TextPlayground\s*\/>/);
   assert.match(playground, /Download STL/);
   assert.match(playground, /OrbitControls/);
   assert.match(playground, /Smooth normals/);
@@ -54,9 +53,17 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(playground, /High quality/);
   assert.match(playground, /Print material/);
   assert.match(studio, /editor-mode-switch/);
-  assert.match(studio, /Model in layers/);
-  assert.match(studio, /JSON \/ YAML spec/);
+  assert.match(studio, /Shape what you see/);
+  assert.match(studio, /Full JSON \/ YAML spec/);
+  assert.match(studio, /createGroundDimensions/);
   assert.match(studio, /Download STL/);
+  assert.match(inspector, /Google font/);
+  assert.match(inspector, /loadFontPreview/);
+  assert.match(inspector, /Search all Google Fonts/);
+  assert.match(inspector, /scroll for all/);
+  assert.match(inspector, /Floor W\/H gizmos/);
+  assert.match(inspector, /Add layer/);
+  assert.match(inspector, /Add modifier/);
   assert.match(widget, /font-menu/);
   assert.match(widget, /ui\/notifications\/tool-input/);
   assert.match(widget, /Measurement units/);
@@ -83,6 +90,9 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(modelSpec, /radialWave/);
   assert.match(modelSpec, /waterSourceSchema/);
   assert.match(modelSpec, /clothSourceSchema/);
+  assert.match(modelSpec, /bevelSide/);
+  assert.match(modelSpec, /display: z\.object/);
+  assert.match(demos, /type-specimen/);
   assert.match(demos, /contour-spiral-vase/);
   assert.match(demos, /cloth-drape-study/);
   assert.match(modelStlRoute, /createProceduralStl/);

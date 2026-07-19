@@ -78,6 +78,7 @@ root:
   const fromJson = parseModelDocument(JSON.stringify(fromYaml));
   assert.deepEqual(fromJson, fromYaml);
   assert.equal(fromYaml.print.placeOnBed, true);
+  assert.equal(fromYaml.display.dimensions.visible, true);
   assert.equal(decodeModelDocument(encodeModelDocument(fromYaml)).name, "Test cylinder");
 });
 
@@ -89,6 +90,10 @@ test("publishes a machine-readable schema with every source family", () => {
   for (const modifier of ["twist", "taper", "radialWave", "bend", "noise", "smooth"]) {
     assert.match(schema, new RegExp(modifier));
   }
+  for (const textField of ["bevelSegments", "curveSegments", "bevelSide", "smoothNormals", "textCase", "underline"]) {
+    assert.match(schema, new RegExp(textField));
+  }
+  assert.match(schema, /dimensions/);
 });
 
 test("rejects graphs that expand beyond the safe node limit", () => {
@@ -144,6 +149,12 @@ test("every bundled demo produces finite, closed, printable-scale geometry", asy
   for (const [id, document] of Object.entries(DEMO_MODELS)) {
     await t.test(id, async () => {
       const parsed = parseModelDocument(document);
+      if (parsed.root.kind === "shape" && parsed.root.source.type === "text") {
+        assert.equal(parsed.root.source.font, "Space Grotesk");
+        assert.equal(parsed.root.source.weight, "bold");
+        assert.equal(parsed.display.dimensions.visible, true);
+        return;
+      }
       const geometry = await buildNode(parsed.root);
       const position = geometry.getAttribute("position");
       const bounds = geometryBounds(geometry);

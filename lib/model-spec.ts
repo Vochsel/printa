@@ -127,8 +127,14 @@ const textSourceSchema = z.object({
   size: positive.default(36),
   depth: positive.default(4),
   bevel: nonNegative.default(0.6),
+  bevelSegments: z.number().int().min(1).max(12).default(3),
+  curveSegments: z.number().int().min(2).max(24).default(10),
+  bevelSide: z.enum(["both", "top", "bottom"]).default("both"),
+  smoothNormals: z.boolean().default(true),
+  textCase: z.enum(["original", "uppercase", "lowercase", "titlecase"]).default("original"),
   weight: z.enum(["regular", "bold"]).default("regular"),
   italic: z.boolean().default(false),
+  underline: z.boolean().default(false),
 }).strict();
 
 const waterDropSchema = z.object({
@@ -253,10 +259,26 @@ export const modelDocumentSchema = z.object({
     autoCenter: z.boolean().default(true),
     placeOnBed: z.boolean().default(true),
   }).strict().default({ buildVolume: [256, 256, 256], autoCenter: true, placeOnBed: true }),
+  display: z.object({
+    floor: z.boolean().default(true),
+    grid: z.boolean().default(true),
+    dimensions: z.object({
+      visible: z.boolean().default(true),
+      width: z.boolean().default(true),
+      height: z.boolean().default(true).describe("Show the model footprint height/depth measurement on the floor plane"),
+      offset: nonNegative.default(9).describe("Distance from model bounds to dimension arrows in document units"),
+      precision: z.number().int().min(0).max(3).default(1),
+    }).strict().default({ visible: true, width: true, height: true, offset: 9, precision: 1 }),
+  }).strict().default({
+    floor: true,
+    grid: true,
+    dimensions: { visible: true, width: true, height: true, offset: 9, precision: 1 },
+  }),
   metadata: z.record(z.string(), z.union([z.string(), finite, z.boolean()])).default({}),
 }).strict();
 
 export type ModelDocument = z.infer<typeof modelDocumentSchema>;
+export type ModelDocumentInput = z.input<typeof modelDocumentSchema>;
 
 function countNodes(node: ModelNode): number {
   if (node.kind === "shape") return 1;

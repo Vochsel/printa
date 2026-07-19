@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       spec: stringifyModelDocument(result.document, body.format ?? "yaml"),
       encoded,
       stlUrl: `${origin}/api/model/stl?spec=${encoded}`,
-      studioUrl: `${origin}/editor?mode=procedural&spec=${encoded}`,
+      studioUrl: `${origin}/editor?spec=${encoded}`,
     });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Invalid model spec." }, { status: 400 });

@@ -24,14 +24,14 @@ Read the machine schema at `https://printa.vochsel.com/api/model/schema` when ex
 7. Call `create_procedural_model` with the complete JSON or YAML document.
 8. Inspect dimensions, triangle count, volume estimate, and warnings.
 9. Refine the profile, amplitude, twist, resolution, wall, or transforms as needed.
-10. Return both the Printa editor link (`/editor?mode=procedural`) and STL link.
+10. Return both the unified Printa editor link (`/editor`) and STL link.
 
 ## Choose a construction
 
 - Use `revolve` for vases, vessels, knobs, bowls, columns, and any radial profile.
 - Use `extrude` for badges, signs, trays, cutters, and custom 2D Bézier outlines.
 - Use `primitive` for structural parts and assembly building blocks.
-- Use `text` for any Google-Font solid inside a larger model graph.
+- Use `text` for any Google-Font solid. Font, weight, case, italic, underline, bevel faces, smoothing, and curve resolution all belong in the source spec.
 - Use `water` to freeze a deterministic damped-wave simulation into a solid tile.
 - Use `cloth` to drape a thickened printable sheet over a spherical collider.
 - Use `repeat` for radial-looking stacks, columns, ribs made from parts, and regular arrays.
@@ -60,6 +60,7 @@ Represent the silhouette as `[radius, height]` profile points in a `revolve` sou
 
 - Use descriptive node ids such as `outer-vessel`, `rim`, or `water-surface`.
 - Add a concise document description and metadata family.
+- Set `display.dimensions` when W/H floor gizmos should be visible in the editor handoff.
 - Prefer 4–9 profile control points and smooth interpolation over dense profiles.
 - Use one modifier per conceptual change.
 - Return a complete document beginning with `version: "1.0"`; never return a fragment unless explicitly requested.

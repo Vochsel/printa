@@ -19,11 +19,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TEMPLATE_URI = "ui://widget/printa-extruded-text-v8.html";
-const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v2.html";
+const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v3.html";
 
 function createServer(origin: string) {
   const server = new McpServer(
-    { name: "printa", version: "0.3.0" },
+    { name: "printa", version: "0.4.0" },
     {
       instructions:
         `Create ready-to-print geometry with create_procedural_model or use create_extruded_text for the focused text workflow. Printa Spec 1.0 composes primitive, custom-curve extrusion, revolve, text, water, and cloth sources with ordered modifiers, assemblies, repeats, and transforms. JSON and YAML are accepted. Read the modeling skill at ${origin}/skills and the JSON Schema at ${origin}/api/model/schema.`,
@@ -70,7 +70,7 @@ function createServer(origin: string) {
             resourceDomains: [origin, "https://cdn.jsdelivr.net"],
           },
         },
-        "openai/widgetDescription": "A complete procedural modeling workbench with editable JSON/YAML, built-in form and simulation demos, live 3D preview, bounds, mesh warnings, editor handoff, and STL download.",
+        "openai/widgetDescription": "A complete spec-driven modeling workbench with Google Font text, editable JSON/YAML, form and simulation demos, live 3D preview, spec-controlled floor dimensions, mesh warnings, editor handoff, and STL download.",
         "openai/widgetPrefersBorder": false,
         "openai/widgetCSP": {
           connect_domains: [origin, "https://cdn.jsdelivr.net"],
@@ -230,12 +230,13 @@ function createServer(origin: string) {
       description: "Validate and build a Printa Spec 1.0 document supplied as JSON or YAML, then show the result as an interactive 3D model with STL download. Use sources for primitives, custom Bézier extrusion, profile revolution, text, water simulation, or cloth simulation. Compose ordered twist, taper, radialWave, axialWave, bend, noise, and smooth modifiers; merge assemblies; or repeat transformed nodes. For a quick start, choose one of the built-in demos.",
       inputSchema: {
         spec: z.string().min(20).max(6_000).optional().describe("Complete Printa Spec 1.0 document as JSON or YAML. Prefer YAML for readability. Omit only when using a built-in demo."),
-        demo: z.enum(["contour-spiral-vase", "zenith-twist", "fluted-bud-vase", "ripple-column-vase", "spline-petal-dish", "primitive-totem", "water-ripple-tile", "cloth-drape-study"]).default("contour-spiral-vase").describe("Built-in starting model used when spec is omitted"),
+        demo: z.enum(["type-specimen", "contour-spiral-vase", "zenith-twist", "fluted-bud-vase", "ripple-column-vase", "spline-petal-dish", "primitive-totem", "water-ripple-tile", "cloth-drape-study"]).default("type-specimen").describe("Built-in starting model used when spec is omitted"),
       },
       outputSchema: {
         name: z.string(),
         description: z.string(),
         spec: z.string(),
+        units: z.enum(["mm", "cm", "in"]),
         widthMm: z.number(),
         depthMm: z.number(),
         heightMm: z.number(),
@@ -247,6 +248,11 @@ function createServer(origin: string) {
         studioUrl: z.string().url(),
         exceedsBuildVolume: z.boolean(),
         warnings: z.array(z.string()),
+        display: z.object({
+          floor: z.boolean(),
+          grid: z.boolean(),
+          dimensions: z.object({ visible: z.boolean(), width: z.boolean(), height: z.boolean(), offset: z.number(), precision: z.number() }),
+        }),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: {
@@ -262,11 +268,12 @@ function createServer(origin: string) {
       const result = await inspectProceduralModel(input);
       const encoded = encodeModelDocument(result.document);
       const stlUrl = `${origin}/api/model/stl?spec=${encoded}`;
-      const studioUrl = `${origin}/editor?mode=procedural&spec=${encoded}`;
+      const studioUrl = `${origin}/editor?spec=${encoded}`;
       const structuredContent = {
         name: result.document.name,
         description: result.document.description,
         spec: stringifyModelDocument(result.document, "yaml"),
+        units: result.document.units,
         widthMm: Number(result.stats.widthMm.toFixed(2)),
         depthMm: Number(result.stats.depthMm.toFixed(2)),
         heightMm: Number(result.stats.heightMm.toFixed(2)),
@@ -278,6 +285,7 @@ function createServer(origin: string) {
         studioUrl,
         exceedsBuildVolume: result.exceedsBuildVolume,
         warnings: result.warnings,
+        display: result.document.display,
       };
       return {
         structuredContent,

@@ -21,9 +21,11 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { DEMO_MODEL_CARDS, type DemoModelId } from "@/lib/demo-models";
 import { printMaterialPreset, type PrintMaterialPreset } from "@/lib/material-presets";
+import type { ModelDocument } from "@/lib/model-spec";
+import { SpecInspector } from "@/app/SpecInspector";
 
 type InspectResult = {
-  document: { name: string; description: string; metadata: Record<string, string | number | boolean> };
+  document: ModelDocument;
   spec: string;
   stlUrl: string;
   studioUrl: string;
@@ -33,7 +35,100 @@ type InspectResult = {
   materialPreset: PrintMaterialPreset;
 };
 
-function ModelViewport({ stlUrl, materialPreset, onReady }: { stlUrl: string; materialPreset: PrintMaterialPreset; onReady?: () => void }) {
+type FontSummary = { id: string; family: string; category: string };
+
+function createDimensionLabel(text: string, color: string, worldSize: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 128;
+  const context = canvas.getContext("2d")!;
+  context.fillStyle = "rgba(10, 26, 25, 0.92)";
+  context.beginPath();
+  context.roundRect(3, 3, 506, 122, 24);
+  context.fill();
+  context.strokeStyle = color;
+  context.lineWidth = 5;
+  context.stroke();
+  context.fillStyle = "#fffaf0";
+  context.font = "700 48px ui-monospace, monospace";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(text, 256, 65);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, toneMapped: false });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(worldSize * 4, worldSize), material);
+  mesh.renderOrder = 12;
+  return mesh;
+}
+
+function createGroundDimensions(box: THREE.Box3, display: ModelDocument["display"], units: ModelDocument["units"]) {
+  const group = new THREE.Group();
+  group.name = "spec-ground-dimensions";
+  const width = box.max.x - box.min.x;
+  const height = box.max.y - box.min.y;
+  const largest = Math.max(width, height);
+  const unitScale = units === "cm" ? 10 : units === "in" ? 25.4 : 1;
+  const margin = Math.max(display.dimensions.offset * unitScale, largest * 0.045);
+  const arrow = THREE.MathUtils.clamp(largest * 0.025, 2.5, 9);
+  const labelSize = THREE.MathUtils.clamp(largest * 0.035, 4, 10);
+  const z = 0.32;
+  const widthY = box.min.y - margin;
+  const heightX = box.min.x - margin;
+  const precision = display.dimensions.precision;
+  const suffix = units;
+  const inUnits = (value: number) => value / unitScale;
+  const addSegments = (points: THREE.Vector3[], color: string, opacity = 1) => {
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity, depthTest: false }));
+    lines.renderOrder = 10;
+    group.add(lines);
+  };
+  if (display.dimensions.width) {
+    addSegments([
+      new THREE.Vector3(box.min.x, widthY, z), new THREE.Vector3(box.max.x, widthY, z),
+      new THREE.Vector3(box.min.x, widthY, z), new THREE.Vector3(box.min.x + arrow, widthY + arrow * .52, z),
+      new THREE.Vector3(box.min.x, widthY, z), new THREE.Vector3(box.min.x + arrow, widthY - arrow * .52, z),
+      new THREE.Vector3(box.max.x, widthY, z), new THREE.Vector3(box.max.x - arrow, widthY + arrow * .52, z),
+      new THREE.Vector3(box.max.x, widthY, z), new THREE.Vector3(box.max.x - arrow, widthY - arrow * .52, z),
+      new THREE.Vector3(box.min.x, box.min.y, z), new THREE.Vector3(box.min.x, widthY - arrow, z),
+      new THREE.Vector3(box.max.x, box.min.y, z), new THREE.Vector3(box.max.x, widthY - arrow, z),
+    ], "#ff6b8f");
+    const label = createDimensionLabel(`W  ${inUnits(width).toFixed(precision)} ${suffix}`, "#ff6b8f", labelSize);
+    label.position.set((box.min.x + box.max.x) / 2, widthY - labelSize * 1.05, z + .03);
+    group.add(label);
+  }
+  if (display.dimensions.height) {
+    addSegments([
+      new THREE.Vector3(heightX, box.min.y, z), new THREE.Vector3(heightX, box.max.y, z),
+      new THREE.Vector3(heightX, box.min.y, z), new THREE.Vector3(heightX + arrow * .52, box.min.y + arrow, z),
+      new THREE.Vector3(heightX, box.min.y, z), new THREE.Vector3(heightX - arrow * .52, box.min.y + arrow, z),
+      new THREE.Vector3(heightX, box.max.y, z), new THREE.Vector3(heightX + arrow * .52, box.max.y - arrow, z),
+      new THREE.Vector3(heightX, box.max.y, z), new THREE.Vector3(heightX - arrow * .52, box.max.y - arrow, z),
+      new THREE.Vector3(box.min.x, box.min.y, z), new THREE.Vector3(heightX - arrow, box.min.y, z),
+      new THREE.Vector3(box.min.x, box.max.y, z), new THREE.Vector3(heightX - arrow, box.max.y, z),
+    ], "#b8a4ed");
+    const label = createDimensionLabel(`H  ${inUnits(height).toFixed(precision)} ${suffix}`, "#b8a4ed", labelSize);
+    label.rotation.z = Math.PI / 2;
+    label.position.set(heightX - labelSize * 1.05, (box.min.y + box.max.y) / 2, z + .03);
+    group.add(label);
+  }
+  return group;
+}
+
+function disposeObject(object: THREE.Object3D | null) {
+  object?.traverse((child) => {
+    const item = child as THREE.Mesh | THREE.LineSegments;
+    item.geometry?.dispose();
+    const materials = item.material ? (Array.isArray(item.material) ? item.material : [item.material]) : [];
+    materials.forEach((material) => {
+      if ("map" in material && material.map instanceof THREE.Texture) material.map.dispose();
+      material.dispose();
+    });
+  });
+}
+
+function ModelViewport({ stlUrl, materialPreset, display, units, onReady }: { stlUrl: string; materialPreset: PrintMaterialPreset; display: ModelDocument["display"]; units: ModelDocument["units"]; onReady?: () => void }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<() => void>(() => undefined);
   const cameraPoseRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
@@ -77,17 +172,21 @@ function ModelViewport({ stlUrl, materialPreset, onReady }: { stlUrl: string; ma
     );
     floor.receiveShadow = true;
     floor.position.z = -0.3;
+    floor.visible = display.floor;
     scene.add(floor);
     const grid = new THREE.GridHelper(420, 42, "#363631", "#272724");
     grid.rotation.x = Math.PI / 2;
     grid.position.z = 0.05;
+    grid.visible = display.grid;
     scene.add(grid);
 
     let model: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> | null = null;
+    let dimensions: THREE.Group | null = null;
     let disposed = false;
     const frame = () => {
       if (!model) return;
       const box = new THREE.Box3().setFromObject(model);
+      if (dimensions) box.expandByObject(dimensions);
       const sphere = box.getBoundingSphere(new THREE.Sphere());
       const distance = Math.max(45, sphere.radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.22);
       camera.position.set(sphere.center.x + distance * 0.78, sphere.center.y - distance, sphere.center.z + distance * 0.66);
@@ -123,6 +222,10 @@ function ModelViewport({ stlUrl, materialPreset, onReady }: { stlUrl: string; ma
         model.castShadow = true;
         model.receiveShadow = true;
         scene.add(model);
+        if (display.dimensions.visible && geometry.boundingBox) {
+          dimensions = createGroundDimensions(geometry.boundingBox, display, units);
+          scene.add(dimensions);
+        }
         const savedPose = cameraPoseRef.current;
         if (savedPose) {
           camera.position.copy(savedPose.position);
@@ -158,13 +261,14 @@ function ModelViewport({ stlUrl, materialPreset, onReady }: { stlUrl: string; ma
       controls.dispose();
       model?.geometry.dispose();
       model?.material.dispose();
+      disposeObject(dimensions);
       floor.geometry.dispose();
       (floor.material as THREE.Material).dispose();
       renderer.dispose();
       renderer.domElement.remove();
       scene.clear();
     };
-  }, [materialPreset, onReady, stlUrl]);
+  }, [display, materialPreset, onReady, stlUrl, units]);
 
   return (
     <div className="studio-viewer">
@@ -176,17 +280,20 @@ function ModelViewport({ stlUrl, materialPreset, onReady }: { stlUrl: string; ma
 }
 
 export function ProceduralStudio() {
-  const [activeDemo, setActiveDemo] = useState<DemoModelId>("contour-spiral-vase");
+  const [activeDemo, setActiveDemo] = useState<DemoModelId>("type-specimen");
   const [spec, setSpec] = useState("");
   const [result, setResult] = useState<InspectResult | null>(null);
+  const [document, setDocument] = useState<ModelDocument | null>(null);
+  const [fonts, setFonts] = useState<FontSummary[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [modelReady, setModelReady] = useState(false);
+  const liveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleModelReady = useCallback(() => setModelReady(true), []);
 
-  const inspect = useCallback(async (payload: { demo?: string; spec?: string }) => {
+  const inspect = useCallback(async (payload: { demo?: string; spec?: string | ModelDocument }, live = false) => {
     setLoading(true);
-    setModelReady(false);
+    if (!live) setModelReady(false);
     setError("");
     try {
       const response = await fetch("/api/model/inspect", {
@@ -197,6 +304,7 @@ export function ProceduralStudio() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Model spec is invalid.");
       setResult(data);
+      setDocument(data.document);
       setSpec(data.spec);
       if (data.studioUrl) window.history.replaceState(window.history.state, "", data.studioUrl.replace(window.location.origin, ""));
     } catch (nextError) {
@@ -205,6 +313,13 @@ export function ProceduralStudio() {
       setLoading(false);
     }
   }, []);
+
+  const updateDocument = useCallback((next: ModelDocument) => {
+    setDocument(next);
+    setSpec(JSON.stringify(next, null, 2));
+    if (liveTimerRef.current) clearTimeout(liveTimerRef.current);
+    liveTimerRef.current = setTimeout(() => void inspect({ spec: next }, true), 320);
+  }, [inspect]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -218,6 +333,7 @@ export function ProceduralStudio() {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error);
         setResult(data);
+        setDocument(data.document);
         setSpec(data.spec);
         setLoading(false);
       }).catch((nextError) => {
@@ -227,10 +343,17 @@ export function ProceduralStudio() {
       return;
     }
     const demo = params.get("demo") as DemoModelId | null;
-    const nextDemo = DEMO_MODEL_CARDS.some((card) => card.id === demo) ? demo! : "contour-spiral-vase";
+    const mode = params.get("mode");
+    const fallback = mode === "procedural" ? "contour-spiral-vase" : "type-specimen";
+    const nextDemo = DEMO_MODEL_CARDS.some((card) => card.id === demo) ? demo! : fallback;
     setActiveDemo(nextDemo);
     void inspect({ demo: nextDemo });
   }, [inspect]);
+
+  useEffect(() => {
+    void fetch("/api/fonts").then((response) => response.json()).then((data: { fonts: FontSummary[] }) => setFonts(data.fonts));
+    return () => { if (liveTimerRef.current) clearTimeout(liveTimerRef.current); };
+  }, []);
 
   const selectDemo = (id: DemoModelId) => {
     setActiveDemo(id);
@@ -241,9 +364,9 @@ export function ProceduralStudio() {
     <main className="studio-shell">
       <header className="studio-topbar">
         <Link className="brand" href="/" aria-label="Printa home"><span className="brand-mark"><Layers3 size={18} /></span><span>PRINTA</span><em>SPEC 1.0</em></Link>
-        <div className="studio-topbar-center editor-mode-switch" aria-label="Editor mode">
-          <Link className="mode-pill" href="/editor?mode=text"><span>Text</span></Link>
-          <Link className="mode-pill is-active" href="/editor?mode=procedural"><Waves size={14} /> Procedural</Link>
+        <div className="studio-topbar-center editor-mode-switch" aria-label="Unified editor">
+          <Link className="mode-pill is-active" href="/editor"><Layers3 size={14} /> Model editor</Link>
+          <span className="mode-pill"><Braces size={14} /> Spec + WYSIWYG</span>
           <i />
         </div>
         <nav><a href="/skills" target="_blank"><ScrollText size={14} /> Skill</a><a href="/api/model/schema" target="_blank"><Braces size={14} /> Schema</a></nav>
@@ -251,32 +374,23 @@ export function ProceduralStudio() {
 
       <div className="studio-workspace">
         <aside className="studio-sidebar">
-          <section className="studio-intro">
-            <span className="eyebrow"><Waves size={13} /> Composable form graph</span>
-            <h1>Model in layers.</h1>
-            <p>Start from a source, apply ordered modifiers, then assemble or repeat it. Every number is expressed in the document&apos;s units.</p>
-          </section>
+          <section className="studio-intro"><span className="eyebrow"><Waves size={13} /> One editable model spec</span><h1>Shape what you see.</h1><p>Every layer, font, modifier, transform and viewport gizmo is stored in the document and rebuilt live.</p></section>
 
           <section className="studio-demo-section">
-            <div className="studio-section-head"><strong>Demo forms</strong><small>{DEMO_MODEL_CARDS.length} specs</small></div>
-            <div className="studio-demo-grid">
-              {DEMO_MODEL_CARDS.map((demo) => (
-                <button key={demo.id} type="button" className={activeDemo === demo.id ? "is-active" : ""} onClick={() => selectDemo(demo.id)}>
-                  <span>{demo.family === "simulation" ? <Droplets size={14} /> : <Layers3 size={14} />}{demo.name}</span>
-                  <small>{demo.description}</small>
-                </button>
-              ))}
-            </div>
+            <div className="studio-section-head"><strong>Starting form</strong><small>{DEMO_MODEL_CARDS.length} specs</small></div>
+            <label className="studio-demo-select"><span>{DEMO_MODEL_CARDS.find((demo) => demo.id === activeDemo)?.family === "simulation" ? <Droplets size={14} /> : <Layers3 size={14} />}</span><select value={activeDemo} onChange={(event) => selectDemo(event.target.value as DemoModelId)}>{DEMO_MODEL_CARDS.map((demo) => <option key={demo.id} value={demo.id}>{demo.name}</option>)}</select></label>
           </section>
 
-          <section className="studio-spec-section">
-            <div className="studio-section-head"><strong>JSON / YAML spec</strong><small>Editable</small></div>
+          {document && <SpecInspector document={document} fonts={fonts} onChange={updateDocument} />}
+
+          <details className="studio-spec-section">
+            <summary><span><Braces size={13} /> Full JSON / YAML spec</span><small>Advanced</small></summary>
             <textarea value={spec} onChange={(event) => setSpec(event.target.value)} spellCheck={false} aria-label="Procedural model YAML or JSON spec" />
             {error && <div className="studio-error">{error}</div>}
             <button className="studio-apply" type="button" onClick={() => void inspect({ spec })} disabled={loading || !spec.trim()}>
               {loading ? <LoaderCircle className="is-spinning" size={15} /> : <Play size={15} fill="currentColor" />} Apply spec
             </button>
-          </section>
+          </details>
         </aside>
 
         <section className="studio-stage">
@@ -285,7 +399,7 @@ export function ProceduralStudio() {
             {result && <a className="studio-download" href={result.stlUrl}><Download size={15} /> Download STL</a>}
           </div>
           <div className="studio-stage-body">
-            {result && <ModelViewport stlUrl={result.stlUrl} materialPreset={result.materialPreset} onReady={handleModelReady} />}
+            {result && <ModelViewport stlUrl={result.stlUrl} materialPreset={result.materialPreset} display={result.document.display} units={result.document.units} onReady={handleModelReady} />}
             {(loading || !modelReady) && <div className="studio-loading"><LoaderCircle className="is-spinning" size={19} /> {loading ? "Evaluating model graph…" : "Loading printable mesh…"}</div>}
           </div>
           <div className="studio-stage-foot">
