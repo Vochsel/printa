@@ -7,25 +7,81 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
-  Eye,
-  GripVertical,
+  CornerDownRight,
   Layers3,
   Plus,
-  Rotate3D,
+  Printer,
   Search,
+  Settings2,
   Trash2,
   Type,
   Waves,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { JsonField, NumberField, PointListField, SelectField, TextField, ToggleField, VectorField } from "@/components/editor/fields";
+import { cn } from "@/lib/utils";
+import { sfx } from "@/lib/sfx";
 import type { ModelDocument, ModelNode, ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
 
 type FontSummary = { id: string; family: string; category: string };
 type Selection = { kind: "node"; nodeId: string } | { kind: "modifier"; nodeId: string; index: number };
 type NodeEntry = { node: ModelNode; depth: number };
 
-const MATERIALS = ["pla-orange", "pla-matte", "pla-silk", "petg", "resin"] as const;
-const SOURCE_TYPES = ["text", "primitive", "extrude", "revolve", "water", "cloth"] as const;
-const MODIFIER_TYPES = ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "smooth"] as const;
+const MATERIALS = [
+  { value: "pla-orange", label: "PLA · Coral" },
+  { value: "pla-matte", label: "PLA · Matte bone" },
+  { value: "pla-silk", label: "PLA · Silk lavender" },
+  { value: "petg", label: "PETG · Sea glass" },
+  { value: "resin", label: "Resin · Peach" },
+] as const;
+
+const SOURCE_TYPES: { value: SourceSpec["type"]; label: string; hint: string }[] = [
+  { value: "text", label: "3D text", hint: "Any Google font, extruded" },
+  { value: "primitive", label: "Basic shape", hint: "Box, cylinder, cone, sphere, torus" },
+  { value: "extrude", label: "Extruded outline", hint: "A 2D path pulled into 3D" },
+  { value: "revolve", label: "Spun profile", hint: "Vases, bowls, anything round" },
+  { value: "water", label: "Water ripple", hint: "Simulated ripple surface" },
+  { value: "cloth", label: "Cloth drape", hint: "Simulated draped fabric" },
+];
+
+const MODIFIER_META: Record<ModifierSpec["type"], { label: string; hint: string }> = {
+  twist: { label: "Twist", hint: "Rotate the shape around its height" },
+  taper: { label: "Taper", hint: "Narrow or widen toward the top" },
+  radialWave: { label: "Flutes", hint: "Wavy ridges around the outside" },
+  axialWave: { label: "Ripples", hint: "Waves running up the height" },
+  bend: { label: "Bend", hint: "Lean the shape over" },
+  noise: { label: "Roughen", hint: "Organic bumpy texture" },
+  smooth: { label: "Smooth", hint: "Soften sharp detail" },
+};
+
+const MODIFIER_FIELDS: Record<string, { label: string; step?: number; min?: number; max?: number; unit?: string; options?: readonly string[] }> = {
+  angleDeg: { label: "Angle", unit: "°" },
+  directionDeg: { label: "Direction", unit: "°" },
+  start: { label: "Start (0–1)", step: 0.05, min: 0, max: 1 },
+  end: { label: "End (0–1)", step: 0.05, min: 0, max: 1 },
+  from: { label: "Bottom scale", step: 0.05, min: 0.05 },
+  to: { label: "Top scale", step: 0.05, min: 0.05 },
+  easing: { label: "Easing", options: ["linear", "smoothstep"] },
+  amplitude: { label: "Depth", step: 0.5, unit: "mm" },
+  count: { label: "Wave count", min: 1 },
+  cycles: { label: "Wave count", step: 0.5, min: 0.5 },
+  phaseDeg: { label: "Rotate", unit: "°" },
+  axialTurns: { label: "Spiral turns", step: 0.25 },
+  scale: { label: "Feature size", min: 1, unit: "mm" },
+  seed: { label: "Seed", min: 0 },
+  iterations: { label: "Passes", min: 1, max: 10 },
+  strength: { label: "Strength", step: 0.05, min: 0, max: 1 },
+};
+
 const fontPreviewCache = new Map<string, Promise<void>>();
 
 function loadFontPreview(font: FontSummary) {
@@ -52,7 +108,58 @@ function SpecFontPicker({ value, fonts, onChange }: { value: string; fonts: Font
   const visible = matches.slice(0, visibleCount);
   useEffect(() => { if (selected) void loadFontPreview(selected); }, [selected]);
   useEffect(() => { if (open) visible.forEach((font) => void loadFontPreview(font)); }, [open, visible]);
-  return <div className="spec-font-picker"><span className="spec-font-label">Google font <small>{fonts.length.toLocaleString()} families</small></span><button type="button" className="spec-font-trigger" onClick={() => { setOpen((value) => !value); setVisibleCount(50); }}><span style={{ fontFamily: selected ? `"Printa Spec ${selected.id}", sans-serif` : undefined }}>{selected?.family ?? value}</span><small>{selected?.category ?? "Google Font"}</small><ChevronDown size={14} /></button>{open && <div className="spec-font-popover"><label><Search size={14} /><input autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setVisibleCount(50); }} onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }} placeholder="Search all Google Fonts…" /></label><div className="spec-font-summary"><span>{matches.length.toLocaleString()} fonts</span><small>{visible.length.toLocaleString()} shown · scroll for all</small></div><div className="spec-font-list" onScroll={(event) => { const list = event.currentTarget; if (list.scrollTop + list.clientHeight >= list.scrollHeight - 80) setVisibleCount((count) => Math.min(matches.length, count + 50)); }}>{visible.map((font) => <button key={font.id} type="button" onClick={() => { onChange(font.family); setOpen(false); setQuery(""); }}><span style={{ fontFamily: `"Printa Spec ${font.id}", sans-serif` }}>{font.family}</span><small>{font.category}</small>{font.family === value && <Check size={14} />}</button>)}</div></div>}</div>;
+  return (
+    <div className="relative grid min-w-0 grid-cols-[58px_minmax(0,1fr)] items-center gap-2">
+      <span className="truncate text-[11px] text-muted-foreground">Font</span>
+      <button
+        type="button"
+        className="grid h-7 w-full grid-cols-[minmax(0,1fr)_14px] items-center gap-1.5 rounded-md border border-transparent bg-secondary px-2 text-left outline-none focus-visible:border-ring focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/40"
+        onClick={() => { sfx("tick"); setOpen((prev) => !prev); setVisibleCount(50); }}
+      >
+        <span className="truncate text-xs" style={{ fontFamily: selected ? `"Printa Spec ${selected.id}", sans-serif` : undefined }}>{selected?.family ?? value}</span>
+        <ChevronDown size={13} className={cn("text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="absolute inset-x-0 top-full z-40 col-span-2 mt-1 overflow-hidden rounded-md border border-border bg-popover shadow-lg">
+          <label className="flex h-9 items-center gap-2 border-b border-border px-2.5 text-muted-foreground">
+            <Search size={13} />
+            <input
+              autoFocus
+              value={query}
+              onChange={(event) => { setQuery(event.target.value); setVisibleCount(50); }}
+              onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
+              placeholder={`Search ${fonts.length.toLocaleString()} Google Fonts…`}
+              className="w-full bg-transparent text-xs text-foreground outline-none"
+            />
+          </label>
+          <div
+            className="max-h-72 overflow-y-auto p-1"
+            onScroll={(event) => {
+              const list = event.currentTarget;
+              if (list.scrollTop + list.clientHeight >= list.scrollHeight - 80) setVisibleCount((count) => Math.min(matches.length, count + 50));
+            }}
+          >
+            {visible.map((font) => (
+              <button
+                key={font.id}
+                type="button"
+                className={cn(
+                  "grid h-8 w-full grid-cols-[minmax(0,1fr)_auto_14px] items-center gap-2 rounded px-2 text-left hover:bg-accent",
+                  font.family === value && "bg-[var(--accent-tool-soft)]",
+                )}
+                onClick={() => { sfx("droplet"); onChange(font.family); setOpen(false); setQuery(""); }}
+              >
+                <span className="truncate text-sm" style={{ fontFamily: `"Printa Spec ${font.id}", sans-serif` }}>{font.family}</span>
+                <small className="text-[9px] uppercase text-muted-foreground">{font.category}</small>
+                {font.family === value && <Check size={13} className="text-[var(--accent-tool)]" />}
+              </button>
+            ))}
+            {visible.length === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No fonts match.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function sourceDefaults(type: SourceSpec["type"]): SourceSpec {
@@ -99,75 +206,174 @@ function updateNode(node: ModelNode, id: string, update: (target: ModelNode) => 
 }
 
 function nodeIcon(node: ModelNode) {
-  if (node.kind !== "shape") return <Layers3 size={14} />;
-  if (node.source.type === "text") return <Type size={14} />;
-  if (node.source.type === "water" || node.source.type === "cloth") return <Waves size={14} />;
-  return <Box size={14} />;
+  if (node.kind !== "shape") return <Layers3 size={13} />;
+  if (node.source.type === "text") return <Type size={13} />;
+  if (node.source.type === "water" || node.source.type === "cloth") return <Waves size={13} />;
+  return <Box size={13} />;
 }
 
-function NumberInput({ label, value, step = 1, min, max, onChange }: { label: string; value: number; step?: number; min?: number; max?: number; onChange: (value: number) => void }) {
-  return <label className="spec-field"><span>{label}</span><input type="number" value={Number.isFinite(value) ? value : 0} step={step} min={min} max={max} onChange={(event) => onChange(Number(event.target.value))} /></label>;
+function nodeTypeLabel(node: ModelNode) {
+  if (node.kind === "shape") return SOURCE_TYPES.find((type) => type.value === node.source.type)?.label ?? node.source.type;
+  return node.kind === "repeat" ? `repeat ×${node.count}` : "group";
 }
 
-function OptionalNumberInput({ label, value, step = 1, min, placeholder = "Natural", onChange }: { label: string; value?: number; step?: number; min?: number; placeholder?: string; onChange: (value?: number) => void }) {
-  return <label className="spec-field"><span>{label}</span><input type="number" value={value ?? ""} placeholder={placeholder} step={step} min={min} onChange={(event) => onChange(event.target.value === "" ? undefined : Number(event.target.value))} /></label>;
+function SectionHead({ title, children }: { title: string; children?: React.ReactNode }) {
+  return (
+    <div className="mb-1.5 flex min-h-6 items-center justify-between">
+      <strong className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/80">{title}</strong>
+      {children}
+    </div>
+  );
 }
 
-function TextInput({ label, value, onChange, list }: { label: string; value: string; onChange: (value: string) => void; list?: string }) {
-  return <label className="spec-field"><span>{label}</span><input value={value} list={list} onChange={(event) => onChange(event.target.value)} /></label>;
+function Grid2({ children }: { children: React.ReactNode }) {
+  return <div className="grid grid-cols-2 gap-1.5">{children}</div>;
 }
 
-function SelectInput({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void }) {
-  return <label className="spec-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>;
+function Grid3({ children }: { children: React.ReactNode }) {
+  return <div className="grid grid-cols-3 gap-1.5">{children}</div>;
 }
 
-function ToggleInput({ label, detail, value, disabled = false, onChange }: { label: string; detail?: string; value: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {
-  return <label className={`spec-toggle${disabled ? " is-disabled" : ""}`}><span><strong>{label}</strong>{detail && <small>{detail}</small>}</span><input type="checkbox" disabled={disabled} checked={value} onChange={(event) => onChange(event.target.checked)} /><i /></label>;
-}
-
-function JsonInput({ label, value, onChange }: { label: string; value: unknown; onChange: (value: unknown) => void }) {
-  const serialized = JSON.stringify(value, null, 2);
-  const [draftState, setDraftState] = useState(() => ({ source: serialized, draft: serialized, invalid: false }));
-  const current = draftState.source === serialized ? draftState : { source: serialized, draft: serialized, invalid: false };
-  return <label className={`spec-field spec-json${current.invalid ? " is-invalid" : ""}`}><span>{label}</span><textarea value={current.draft} spellCheck={false} onChange={(event) => {
-    const next = event.target.value;
-    try { onChange(JSON.parse(next)); setDraftState({ source: serialized, draft: next, invalid: false }); }
-    catch { setDraftState({ source: serialized, draft: next, invalid: true }); }
-  }} /></label>;
-}
-
-function TransformEditor({ value, onChange, title = "Transform" }: { value?: TransformSpec; onChange: (value: TransformSpec) => void; title?: string }) {
-  const transform = value ?? { translate: [0, 0, 0], rotate: [0, 0, 0], scale: 1 };
-  const updateVector = (key: "translate" | "rotate", index: number, next: number) => {
-    const vector = [...transform[key]] as [number, number, number];
-    vector[index] = next;
-    onChange({ ...transform, [key]: vector });
-  };
-  const scale = typeof transform.scale === "number" ? transform.scale : transform.scale[0];
-  return <div className="spec-subsection"><div className="spec-subhead"><Rotate3D size={13} /> {title}</div><div className="spec-vector"><span>Position</span>{transform.translate.map((item, index) => <input key={index} type="number" step="1" value={item} aria-label={`Position ${index}`} onChange={(event) => updateVector("translate", index, Number(event.target.value))} />)}</div><div className="spec-vector"><span>Rotation</span>{transform.rotate.map((item, index) => <input key={index} type="number" step="1" value={item} aria-label={`Rotation ${index}`} onChange={(event) => updateVector("rotate", index, Number(event.target.value))} />)}</div><NumberInput label="Uniform scale" value={scale} step={0.05} min={0.01} onChange={(next) => onChange({ ...transform, scale: next })} /></div>;
+function AdvancedData({ children }: { children: React.ReactNode }) {
+  return (
+    <details className="group/adv rounded-md border border-border bg-muted/40">
+      <summary className="flex min-h-8 cursor-pointer list-none items-center gap-1.5 px-2.5 text-[10px] font-semibold text-muted-foreground [&::-webkit-details-marker]:hidden">
+        Advanced shape data
+        <ChevronDown size={12} className="ml-auto transition-transform group-open/adv:rotate-180" />
+      </summary>
+      <div className="grid gap-2 border-t border-border p-2">{children}</div>
+    </details>
+  );
 }
 
 function SourceEditor({ source, fonts, update }: { source: SourceSpec; fonts: FontSummary[]; update: (patch: Partial<SourceSpec>) => void }) {
   const set = (key: string, value: unknown) => update({ [key]: value } as Partial<SourceSpec>);
-  return <div className="spec-fields">
-    <SelectInput label="Source type" value={source.type} options={SOURCE_TYPES} onChange={(value) => update(sourceDefaults(value as SourceSpec["type"]))} />
-    {source.type === "text" && <>
-      <TextInput label="Text" value={source.text} onChange={(value) => set("text", value)} />
-      <SpecFontPicker value={source.font} fonts={fonts} onChange={(value) => set("font", value)} />
-      <div className="spec-two"><SelectInput label="Case" value={source.textCase} options={["original", "uppercase", "lowercase", "titlecase"]} onChange={(value) => set("textCase", value)} /><SelectInput label="Weight" value={source.weight} options={["regular", "bold"]} onChange={(value) => set("weight", value)} /></div>
-      <div className="spec-two"><ToggleInput label="Italic" value={source.italic} onChange={(value) => set("italic", value)} /><ToggleInput label="Underline" value={source.underline} onChange={(value) => set("underline", value)} /></div>
-      <div className="spec-three"><OptionalNumberInput label="Exact width" value={source.width} min={0.1} step={1} onChange={(value) => set("width", value)} /><NumberInput label="Exact height" value={source.height ?? source.size} min={0.1} step={1} onChange={(value) => set("height", value)} /><NumberInput label="Exact depth" value={source.depth} min={0.1} step={0.5} onChange={(value) => set("depth", value)} /></div>
-      <NumberInput label="Bevel" value={source.bevel} min={0} step={0.1} onChange={(value) => set("bevel", value)} />
-      <div className="spec-two"><NumberInput label="Bevel resolution" value={source.bevelSegments} min={1} max={12} onChange={(value) => set("bevelSegments", value)} /><NumberInput label="Curve resolution" value={source.curveSegments} min={2} max={24} onChange={(value) => set("curveSegments", value)} /></div>
-      <SelectInput label="Bevel faces" value={source.bevelSide} options={["both", "top", "bottom"]} onChange={(value) => set("bevelSide", value)} />
-      <ToggleInput label="Smooth normals" value={source.smoothNormals} onChange={(value) => set("smoothNormals", value)} />
-    </>}
-    {source.type === "primitive" && <><SelectInput label="Primitive" value={source.shape} options={["box", "cylinder", "cone", "sphere", "torus"]} onChange={(value) => set("shape", value)} /><div className="spec-three"><NumberInput label="Width" value={source.width ?? 40} min={0.1} onChange={(value) => set("width", value)} /><NumberInput label="Depth" value={source.depth ?? 40} min={0.1} onChange={(value) => set("depth", value)} /><NumberInput label="Height" value={source.height ?? 60} min={0.1} onChange={(value) => set("height", value)} /></div><div className="spec-three"><NumberInput label="Radius" value={source.radius ?? 20} min={0.1} onChange={(value) => set("radius", value)} /><NumberInput label="Top radius" value={source.radiusTop ?? source.radius ?? 20} min={0} onChange={(value) => set("radiusTop", value)} /><NumberInput label="Tube" value={source.tube ?? 5} min={0.1} onChange={(value) => set("tube", value)} /></div><NumberInput label="Resolution" value={source.segments} min={3} max={256} onChange={(value) => set("segments", value)} /></>}
-    {source.type === "revolve" && <><JsonInput label="Profile [radius, height]" value={source.profile} onChange={(value) => set("profile", value)} /><div className="spec-three"><NumberInput label="Wall thickness" value={source.wall} min={0.1} step={0.1} onChange={(value) => set("wall", value)} /><NumberInput label="Radial segments" value={source.segments} min={8} max={512} onChange={(value) => set("segments", value)} /><NumberInput label="Profile resolution" value={source.profileSegments} min={2} max={256} onChange={(value) => set("profileSegments", value)} /></div><div className="spec-two"><ToggleInput label="Solid base" detail="Close the bottom" value={source.bottomCap} onChange={(value) => set("bottomCap", value)} /><NumberInput label="Base thickness" value={source.bottomThickness} min={0.1} step={0.1} onChange={(value) => set("bottomThickness", value)} /></div><div className="spec-two"><ToggleInput label="Solid top cap" detail="Close the top" value={source.topCap} onChange={(value) => set("topCap", value)} /><NumberInput label="Top thickness" value={source.topThickness} min={0.1} step={0.1} onChange={(value) => set("topThickness", value)} /></div><div className="spec-two"><SelectInput label="Interpolation" value={source.interpolation} options={["linear", "catmull-rom"]} onChange={(value) => set("interpolation", value)} /><SelectInput label="Axis" value={source.axis} options={["x", "y", "z"]} onChange={(value) => set("axis", value)} /></div></>}
-    {source.type === "extrude" && <><JsonInput label="Curve path" value={source.path} onChange={(value) => set("path", value)} /><div className="spec-three"><NumberInput label="Depth" value={source.depth} min={0.1} onChange={(value) => set("depth", value)} /><NumberInput label="Bevel" value={source.bevel} min={0} step={0.1} onChange={(value) => set("bevel", value)} /><NumberInput label="Resolution" value={source.curveSegments} min={1} max={64} onChange={(value) => set("curveSegments", value)} /></div><JsonInput label="Direction [x,y,z]" value={source.direction} onChange={(value) => set("direction", value)} /></>}
-    {source.type === "water" && <><div className="spec-three"><NumberInput label="Width" value={source.width} min={0.1} onChange={(value) => set("width", value)} /><NumberInput label="Depth" value={source.depth} min={0.1} onChange={(value) => set("depth", value)} /><NumberInput label="Base" value={source.base} min={0.1} onChange={(value) => set("base", value)} /></div><div className="spec-three"><NumberInput label="Resolution" value={source.resolution} min={12} max={160} onChange={(value) => set("resolution", value)} /><NumberInput label="Steps" value={source.steps} min={1} max={400} onChange={(value) => set("steps", value)} /><NumberInput label="Damping" value={source.damping} min={0.8} max={0.9999} step={0.001} onChange={(value) => set("damping", value)} /></div><JsonInput label="Drops" value={source.drops} onChange={(value) => set("drops", value)} /></>}
-    {source.type === "cloth" && <><div className="spec-three"><NumberInput label="Width" value={source.width} min={0.1} onChange={(value) => set("width", value)} /><NumberInput label="Depth" value={source.depth} min={0.1} onChange={(value) => set("depth", value)} /><NumberInput label="Thickness" value={source.thickness} min={0.1} step={0.1} onChange={(value) => set("thickness", value)} /></div><div className="spec-three"><NumberInput label="Resolution" value={source.resolution} min={8} max={80} onChange={(value) => set("resolution", value)} /><NumberInput label="Steps" value={source.steps} min={1} max={300} onChange={(value) => set("steps", value)} /><NumberInput label="Start height" value={source.startHeight} min={0.1} onChange={(value) => set("startHeight", value)} /></div><div className="spec-two"><NumberInput label="Gravity" value={source.gravity} min={0.01} step={0.01} onChange={(value) => set("gravity", value)} /><SelectInput label="Pins" value={source.pins} options={["corners", "top-edge", "none"]} onChange={(value) => set("pins", value)} /></div><JsonInput label="Collider" value={source.collider ?? { type: "sphere", center: [0, 0, 0], radius: 20 }} onChange={(value) => set("collider", value)} /></>}
-  </div>;
+  return (
+    <div className="grid gap-2">
+      <SelectField
+        layout="row"
+        label="Made from"
+        value={source.type}
+        options={SOURCE_TYPES.map(({ value, label }) => ({ value, label }))}
+        onChange={(value) => update(sourceDefaults(value as SourceSpec["type"]))}
+      />
+      {source.type === "text" && <>
+        <TextField label="Text" value={source.text} onChange={(value) => set("text", value)} />
+        <SpecFontPicker value={source.font} fonts={fonts} onChange={(value) => set("font", value)} />
+        <Grid2>
+          <SelectField label="Case" value={source.textCase} options={["original", "uppercase", "lowercase", "titlecase"]} onChange={(value) => set("textCase", value)} />
+          <SelectField label="Weight" value={source.weight} options={["regular", "bold"]} onChange={(value) => set("weight", value)} />
+        </Grid2>
+        <Grid2>
+          <ToggleField label="Italic" value={source.italic} onChange={(value) => set("italic", value)} />
+          <ToggleField label="Underline" value={source.underline} onChange={(value) => set("underline", value)} />
+        </Grid2>
+        <Grid3>
+          <NumberField label="Width" optional value={source.width} min={0.1} unit="mm" onChange={(value) => set("width", value)} />
+          <NumberField label="Height" value={source.height ?? source.size} min={0.1} unit="mm" onChange={(value) => set("height", value)} />
+          <NumberField label="Depth" value={source.depth} min={0.1} step={0.5} unit="mm" onChange={(value) => set("depth", value)} />
+        </Grid3>
+        <Grid3>
+          <NumberField label="Bevel" value={source.bevel} min={0} step={0.1} unit="mm" onChange={(value) => set("bevel", value)} />
+          <NumberField label="Bevel detail" value={source.bevelSegments} min={1} max={12} onChange={(value) => set("bevelSegments", value)} />
+          <NumberField label="Curve detail" value={source.curveSegments} min={2} max={24} onChange={(value) => set("curveSegments", value)} />
+        </Grid3>
+        <SelectField label="Bevel faces" value={source.bevelSide} options={["both", "top", "bottom"]} onChange={(value) => set("bevelSide", value)} />
+      </>}
+      {source.type === "primitive" && <>
+        <SelectField layout="row" label="Shape" value={source.shape} options={["box", "cylinder", "cone", "sphere", "torus"]} onChange={(value) => set("shape", value)} />
+        <Grid3>
+          <NumberField label="Width" value={source.width ?? 40} min={0.1} unit="mm" onChange={(value) => set("width", value)} />
+          <NumberField label="Depth" value={source.depth ?? 40} min={0.1} unit="mm" onChange={(value) => set("depth", value)} />
+          <NumberField label="Height" value={source.height ?? 60} min={0.1} unit="mm" onChange={(value) => set("height", value)} />
+        </Grid3>
+        <Grid3>
+          <NumberField label="Radius" value={source.radius ?? 20} min={0.1} unit="mm" onChange={(value) => set("radius", value)} />
+          <NumberField label="Top radius" value={source.radiusTop ?? source.radius ?? 20} min={0} unit="mm" onChange={(value) => set("radiusTop", value)} />
+          <NumberField label="Tube" value={source.tube ?? 5} min={0.1} unit="mm" onChange={(value) => set("tube", value)} />
+        </Grid3>
+        <NumberField layout="row" label="Roundness" value={source.segments} min={3} max={256} onChange={(value) => set("segments", value)} />
+      </>}
+      {source.type === "revolve" && <>
+        <PointListField label="Profile · bottom to top" columns={["Radius (mm)", "Height (mm)"]} value={source.profile} onChange={(value) => set("profile", value)} />
+        <Grid3>
+          <NumberField label="Wall" value={source.wall} min={0.1} step={0.1} unit="mm" onChange={(value) => set("wall", value)} />
+          <NumberField label="Roundness" value={source.segments} min={8} max={512} onChange={(value) => set("segments", value)} />
+          <NumberField label="Profile detail" value={source.profileSegments} min={2} max={256} onChange={(value) => set("profileSegments", value)} />
+        </Grid3>
+        <Grid2>
+          <ToggleField label="Solid base" detail="Close the bottom" value={source.bottomCap} onChange={(value) => set("bottomCap", value)} />
+          <NumberField label="Base thickness" value={source.bottomThickness} min={0.1} step={0.1} unit="mm" onChange={(value) => set("bottomThickness", value)} />
+        </Grid2>
+        <Grid2>
+          <ToggleField label="Solid top" detail="Close the top" value={source.topCap} onChange={(value) => set("topCap", value)} />
+          <NumberField label="Top thickness" value={source.topThickness} min={0.1} step={0.1} unit="mm" onChange={(value) => set("topThickness", value)} />
+        </Grid2>
+        <Grid2>
+          <SelectField label="Curve style" value={source.interpolation} options={[{ value: "linear", label: "Straight lines" }, { value: "catmull-rom", label: "Smooth curve" }]} onChange={(value) => set("interpolation", value)} />
+          <SelectField label="Spin axis" value={source.axis} options={["x", "y", "z"]} onChange={(value) => set("axis", value)} />
+        </Grid2>
+      </>}
+      {source.type === "extrude" && <>
+        <Grid3>
+          <NumberField label="Depth" value={source.depth} min={0.1} unit="mm" onChange={(value) => set("depth", value)} />
+          <NumberField label="Bevel" value={source.bevel} min={0} step={0.1} unit="mm" onChange={(value) => set("bevel", value)} />
+          <NumberField label="Curve detail" value={source.curveSegments} min={1} max={64} onChange={(value) => set("curveSegments", value)} />
+        </Grid3>
+        <AdvancedData>
+          <JsonField label="Outline path" value={source.path} onChange={(value) => set("path", value)} />
+          <JsonField label="Direction [x, y, z]" rows={2} value={source.direction} onChange={(value) => set("direction", value)} />
+        </AdvancedData>
+      </>}
+      {source.type === "water" && <>
+        <Grid3>
+          <NumberField label="Width" value={source.width} min={0.1} unit="mm" onChange={(value) => set("width", value)} />
+          <NumberField label="Depth" value={source.depth} min={0.1} unit="mm" onChange={(value) => set("depth", value)} />
+          <NumberField label="Base" value={source.base} min={0.1} unit="mm" onChange={(value) => set("base", value)} />
+        </Grid3>
+        <Grid3>
+          <NumberField label="Resolution" value={source.resolution} min={12} max={160} onChange={(value) => set("resolution", value)} />
+          <NumberField label="Sim steps" value={source.steps} min={1} max={400} onChange={(value) => set("steps", value)} />
+          <NumberField label="Damping" value={source.damping} min={0.8} max={0.9999} step={0.001} onChange={(value) => set("damping", value)} />
+        </Grid3>
+        <AdvancedData>
+          <JsonField label="Drops" value={source.drops} onChange={(value) => set("drops", value)} />
+        </AdvancedData>
+      </>}
+      {source.type === "cloth" && <>
+        <Grid3>
+          <NumberField label="Width" value={source.width} min={0.1} unit="mm" onChange={(value) => set("width", value)} />
+          <NumberField label="Depth" value={source.depth} min={0.1} unit="mm" onChange={(value) => set("depth", value)} />
+          <NumberField label="Thickness" value={source.thickness} min={0.1} step={0.1} unit="mm" onChange={(value) => set("thickness", value)} />
+        </Grid3>
+        <Grid3>
+          <NumberField label="Resolution" value={source.resolution} min={8} max={80} onChange={(value) => set("resolution", value)} />
+          <NumberField label="Sim steps" value={source.steps} min={1} max={300} onChange={(value) => set("steps", value)} />
+          <NumberField label="Drop height" value={source.startHeight} min={0.1} unit="mm" onChange={(value) => set("startHeight", value)} />
+        </Grid3>
+        <Grid2>
+          <NumberField label="Gravity" value={source.gravity} min={0.01} step={0.01} onChange={(value) => set("gravity", value)} />
+          <SelectField label="Pinned at" value={source.pins} options={[{ value: "corners", label: "Corners" }, { value: "top-edge", label: "Top edge" }, { value: "none", label: "Nowhere" }]} onChange={(value) => set("pins", value)} />
+        </Grid2>
+        <AdvancedData>
+          <JsonField label="Collider" value={source.collider ?? { type: "sphere", center: [0, 0, 0], radius: 20 }} onChange={(value) => set("collider", value)} />
+        </AdvancedData>
+      </>}
+    </div>
+  );
+}
+
+function TransformEditor({ value, onChange, title = "Position & rotation" }: { value?: TransformSpec; onChange: (value: TransformSpec) => void; title?: string }) {
+  const transform = value ?? { translate: [0, 0, 0], rotate: [0, 0, 0], scale: 1 };
+  const scale = typeof transform.scale === "number" ? transform.scale : transform.scale[0];
+  return (
+    <div className="mt-2.5 grid gap-2 border-t border-border pt-2.5">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/80">{title}</span>
+      <VectorField label="Move" value={transform.translate} onChange={(vector) => onChange({ ...transform, translate: vector })} />
+      <VectorField label="Rotate" value={transform.rotate} onChange={(vector) => onChange({ ...transform, rotate: vector })} />
+      <NumberField layout="row" label="Scale" value={scale} step={0.05} min={0.01} onChange={(next) => onChange({ ...transform, scale: next ?? 1 })} />
+    </div>
+  );
 }
 
 export function SpecInspector({ document, fonts, onChange }: { document: ModelDocument; fonts: FontSummary[]; onChange: (document: ModelDocument) => void }) {
@@ -182,11 +388,13 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
 
   const mutate = (recipe: (draft: ModelDocument) => void) => { const draft = structuredClone(document); recipe(draft); onChange(draft); };
   const mutateNode = (recipe: (node: ModelNode) => void) => mutate((draft) => { updateNode(draft.root, selectedNode.id, recipe); });
-  const addLayer = () => mutate((draft) => {
-    const node: ModelNode = { kind: "shape", id: `shape-${Date.now().toString(36)}`, source: sourceDefaults("primitive"), modifiers: [], material: "pla-orange" };
+
+  const addLayer = (type: SourceSpec["type"]) => mutate((draft) => {
+    const node: ModelNode = { kind: "shape", id: `${type}-${Date.now().toString(36)}`, source: sourceDefaults(type), modifiers: [], material: "pla-orange" };
     if (draft.root.kind === "assembly") draft.root.children.push(node);
     else draft.root = { kind: "assembly", id: "model", operation: "merge", children: [draft.root, node], modifiers: [] };
     setSelection({ kind: "node", nodeId: node.id });
+    sfx("droplet");
   });
   const duplicateLayer = () => mutate((draft) => {
     const target = findNode(draft.root, activeSelection.nodeId);
@@ -195,48 +403,201 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
     if (draft.root.kind === "assembly") draft.root.children.push(copy);
     else draft.root = { kind: "assembly", id: "model", operation: "merge", children: [draft.root, copy], modifiers: [] };
     setSelection({ kind: "node", nodeId: copy.id });
+    sfx("tick");
   });
   const deleteLayer = () => mutate((draft) => {
     if (draft.root.kind !== "assembly" || draft.root.children.length <= 1) return;
     draft.root.children = draft.root.children.filter((child) => child.id !== activeSelection.nodeId);
     setSelection({ kind: "node", nodeId: draft.root.id });
+    sfx("whisper");
+  });
+  const addModifier = (type: ModifierSpec["type"]) => mutateNode((node) => {
+    node.modifiers.push(modifierDefaults(type));
+    setSelection({ kind: "modifier", nodeId: node.id, index: node.modifiers.length - 1 });
+    sfx("droplet");
   });
 
-  return <>
-    <section className="spec-document-card">
-      <div className="studio-section-head"><strong>Document</strong><small>Live spec</small></div>
-      <TextInput label="Name" value={document.name} onChange={(value) => mutate((draft) => { draft.name = value; })} />
-      <TextInput label="Description" value={document.description} onChange={(value) => mutate((draft) => { draft.description = value; })} />
-      <div className="spec-two"><SelectInput label="Units" value={document.units} options={["mm", "cm", "in"]} onChange={(value) => mutate((draft) => { draft.units = value as ModelDocument["units"]; })} /><ToggleInput label="Place on bed" value={document.print.placeOnBed} onChange={(value) => mutate((draft) => { draft.print.placeOnBed = value; })} /></div>
-      <div className="spec-three">{document.print.buildVolume.map((value, index) => <NumberInput key={index} label={["Build W", "Build H", "Build Z"][index]} value={value} min={0.1} onChange={(next) => mutate((draft) => { draft.print.buildVolume[index] = next; })} />)}</div>
-      <ToggleInput label="Auto center" value={document.print.autoCenter} onChange={(value) => mutate((draft) => { draft.print.autoCenter = value; })} />
-      <div className="spec-subsection"><div className="spec-subhead"><Layers3 size={13} /> Interior 3D struts</div><ToggleInput label="Generate structural lattice" detail={supportsInteriorStruts ? "Preview + downloaded STL" : "Requires a revolved cavity"} disabled={!supportsInteriorStruts} value={document.print.interiorStruts.enabled} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.enabled = value; })} /><SelectInput label="Pattern" value={document.print.interiorStruts.pattern} options={["diamond", "cross", "radial"]} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.pattern = value as ModelDocument["print"]["interiorStruts"]["pattern"]; })} /><div className="spec-three"><NumberInput label="Spacing" value={document.print.interiorStruts.spacing} min={4} max={100} step={1} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.spacing = value; })} /><NumberInput label="Diameter" value={document.print.interiorStruts.diameter} min={0.4} max={12} step={0.1} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.diameter = value; })} /><NumberInput label="Boundary inset" value={document.print.interiorStruts.boundaryInset} min={0} max={40} step={0.5} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.boundaryInset = value; })} /></div><div className="spec-two"><NumberInput label="Wall overlap" value={document.print.interiorStruts.wallOverlap} min={0} max={10} step={0.1} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.wallOverlap = value; })} /><NumberInput label="Roundness" value={document.print.interiorStruts.radialSegments} min={6} max={24} step={1} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.radialSegments = value; })} /></div></div>
-    </section>
+  const canDelete = document.root.kind === "assembly" && activeSelection.nodeId !== document.root.id;
 
-    <section className="spec-layer-section">
-      <div className="studio-section-head"><strong>Layers</strong><button type="button" onClick={addLayer}><Plus size={13} /> Add layer</button></div>
-      <div className="spec-layer-list">{entries.map(({ node, depth }) => <div key={node.id} className="spec-layer-wrap"><button type="button" className={`spec-layer${activeSelection.kind === "node" && activeSelection.nodeId === node.id ? " is-active" : ""}`} style={{ paddingLeft: `${12 + depth * 18}px` }} onClick={() => setSelection({ kind: "node", nodeId: node.id })}><GripVertical size={12} />{nodeIcon(node)}<span><strong>{node.id}</strong><small>{node.kind === "shape" ? node.source.type : node.kind}</small></span></button>{node.modifiers.map((modifier, index) => <button key={`${node.id}-${index}`} type="button" className={`spec-modifier-layer${activeSelection.kind === "modifier" && activeSelection.nodeId === node.id && activeSelection.index === index ? " is-active" : ""}`} style={{ paddingLeft: `${42 + depth * 18}px` }} onClick={() => setSelection({ kind: "modifier", nodeId: node.id, index })}><span>↳ {modifier.type}</span></button>)}</div>)}</div>
-      <div className="spec-layer-actions"><button type="button" onClick={duplicateLayer}><Copy size={13} /> Duplicate</button><button type="button" onClick={deleteLayer} disabled={document.root.kind !== "assembly" || activeSelection.nodeId === document.root.id}><Trash2 size={13} /> Delete</button></div>
-    </section>
+  return (
+    <div className="grid gap-4">
+      {/* Layers */}
+      <section>
+        <SectionHead title="Layers">
+          <div className="flex items-center gap-0.5">
+            <Tooltip>
+              <TooltipTrigger render={<Button variant="ghost" size="icon-xs" onClick={duplicateLayer} aria-label="Duplicate layer"><Copy /></Button>} />
+              <TooltipContent>Duplicate selected layer</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger render={<Button variant="ghost" size="icon-xs" disabled={!canDelete} onClick={deleteLayer} aria-label="Delete layer"><Trash2 /></Button>} />
+              <TooltipContent>Delete selected layer</TooltipContent>
+            </Tooltip>
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="ghost" size="xs" className="text-[var(--accent-tool)]" data-cuelume-press><Plus /> Add</Button>} />
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>New layer</DropdownMenuLabel>
+                  {SOURCE_TYPES.map((type) => (
+                    <DropdownMenuItem key={type.value} onClick={() => addLayer(type.value)}>
+                      <div className="grid gap-0.5">
+                        <span className="text-xs font-medium">{type.label}</span>
+                        <span className="text-[10px] text-muted-foreground">{type.hint}</span>
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </SectionHead>
+        <div className="grid gap-px">
+          {entries.map(({ node, depth }) => {
+            const nodeActive = activeSelection.kind === "node" && activeSelection.nodeId === node.id;
+            return (
+              <div key={node.id} className="grid gap-px">
+                <button
+                  type="button"
+                  className={cn(
+                    "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-muted",
+                    nodeActive ? "bg-[var(--accent-tool-soft)]" : "text-foreground",
+                  )}
+                  style={{ paddingLeft: `${8 + depth * 14}px` }}
+                  onClick={() => { sfx("tick"); setSelection({ kind: "node", nodeId: node.id }); }}
+                >
+                  <span className={cn("shrink-0", nodeActive ? "text-[var(--accent-tool)]" : "text-muted-foreground")}>{nodeIcon(node)}</span>
+                  <span className={cn("min-w-0 flex-1 truncate text-xs", nodeActive ? "font-medium text-[var(--accent-tool)]" : "text-foreground")}>{node.id}</span>
+                  <span className="text-[9px] lowercase text-muted-foreground/60">{nodeTypeLabel(node)}</span>
+                </button>
+                {node.modifiers.map((modifier, index) => {
+                  const modifierActive = activeSelection.kind === "modifier" && activeSelection.nodeId === node.id && activeSelection.index === index;
+                  return (
+                    <button
+                      key={`${node.id}-${index}`}
+                      type="button"
+                      className={cn(
+                        "flex h-6 w-full items-center gap-1.5 rounded-md px-2 text-left text-[11px] transition-colors hover:bg-muted",
+                        modifierActive ? "bg-[var(--accent-tool-soft)] font-medium text-[var(--accent-tool)]" : "text-muted-foreground",
+                      )}
+                      style={{ paddingLeft: `${26 + depth * 14}px` }}
+                      onClick={() => { sfx("tick"); setSelection({ kind: "modifier", nodeId: node.id, index }); }}
+                    >
+                      <CornerDownRight size={10} className="shrink-0 opacity-60" />
+                      {MODIFIER_META[modifier.type].label}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
-    <section className="spec-inspector-section">
-      <div className="studio-section-head"><strong>{selectedModifier ? `${selectedModifier.type} modifier` : `${selectedNode.id} properties`}</strong><small>Realtime</small></div>
-      {selectedModifier ? <div className="spec-fields">{Object.entries(selectedModifier).filter(([key]) => key !== "type").map(([key, value]) => typeof value === "number" ? <NumberInput key={key} label={key} value={value} step={key.toLowerCase().includes("strength") || key === "start" || key === "end" ? 0.05 : 1} onChange={(next) => mutateNode((node) => { (node.modifiers[modifierIndex] as unknown as Record<string, unknown>)[key] = next; })} /> : <SelectInput key={key} label={key} value={String(value)} options={key === "easing" ? ["linear", "smoothstep"] : [String(value)]} onChange={(next) => mutateNode((node) => { (node.modifiers[modifierIndex] as unknown as Record<string, unknown>)[key] = next; })} />)}<div className="spec-modifier-actions"><button type="button" disabled={modifierIndex === 0} onClick={() => mutateNode((node) => { const [item] = node.modifiers.splice(modifierIndex, 1); node.modifiers.splice(modifierIndex - 1, 0, item); setSelection({ kind: "modifier", nodeId: node.id, index: modifierIndex - 1 }); })}><ChevronUp size={14} /></button><button type="button" disabled={modifierIndex >= selectedNode.modifiers.length - 1} onClick={() => mutateNode((node) => { const [item] = node.modifiers.splice(modifierIndex, 1); node.modifiers.splice(modifierIndex + 1, 0, item); setSelection({ kind: "modifier", nodeId: node.id, index: modifierIndex + 1 }); })}><ChevronDown size={14} /></button><button type="button" onClick={() => mutateNode((node) => { node.modifiers.splice(modifierIndex, 1); setSelection({ kind: "node", nodeId: node.id }); })}><Trash2 size={14} /></button></div></div> : <>
-        <TextInput label="Layer id" value={selectedNode.id} onChange={(value) => mutateNode((node) => { node.id = value; setSelection({ kind: "node", nodeId: value }); })} />
-        {selectedNode.kind === "shape" && <><SelectInput label="Material" value={selectedNode.material ?? "pla-orange"} options={MATERIALS} onChange={(value) => mutateNode((node) => { if (node.kind === "shape") node.material = value as typeof MATERIALS[number]; })} /><SourceEditor source={selectedNode.source} fonts={fonts} update={(patch) => mutateNode((node) => { if (node.kind !== "shape") return; const next = patch as SourceSpec; node.source = next.type && next.type !== node.source.type ? next : { ...node.source, ...patch } as SourceSpec; })} /></>}
-        {selectedNode.kind === "repeat" && <><NumberInput label="Repeat count" value={selectedNode.count} min={1} max={32} onChange={(value) => mutateNode((node) => { if (node.kind === "repeat") node.count = value; })} /><TransformEditor title="Repeat step" value={selectedNode.step} onChange={(value) => mutateNode((node) => { if (node.kind === "repeat") node.step = value; })} /></>}
-        <TransformEditor value={selectedNode.transform} onChange={(value) => mutateNode((node) => { node.transform = value; })} />
-        <div className="spec-add-modifier"><label className="spec-field"><span>Add modifier</span><select defaultValue="" onChange={(event) => { const value = event.target.value as ModifierSpec["type"]; if (!value) return; mutateNode((node) => { node.modifiers.push(modifierDefaults(value)); setSelection({ kind: "modifier", nodeId: node.id, index: node.modifiers.length - 1 }); }); event.target.value = ""; }}><option value="" disabled>Choose modifier…</option>{MODIFIER_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></label><span>Selecting adds it immediately</span></div>
-      </>}
-    </section>
+      {/* Inspector */}
+      <section className="border-t border-border pt-3">
+        {selectedModifier ? (
+          <>
+            <SectionHead title={`${MODIFIER_META[selectedModifier.type].label} modifier`}>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon-xs" aria-label="Move modifier up" disabled={modifierIndex === 0} onClick={() => { sfx("tick"); mutateNode((node) => { const [item] = node.modifiers.splice(modifierIndex, 1); node.modifiers.splice(modifierIndex - 1, 0, item); setSelection({ kind: "modifier", nodeId: node.id, index: modifierIndex - 1 }); }); }}><ChevronUp /></Button>
+                <Button variant="ghost" size="icon-xs" aria-label="Move modifier down" disabled={modifierIndex >= selectedNode.modifiers.length - 1} onClick={() => { sfx("tick"); mutateNode((node) => { const [item] = node.modifiers.splice(modifierIndex, 1); node.modifiers.splice(modifierIndex + 1, 0, item); setSelection({ kind: "modifier", nodeId: node.id, index: modifierIndex + 1 }); }); }}><ChevronDown /></Button>
+                <Button variant="ghost" size="icon-xs" aria-label="Remove modifier" className="text-destructive" onClick={() => { sfx("whisper"); mutateNode((node) => { node.modifiers.splice(modifierIndex, 1); setSelection({ kind: "node", nodeId: node.id }); }); }}><Trash2 /></Button>
+              </div>
+            </SectionHead>
+            <p className="mb-2 text-[10px] text-muted-foreground">{MODIFIER_META[selectedModifier.type].hint}. Modifiers apply top to bottom.</p>
+            <Grid2>
+              {Object.entries(selectedModifier).filter(([key]) => key !== "type").map(([key, value]) => {
+                const meta = MODIFIER_FIELDS[key] ?? { label: key };
+                const write = (next: unknown) => mutateNode((node) => { (node.modifiers[modifierIndex] as unknown as Record<string, unknown>)[key] = next; });
+                return typeof value === "number" ? (
+                  <NumberField key={key} label={meta.label} value={value} step={meta.step ?? 1} min={meta.min} max={meta.max} unit={meta.unit} onChange={(next) => write(next ?? 0)} />
+                ) : (
+                  <SelectField key={key} label={meta.label} value={String(value)} options={meta.options ?? [String(value)]} onChange={write} />
+                );
+              })}
+            </Grid2>
+          </>
+        ) : (
+          <>
+            <SectionHead title="Selected layer" />
+            <div className="grid gap-2">
+              <TextField label="Name" value={selectedNode.id} commit="blur" onChange={(value) => { const next = value.trim(); if (!next || findNode(document.root, next)) return; mutateNode((node) => { node.id = next; }); setSelection({ kind: "node", nodeId: next }); }} />
+              {selectedNode.kind === "shape" && <>
+                <SelectField layout="row" label="Material" value={selectedNode.material ?? "pla-orange"} options={MATERIALS} onChange={(value) => mutateNode((node) => { if (node.kind === "shape") node.material = value as (typeof MATERIALS)[number]["value"]; })} />
+                <SourceEditor source={selectedNode.source} fonts={fonts} update={(patch) => mutateNode((node) => { if (node.kind !== "shape") return; const next = patch as SourceSpec; node.source = next.type && next.type !== node.source.type ? next : { ...node.source, ...patch } as SourceSpec; })} />
+              </>}
+              {selectedNode.kind === "repeat" && <>
+                <NumberField layout="row" label="Copies" value={selectedNode.count} min={1} max={32} onChange={(value) => mutateNode((node) => { if (node.kind === "repeat") node.count = value ?? 1; })} />
+                <TransformEditor title="Step between copies" value={selectedNode.step} onChange={(value) => mutateNode((node) => { if (node.kind === "repeat") node.step = value; })} />
+              </>}
+              <TransformEditor value={selectedNode.transform} onChange={(value) => mutateNode((node) => { node.transform = value; })} />
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="mt-1 h-7 w-full justify-center border-dashed text-muted-foreground hover:text-foreground" data-cuelume-press><Plus /> Add modifier</Button>} />
+                <DropdownMenuContent align="center" className="w-56">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Shape the layer</DropdownMenuLabel>
+                    {(Object.keys(MODIFIER_META) as ModifierSpec["type"][]).map((type) => (
+                      <DropdownMenuItem key={type} onClick={() => addModifier(type)}>
+                        <div className="grid gap-0.5">
+                          <span className="text-xs font-medium">{MODIFIER_META[type].label}</span>
+                          <span className="text-[10px] text-muted-foreground">{MODIFIER_META[type].hint}</span>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </>
+        )}
+      </section>
 
-    <section className="spec-display-section">
-      <div className="studio-section-head"><strong>Viewport in spec</strong><Eye size={13} /></div>
-      <div className="spec-two"><ToggleInput label="Floor" value={document.display.floor} onChange={(value) => mutate((draft) => { draft.display.floor = value; })} /><ToggleInput label="Grid" value={document.display.grid} onChange={(value) => mutate((draft) => { draft.display.grid = value; })} /></div>
-      <ToggleInput label="Floor W/H gizmos" detail="Stored in display.dimensions" value={document.display.dimensions.visible} onChange={(value) => mutate((draft) => { draft.display.dimensions.visible = value; })} />
-      <div className="spec-three"><ToggleInput label="Width" value={document.display.dimensions.width} onChange={(value) => mutate((draft) => { draft.display.dimensions.width = value; })} /><ToggleInput label="Height" value={document.display.dimensions.height} onChange={(value) => mutate((draft) => { draft.display.dimensions.height = value; })} /><NumberInput label="Offset" value={document.display.dimensions.offset} min={0} step={1} onChange={(value) => mutate((draft) => { draft.display.dimensions.offset = value; })} /></div>
-      <NumberInput label="Label precision" value={document.display.dimensions.precision} min={0} max={3} onChange={(value) => mutate((draft) => { draft.display.dimensions.precision = value; })} />
-      <JsonInput label="Metadata" value={document.metadata} onChange={(value) => mutate((draft) => { draft.metadata = value as ModelDocument["metadata"]; })} />
-    </section>
-  </>;
+      {/* Document / print setup */}
+      <details className="group border-t border-border">
+        <summary className="flex min-h-8 cursor-pointer list-none items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/80 [&::-webkit-details-marker]:hidden">
+          <Printer size={12} />
+          Print setup
+          <ChevronDown size={13} className="ml-auto transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="grid gap-2.5 pb-2">
+          <TextField label="Model name" value={document.name} onChange={(value) => mutate((draft) => { draft.name = value; })} />
+          <TextField label="Description" value={document.description} onChange={(value) => mutate((draft) => { draft.description = value; })} />
+          <Grid2>
+            <SelectField label="Units" value={document.units} options={["mm", "cm", "in"]} onChange={(value) => mutate((draft) => { draft.units = value as ModelDocument["units"]; })} />
+            <ToggleField label="Sit on bed" value={document.print.placeOnBed} onChange={(value) => mutate((draft) => { draft.print.placeOnBed = value; })} />
+          </Grid2>
+          <Grid3>
+            {document.print.buildVolume.map((value, index) => (
+              <NumberField key={index} label={["Printer W", "Printer D", "Printer H"][index]} value={value} min={0.1} unit="mm" onChange={(next) => mutate((draft) => { draft.print.buildVolume[index] = next ?? 1; })} />
+            ))}
+          </Grid3>
+          <ToggleField label="Auto center" detail="Keep the model centered on the plate" value={document.print.autoCenter} onChange={(value) => mutate((draft) => { draft.print.autoCenter = value; })} />
+          <div className="mt-1 grid gap-2.5 border-t border-border pt-3">
+            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground"><Settings2 size={12} /> Interior struts</span>
+            <ToggleField
+              label="Structural lattice inside"
+              detail={supportsInteriorStruts ? "Included in the preview and STL" : "Needs a hollow spun-profile layer"}
+              disabled={!supportsInteriorStruts}
+              value={document.print.interiorStruts.enabled}
+              onChange={(value) => mutate((draft) => { draft.print.interiorStruts.enabled = value; })}
+            />
+            {document.print.interiorStruts.enabled && <>
+              <SelectField layout="row" label="Pattern" value={document.print.interiorStruts.pattern} options={["diamond", "cross", "radial"]} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.pattern = value as ModelDocument["print"]["interiorStruts"]["pattern"]; })} />
+              <Grid3>
+                <NumberField label="Spacing" value={document.print.interiorStruts.spacing} min={4} max={100} unit="mm" onChange={(value) => mutate((draft) => { draft.print.interiorStruts.spacing = value ?? 4; })} />
+                <NumberField label="Thickness" value={document.print.interiorStruts.diameter} min={0.4} max={12} step={0.1} unit="mm" onChange={(value) => mutate((draft) => { draft.print.interiorStruts.diameter = value ?? 0.4; })} />
+                <NumberField label="Edge inset" value={document.print.interiorStruts.boundaryInset} min={0} max={40} step={0.5} unit="mm" onChange={(value) => mutate((draft) => { draft.print.interiorStruts.boundaryInset = value ?? 0; })} />
+              </Grid3>
+              <Grid2>
+                <NumberField label="Wall overlap" value={document.print.interiorStruts.wallOverlap} min={0} max={10} step={0.1} unit="mm" onChange={(value) => mutate((draft) => { draft.print.interiorStruts.wallOverlap = value ?? 0; })} />
+                <NumberField label="Roundness" value={document.print.interiorStruts.radialSegments} min={6} max={24} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.radialSegments = value ?? 6; })} />
+              </Grid2>
+            </>}
+          </div>
+        </div>
+      </details>
+    </div>
+  );
 }
+
+export { type FontSummary };
