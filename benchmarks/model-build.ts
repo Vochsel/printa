@@ -15,6 +15,7 @@ type Sample = {
   bytes: number;
   cacheHits: number;
   cacheMisses: number;
+  dimensionsMm: [number, number, number];
 };
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -71,7 +72,13 @@ async function build(name: string, spec: unknown, quality: Quality, pass: Sample
   const bytes = await response.arrayBuffer();
   if (!response.ok) throw new Error(`${name} (${quality}) failed: ${new TextDecoder().decode(bytes)}`);
   const triangles = Number(response.headers.get("X-Printa-Triangles") ?? 0);
+  const dimensionsMm = (response.headers.get("X-Printa-Dimensions") ?? "").split(",").map(Number) as [number, number, number];
   if (bytes.byteLength <= 84 || !Number.isFinite(triangles) || triangles <= 0) throw new Error(`${name} (${quality}) returned an invalid STL.`);
+  if (dimensionsMm.length !== 3 || dimensionsMm.some((value) => !Number.isFinite(value) || value <= 0)) throw new Error(`${name} (${quality}) returned invalid dimensions.`);
+  const expected = (spec as { metadata?: { expectedBoundsMm?: string } }).metadata?.expectedBoundsMm?.split(",").map(Number);
+  if (expected?.length === 3 && expected.some((value, index) => Math.abs(value - dimensionsMm[index]) > 0.02)) {
+    throw new Error(`${name} (${quality}) dimensions ${dimensionsMm.join(" × ")} mm do not match expected ${expected.join(" × ")} mm.`);
+  }
   const serverTiming = response.headers.get("Server-Timing")?.match(/dur=([0-9.]+)/);
   const cache = response.headers.get("X-Printa-Cache");
   return {
@@ -84,6 +91,7 @@ async function build(name: string, spec: unknown, quality: Quality, pass: Sample
     bytes: bytes.byteLength,
     cacheHits: parseMetric(cache, "hit"),
     cacheMisses: parseMetric(cache, "miss"),
+    dimensionsMm,
   };
 }
 

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as opentype from "opentype.js";
 import type { BufferGeometry } from "three";
 import { DEMO_MODELS } from "../lib/demo-models";
 import { BENCHMARK_SPECS, REQUIRED_BENCHMARK_COVERAGE, REQUIRED_STRUT_PATTERNS } from "../benchmarks/specs";
@@ -20,6 +21,9 @@ import {
   repeatedTransform,
 } from "../lib/procedural-geometry";
 import { unionClosedGeometryParts } from "../lib/manifold-geometry";
+import { createTextGeometry, geometryStats } from "../lib/text-geometry";
+
+const openTypeRuntime = (opentype as typeof opentype & { default?: typeof opentype }).default ?? opentype;
 
 async function buildNode(node: ModelNode): Promise<BufferGeometry> {
   if (node.kind === "shape") {
@@ -189,6 +193,54 @@ test("ordered modifiers materially deform geometry", () => {
   assert.notDeepEqual(geometryBounds(modified).map((value) => value.toFixed(3)), original.map((value) => value.toFixed(3)));
   source.dispose();
   modified.dispose();
+});
+
+test("every primitive honors exact outer width, depth, and height", () => {
+  for (const [shape, extras] of [
+    ["box", {}],
+    ["cylinder", { radius: 14 }],
+    ["cone", { radiusBottom: 17, radiusTop: 3 }],
+    ["sphere", { radius: 11 }],
+    ["torus", { radius: 13, tube: 4 }],
+  ] as const) {
+    const geometry = createSourceGeometry({
+      type: "primitive",
+      shape,
+      width: 53,
+      depth: 37,
+      height: 61,
+      segments: 19,
+      ...extras,
+    });
+    assert.deepEqual(geometryBounds(geometry).map((value) => Number(value.toFixed(5))), [53, 37, 61], `${shape} should match its requested outer bounds`);
+    geometry.dispose();
+  }
+});
+
+test("OpenType text honors exact tessellated width, visible height, and total bevel depth", () => {
+  const glyphPath = new openTypeRuntime.Path();
+  glyphPath.moveTo(0, 0); glyphPath.lineTo(600, 0); glyphPath.lineTo(600, 700); glyphPath.lineTo(0, 700); glyphPath.close();
+  const font = new openTypeRuntime.Font({
+    familyName: "Metric Test",
+    styleName: "Regular",
+    unitsPerEm: 1000,
+    ascender: 800,
+    descender: -200,
+    glyphs: [
+      new openTypeRuntime.Glyph({ name: ".notdef", unicode: 0, advanceWidth: 650, path: new openTypeRuntime.Path() }),
+      new openTypeRuntime.Glyph({ name: "A", unicode: 65, advanceWidth: 650, path: glyphPath }),
+    ],
+  });
+  for (const bevelSide of ["both", "top", "bottom"] as const) {
+    const { geometry } = createTextGeometry(font, {
+      text: "A", font: "metric-test", widthMm: 52, sizeMm: 37, depthMm: 5.5,
+      bevelMm: 0.8, bevelSegments: 3, curveSegments: 6, bevelSide,
+      smoothNormals: true, textCase: "original", fontWeight: "regular", italic: false, underline: false,
+    });
+    const stats = geometryStats(geometry);
+    assert.deepEqual([stats.widthMm, stats.heightMm, stats.depthMm].map((value) => Number(value.toFixed(5))), [52, 37, 5.5], `${bevelSide} bevel text should match its requested outer bounds`);
+    geometry.dispose();
+  }
 });
 
 test("revolved shells support watertight solid bases and top caps with thickness", () => {

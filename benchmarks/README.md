@@ -8,6 +8,6 @@ npm run benchmark
 
 Use `npm run benchmark:model` after an existing production build. Set `PRINTA_BENCH_URL` to measure an already-running deployment instead of starting a local server.
 
-Coverage includes all six source families, all five primitives, all seven modifiers, every curve command, all three interior-strut patterns, full typography styling, assemblies, nested repeats, transforms, unit scaling, water and cloth simulation, preview/full quality, cold/warm passes, and an incremental child edit. Warm builds must hit the graph cache and stay below the suite's regression budget.
+Coverage includes all six source families, all five primitives, all seven modifiers, every curve command, all three interior-strut patterns, full typography styling, assemblies, nested repeats, transforms, unit scaling, water and cloth simulation, preview/full quality, cold/warm passes, and an incremental child edit. Primitive and OpenType text cases include explicit non-uniform outer dimensions, so dimensional normalization is exercised in both preview and full STL builds. Warm builds must hit the graph cache and stay below the suite's regression budget.
 
 The latest machine-readable report is written to `benchmarks/results/latest.json`.

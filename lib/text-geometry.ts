@@ -1,4 +1,5 @@
-import { parse, type Font as OpenTypeFont } from "opentype.js";
+import * as opentype from "opentype.js";
+import type { Font as OpenTypeFont } from "opentype.js";
 import { BufferGeometry, ExtrudeGeometry, Shape, ShapePath } from "three";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 
@@ -7,10 +8,12 @@ export type TextCase = "original" | "uppercase" | "lowercase" | "titlecase";
 export type FontWeight = "regular" | "bold";
 
 export const BUILD_VOLUME_WARNING_MM = 256;
+const openTypeRuntime = (opentype as typeof opentype & { default?: typeof opentype }).default ?? opentype;
 
 export type TextModelOptions = {
   text: string;
   font: string;
+  widthMm?: number;
   sizeMm: number;
   depthMm: number;
   bevelMm: number;
@@ -39,6 +42,10 @@ function minimumNumber(value: number, min: number, fallback: number) {
   return Math.max(min, Number.isFinite(value) ? value : fallback);
 }
 
+function optionalPositiveNumber(value: number | undefined) {
+  return value === undefined || !Number.isFinite(value) ? undefined : Math.max(0.1, value);
+}
+
 export function fontId(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "roboto";
 }
@@ -59,6 +66,7 @@ export function normalizeTextModelOptions(input: Partial<TextModelOptions>): Tex
   return {
     text,
     font: fontId(input.font ?? "roboto"),
+    widthMm: optionalPositiveNumber(input.widthMm),
     sizeMm: minimumNumber(Number(input.sizeMm ?? 36), 0.1, 36),
     depthMm: minimumNumber(Number(input.depthMm ?? 4), 0.1, 4),
     bevelMm: minimumNumber(Number(input.bevelMm ?? 0.6), 0, 0.6),
@@ -74,7 +82,7 @@ export function normalizeTextModelOptions(input: Partial<TextModelOptions>): Tex
 }
 
 export function parseOpenTypeFont(buffer: ArrayBuffer) {
-  return parse(buffer);
+  return openTypeRuntime.parse(buffer);
 }
 
 function createShapes(
@@ -142,27 +150,58 @@ export function createTextGeometry(
 ) {
   const options = normalizeTextModelOptions(input);
   const bevel = Math.min(options.bevelMm, options.depthMm * 0.3, options.sizeMm * 0.08);
-  let geometry: BufferGeometry = new ExtrudeGeometry(createShapes(font, options.text, options.sizeMm, {
-    underline: options.underline,
-    syntheticItalic: Boolean(renderStyle.syntheticItalic),
-  }), {
-    depth: options.depthMm,
-    curveSegments: options.curveSegments,
-    bevelEnabled: bevel > 0,
-    bevelThickness: bevel,
-    bevelSize: bevel * 0.72,
-    bevelSegments: bevel > 0 ? options.bevelSegments : 1,
-  });
-
-  if (bevel > 0 && options.bevelSide !== "both") {
-    const positions = geometry.getAttribute("position");
-    for (let index = 0; index < positions.count; index += 1) {
-      const z = positions.getZ(index);
-      if (options.bevelSide === "top" && z < 0) positions.setZ(index, 0);
-      if (options.bevelSide === "bottom" && z > options.depthMm) positions.setZ(index, options.depthMm);
+  const bevelFaces = options.bevelSide === "both" ? 2 : 1;
+  const coreDepth = Math.max(1e-5, options.depthMm - bevel * bevelFaces);
+  const extrude = (fontSize: number) => {
+    const next = new ExtrudeGeometry(createShapes(font, options.text, fontSize, {
+      underline: options.underline,
+      syntheticItalic: Boolean(renderStyle.syntheticItalic),
+    }), {
+      depth: coreDepth,
+      curveSegments: options.curveSegments,
+      bevelEnabled: bevel > 0,
+      bevelThickness: bevel,
+      bevelSize: bevel * 0.72,
+      bevelSegments: bevel > 0 ? options.bevelSegments : 1,
+    });
+    if (bevel > 0 && options.bevelSide !== "both") {
+      const positions = next.getAttribute("position");
+      for (let index = 0; index < positions.count; index += 1) {
+        const z = positions.getZ(index);
+        if (options.bevelSide === "top" && z < 0) positions.setZ(index, 0);
+        if (options.bevelSide === "bottom" && z > coreDepth) positions.setZ(index, coreDepth);
+      }
+      positions.needsUpdate = true;
     }
-    positions.needsUpdate = true;
+    next.computeBoundingBox();
+    return next;
+  };
+
+  // OpenType.js scales outlines from the font's unitsPerEm. Iterate against the
+  // tessellated bounds so requested height remains exact across fonts, glyphs,
+  // underlines, synthetic italics, and bevel configurations.
+  let fontSize = options.sizeMm;
+  let geometry: BufferGeometry = extrude(fontSize);
+  for (let iteration = 0; iteration < 4; iteration += 1) {
+    const bounds = geometry.boundingBox!;
+    const measuredHeight = bounds.max.y - bounds.min.y;
+    if (!Number.isFinite(measuredHeight) || measuredHeight <= 1e-8) break;
+    const ratio = options.sizeMm / measuredHeight;
+    if (Math.abs(1 - ratio) < 1e-5) break;
+    fontSize *= ratio;
+    geometry.dispose();
+    geometry = extrude(fontSize);
   }
+
+  geometry.computeBoundingBox();
+  const measured = geometry.boundingBox!;
+  const measuredWidth = measured.max.x - measured.min.x;
+  const measuredHeight = measured.max.y - measured.min.y;
+  geometry.scale(
+    options.widthMm && measuredWidth > 1e-8 ? options.widthMm / measuredWidth : 1,
+    measuredHeight > 1e-8 ? options.sizeMm / measuredHeight : 1,
+    1,
+  );
 
   geometry.deleteAttribute("normal");
   if (options.smoothNormals) geometry = mergeVertices(geometry, 1e-4);

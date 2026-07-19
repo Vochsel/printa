@@ -96,6 +96,8 @@ document
 
 Sources currently include primitives, curve extrusion, axis revolution, Google-font text, deterministic water, and deterministic cloth. Revolved shells expose wall thickness, a solid bottom/base with independent thickness, and an optional solid top cap with independent thickness. Modifiers run in declared order: twist, taper, radial wave, axial wave, bend, noise, and smoothing.
 
+Primitive `width`, `depth`, and `height` are exact source-space outer bounds regardless of tessellation count. Text is measured from its loaded OpenType outline and final bevelled geometry: visible height and total depth are exact, optional width is exact when supplied, and omitted width preserves the font's natural proportions. Document units are converted exactly once to STL millimetres after graph evaluation; later modifiers and transforms may intentionally change the final model bounds.
+
 IDs are editor identity; they do not alter geometry. Materials and display settings are presentation metadata and should not force a mesh rebuild. `print.interiorStruts` is geometric export state: it creates cross, diamond, or radial structural members inside known revolved cavities, so changing it must invalidate the affected graph cache. Members and node joints are fused to the shell with the Apache-2.0 Manifold WASM Boolean engine before modifiers and STL export; overlapping triangle soups are not an acceptable final result.
 
 ## Evaluation and realtime performance

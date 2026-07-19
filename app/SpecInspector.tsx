@@ -109,6 +109,10 @@ function NumberInput({ label, value, step = 1, min, max, onChange }: { label: st
   return <label className="spec-field"><span>{label}</span><input type="number" value={Number.isFinite(value) ? value : 0} step={step} min={min} max={max} onChange={(event) => onChange(Number(event.target.value))} /></label>;
 }
 
+function OptionalNumberInput({ label, value, step = 1, min, placeholder = "Natural", onChange }: { label: string; value?: number; step?: number; min?: number; placeholder?: string; onChange: (value?: number) => void }) {
+  return <label className="spec-field"><span>{label}</span><input type="number" value={value ?? ""} placeholder={placeholder} step={step} min={min} onChange={(event) => onChange(event.target.value === "" ? undefined : Number(event.target.value))} /></label>;
+}
+
 function TextInput({ label, value, onChange, list }: { label: string; value: string; onChange: (value: string) => void; list?: string }) {
   return <label className="spec-field"><span>{label}</span><input value={value} list={list} onChange={(event) => onChange(event.target.value)} /></label>;
 }
@@ -152,7 +156,8 @@ function SourceEditor({ source, fonts, update }: { source: SourceSpec; fonts: Fo
       <SpecFontPicker value={source.font} fonts={fonts} onChange={(value) => set("font", value)} />
       <div className="spec-two"><SelectInput label="Case" value={source.textCase} options={["original", "uppercase", "lowercase", "titlecase"]} onChange={(value) => set("textCase", value)} /><SelectInput label="Weight" value={source.weight} options={["regular", "bold"]} onChange={(value) => set("weight", value)} /></div>
       <div className="spec-two"><ToggleInput label="Italic" value={source.italic} onChange={(value) => set("italic", value)} /><ToggleInput label="Underline" value={source.underline} onChange={(value) => set("underline", value)} /></div>
-      <div className="spec-three"><NumberInput label="Size" value={source.size} min={0.1} step={1} onChange={(value) => set("size", value)} /><NumberInput label="Depth" value={source.depth} min={0.1} step={0.5} onChange={(value) => set("depth", value)} /><NumberInput label="Bevel" value={source.bevel} min={0} step={0.1} onChange={(value) => set("bevel", value)} /></div>
+      <div className="spec-three"><OptionalNumberInput label="Exact width" value={source.width} min={0.1} step={1} onChange={(value) => set("width", value)} /><NumberInput label="Exact height" value={source.height ?? source.size} min={0.1} step={1} onChange={(value) => set("height", value)} /><NumberInput label="Exact depth" value={source.depth} min={0.1} step={0.5} onChange={(value) => set("depth", value)} /></div>
+      <NumberInput label="Bevel" value={source.bevel} min={0} step={0.1} onChange={(value) => set("bevel", value)} />
       <div className="spec-two"><NumberInput label="Bevel resolution" value={source.bevelSegments} min={1} max={12} onChange={(value) => set("bevelSegments", value)} /><NumberInput label="Curve resolution" value={source.curveSegments} min={2} max={24} onChange={(value) => set("curveSegments", value)} /></div>
       <SelectInput label="Bevel faces" value={source.bevelSide} options={["both", "top", "bottom"]} onChange={(value) => set("bevelSide", value)} />
       <ToggleInput label="Smooth normals" value={source.smoothNormals} onChange={(value) => set("smoothNormals", value)} />

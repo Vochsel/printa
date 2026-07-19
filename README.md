@@ -42,7 +42,8 @@ After deployment, add `https://your-domain.vercel.app/mcp` as the remote MCP ser
 
 - `text` — 1–24 characters
 - `font` — any of the 1,900+ Google Fonts family names
-- `size_mm` — any positive letter height in millimetres
+- `size_mm` — exact visible outer letter height in millimetres
+- `width_mm` — optional exact outer width; omit to preserve natural font proportions
 - `depth_mm` — any positive extrusion depth in millimetres
 - `bevel_mm` — any non-negative bevel size in millimetres
 - `bevel_segments` — 1–12 subdivisions for smooth bevels

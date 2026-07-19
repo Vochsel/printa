@@ -1,774 +1,1247 @@
 {
-  "generatedAt": "2026-07-19T09:01:29.105Z",
+  "generatedAt": "2026-07-19T09:17:48.516Z",
   "runtime": "v25.8.1",
   "platform": "darwin-arm64",
   "baseUrl": "http://127.0.0.1:4317",
-  "cases": 17,
-  "builds": 69,
-  "firstMedianServerMs": 36.7,
-  "firstP95ServerMs": 511.1,
-  "warmMedianServerMs": 8.4,
-  "warmP95ServerMs": 29.3,
+  "cases": 19,
+  "builds": 77,
+  "firstMedianServerMs": 38.5,
+  "firstP95ServerMs": 1119.4,
+  "warmMedianServerMs": 7.3,
+  "warmP95ServerMs": 28.9,
   "warmCacheHitRate": 1,
   "samples": [
     {
       "name": "type-specimen",
       "quality": "preview",
       "pass": "first",
-      "wallMs": 1317.7545410000002,
-      "serverMs": 1301.6,
+      "wallMs": 1336.2361250000001,
+      "serverMs": 1321.1,
       "triangles": 8700,
       "bytes": 435084,
       "cacheHits": 0,
-      "cacheMisses": 2
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        159.04,
+        42,
+        6
+      ]
     },
     {
       "name": "type-specimen",
       "quality": "preview",
       "pass": "warm",
-      "wallMs": 19.182374999999865,
-      "serverMs": 12.4,
+      "wallMs": 10.062625000000025,
+      "serverMs": 5.5,
       "triangles": 8700,
       "bytes": 435084,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        159.04,
+        42,
+        6
+      ]
     },
     {
       "name": "type-specimen",
       "quality": "full",
       "pass": "first",
-      "wallMs": 75.91766599999983,
-      "serverMs": 71.3,
+      "wallMs": 81.94954200000029,
+      "serverMs": 77.7,
       "triangles": 15760,
       "bytes": 788084,
       "cacheHits": 0,
-      "cacheMisses": 2
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        159.04,
+        42,
+        6
+      ]
     },
     {
       "name": "type-specimen",
       "quality": "full",
       "pass": "warm",
-      "wallMs": 24.99966600000016,
-      "serverMs": 19.9,
-      "triangles": 15760,
-      "bytes": 788084,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "contour-spiral-vase",
-      "quality": "preview",
-      "pass": "first",
-      "wallMs": 46.4596660000002,
-      "serverMs": 36.5,
-      "triangles": 27648,
-      "bytes": 1382484,
-      "cacheHits": 0,
-      "cacheMisses": 3
-    },
-    {
-      "name": "contour-spiral-vase",
-      "quality": "preview",
-      "pass": "warm",
-      "wallMs": 15.77416600000015,
-      "serverMs": 10.4,
-      "triangles": 27648,
-      "bytes": 1382484,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "contour-spiral-vase",
-      "quality": "full",
-      "pass": "first",
-      "wallMs": 96.4072500000002,
-      "serverMs": 78.1,
-      "triangles": 91392,
-      "bytes": 4569684,
-      "cacheHits": 0,
-      "cacheMisses": 3
-    },
-    {
-      "name": "contour-spiral-vase",
-      "quality": "full",
-      "pass": "warm",
-      "wallMs": 40.88754199999994,
-      "serverMs": 29.3,
-      "triangles": 91392,
-      "bytes": 4569684,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "zenith-twist",
-      "quality": "preview",
-      "pass": "first",
-      "wallMs": 26.970874999999978,
-      "serverMs": 22,
-      "triangles": 27648,
-      "bytes": 1382484,
-      "cacheHits": 0,
-      "cacheMisses": 3
-    },
-    {
-      "name": "zenith-twist",
-      "quality": "preview",
-      "pass": "warm",
-      "wallMs": 12.82400000000007,
-      "serverMs": 8.4,
-      "triangles": 27648,
-      "bytes": 1382484,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "zenith-twist",
-      "quality": "full",
-      "pass": "first",
-      "wallMs": 80.14449999999988,
-      "serverMs": 70.2,
-      "triangles": 92880,
-      "bytes": 4644084,
-      "cacheHits": 0,
-      "cacheMisses": 3
-    },
-    {
-      "name": "zenith-twist",
-      "quality": "full",
-      "pass": "warm",
-      "wallMs": 34.23762499999975,
-      "serverMs": 26.1,
-      "triangles": 92880,
-      "bytes": 4644084,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "fluted-bud-vase",
-      "quality": "preview",
-      "pass": "first",
-      "wallMs": 25.451958999999988,
-      "serverMs": 19,
-      "triangles": 27840,
-      "bytes": 1392084,
-      "cacheHits": 0,
-      "cacheMisses": 3
-    },
-    {
-      "name": "fluted-bud-vase",
-      "quality": "preview",
-      "pass": "warm",
-      "wallMs": 11.58974999999964,
-      "serverMs": 7.6,
-      "triangles": 27840,
-      "bytes": 1392084,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "fluted-bud-vase",
-      "quality": "full",
-      "pass": "first",
-      "wallMs": 65.6340839999998,
-      "serverMs": 58.2,
-      "triangles": 86016,
-      "bytes": 4300884,
-      "cacheHits": 0,
-      "cacheMisses": 3
-    },
-    {
-      "name": "fluted-bud-vase",
-      "quality": "full",
-      "pass": "warm",
-      "wallMs": 32.5642499999999,
-      "serverMs": 25.7,
-      "triangles": 86016,
-      "bytes": 4300884,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "ripple-column-vase",
-      "quality": "preview",
-      "pass": "first",
-      "wallMs": 21.078708000000006,
-      "serverMs": 17.2,
-      "triangles": 27264,
-      "bytes": 1363284,
-      "cacheHits": 0,
-      "cacheMisses": 3
-    },
-    {
-      "name": "ripple-column-vase",
-      "quality": "preview",
-      "pass": "warm",
-      "wallMs": 11.240749999999935,
-      "serverMs": 7.4,
-      "triangles": 27264,
-      "bytes": 1363284,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "ripple-column-vase",
-      "quality": "full",
-      "pass": "first",
-      "wallMs": 85.88062499999978,
-      "serverMs": 77.6,
-      "triangles": 101520,
-      "bytes": 5076084,
-      "cacheHits": 0,
-      "cacheMisses": 3
-    },
-    {
-      "name": "ripple-column-vase",
-      "quality": "full",
-      "pass": "warm",
-      "wallMs": 57.13966699999992,
-      "serverMs": 40.9,
-      "triangles": 101520,
-      "bytes": 5076084,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "spline-petal-dish",
-      "quality": "preview",
-      "pass": "first",
-      "wallMs": 8.138500000000022,
-      "serverMs": 4.1,
-      "triangles": 764,
-      "bytes": 38284,
-      "cacheHits": 0,
-      "cacheMisses": 3
-    },
-    {
-      "name": "spline-petal-dish",
-      "quality": "preview",
-      "pass": "warm",
-      "wallMs": 3.1714999999999236,
-      "serverMs": 0.7,
-      "triangles": 764,
-      "bytes": 38284,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "spline-petal-dish",
-      "quality": "full",
-      "pass": "first",
-      "wallMs": 6.7345000000000255,
-      "serverMs": 4.7,
-      "triangles": 1916,
-      "bytes": 95884,
-      "cacheHits": 0,
-      "cacheMisses": 3
-    },
-    {
-      "name": "spline-petal-dish",
-      "quality": "full",
-      "pass": "warm",
-      "wallMs": 3.4897500000001855,
-      "serverMs": 1.3,
-      "triangles": 1916,
-      "bytes": 95884,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "primitive-totem",
-      "quality": "preview",
-      "pass": "first",
-      "wallMs": 32.16066600000022,
-      "serverMs": 27.2,
-      "triangles": 8704,
-      "bytes": 435284,
-      "cacheHits": 0,
-      "cacheMisses": 10
-    },
-    {
-      "name": "primitive-totem",
-      "quality": "preview",
-      "pass": "warm",
-      "wallMs": 9.721749999999702,
-      "serverMs": 6.6,
-      "triangles": 8704,
-      "bytes": 435284,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "primitive-totem",
-      "quality": "full",
-      "pass": "first",
-      "wallMs": 39.49162500000011,
-      "serverMs": 34.4,
-      "triangles": 19200,
-      "bytes": 960084,
-      "cacheHits": 0,
-      "cacheMisses": 10
-    },
-    {
-      "name": "primitive-totem",
-      "quality": "full",
-      "pass": "warm",
-      "wallMs": 14.262791000000107,
-      "serverMs": 8.5,
-      "triangles": 19200,
-      "bytes": 960084,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "water-ripple-tile",
-      "quality": "preview",
-      "pass": "first",
-      "wallMs": 9.91125000000011,
-      "serverMs": 6.6,
-      "triangles": 6396,
-      "bytes": 319884,
-      "cacheHits": 0,
-      "cacheMisses": 2
-    },
-    {
-      "name": "water-ripple-tile",
-      "quality": "preview",
-      "pass": "warm",
-      "wallMs": 4.924375000000055,
-      "serverMs": 2.2,
-      "triangles": 6396,
-      "bytes": 319884,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "water-ripple-tile",
-      "quality": "full",
-      "pass": "first",
-      "wallMs": 14.208416999999827,
-      "serverMs": 11.3,
-      "triangles": 16380,
-      "bytes": 819084,
-      "cacheHits": 0,
-      "cacheMisses": 2
-    },
-    {
-      "name": "water-ripple-tile",
-      "quality": "full",
-      "pass": "warm",
-      "wallMs": 7.961041000000023,
+      "wallMs": 9.243792000000212,
       "serverMs": 5,
+      "triangles": 15760,
+      "bytes": 788084,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        159.04,
+        42,
+        6
+      ]
+    },
+    {
+      "name": "contour-spiral-vase",
+      "quality": "preview",
+      "pass": "first",
+      "wallMs": 41.90308300000015,
+      "serverMs": 36.1,
+      "triangles": 27648,
+      "bytes": 1382484,
+      "cacheHits": 0,
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        85,
+        85.2,
+        145
+      ]
+    },
+    {
+      "name": "contour-spiral-vase",
+      "quality": "preview",
+      "pass": "warm",
+      "wallMs": 15.532999999999902,
+      "serverMs": 10.2,
+      "triangles": 27648,
+      "bytes": 1382484,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        85,
+        85.2,
+        145
+      ]
+    },
+    {
+      "name": "contour-spiral-vase",
+      "quality": "full",
+      "pass": "first",
+      "wallMs": 77.7072089999997,
+      "serverMs": 64.8,
+      "triangles": 91392,
+      "bytes": 4569684,
+      "cacheHits": 0,
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        85.06,
+        85.4,
+        145
+      ]
+    },
+    {
+      "name": "contour-spiral-vase",
+      "quality": "full",
+      "pass": "warm",
+      "wallMs": 36.62270800000033,
+      "serverMs": 26.8,
+      "triangles": 91392,
+      "bytes": 4569684,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        85.06,
+        85.4,
+        145
+      ]
+    },
+    {
+      "name": "zenith-twist",
+      "quality": "preview",
+      "pass": "first",
+      "wallMs": 25.30116599999974,
+      "serverMs": 19.4,
+      "triangles": 27648,
+      "bytes": 1382484,
+      "cacheHits": 0,
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        69.78,
+        70.27,
+        172
+      ]
+    },
+    {
+      "name": "zenith-twist",
+      "quality": "preview",
+      "pass": "warm",
+      "wallMs": 13.159249999999702,
+      "serverMs": 8.5,
+      "triangles": 27648,
+      "bytes": 1382484,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        69.78,
+        70.27,
+        172
+      ]
+    },
+    {
+      "name": "zenith-twist",
+      "quality": "full",
+      "pass": "first",
+      "wallMs": 82.8107500000001,
+      "serverMs": 73.8,
+      "triangles": 92880,
+      "bytes": 4644084,
+      "cacheHits": 0,
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        69.83,
+        70.31,
+        172
+      ]
+    },
+    {
+      "name": "zenith-twist",
+      "quality": "full",
+      "pass": "warm",
+      "wallMs": 33.63625000000002,
+      "serverMs": 25.8,
+      "triangles": 92880,
+      "bytes": 4644084,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        69.83,
+        70.31,
+        172
+      ]
+    },
+    {
+      "name": "fluted-bud-vase",
+      "quality": "preview",
+      "pass": "first",
+      "wallMs": 23.78004200000032,
+      "serverMs": 19.1,
+      "triangles": 27840,
+      "bytes": 1392084,
+      "cacheHits": 0,
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        94.64,
+        94.64,
+        144
+      ]
+    },
+    {
+      "name": "fluted-bud-vase",
+      "quality": "preview",
+      "pass": "warm",
+      "wallMs": 11.328375000000051,
+      "serverMs": 7.5,
+      "triangles": 27840,
+      "bytes": 1392084,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        94.64,
+        94.64,
+        144
+      ]
+    },
+    {
+      "name": "fluted-bud-vase",
+      "quality": "full",
+      "pass": "first",
+      "wallMs": 62.17883299999994,
+      "serverMs": 55,
+      "triangles": 86016,
+      "bytes": 4300884,
+      "cacheHits": 0,
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        95.19,
+        95.19,
+        144
+      ]
+    },
+    {
+      "name": "fluted-bud-vase",
+      "quality": "full",
+      "pass": "warm",
+      "wallMs": 30.849624999999833,
+      "serverMs": 24.2,
+      "triangles": 86016,
+      "bytes": 4300884,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        95.19,
+        95.19,
+        144
+      ]
+    },
+    {
+      "name": "ripple-column-vase",
+      "quality": "preview",
+      "pass": "first",
+      "wallMs": 21.072499999999764,
+      "serverMs": 17.4,
+      "triangles": 27264,
+      "bytes": 1363284,
+      "cacheHits": 0,
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        86.46,
+        87.41,
+        134
+      ]
+    },
+    {
+      "name": "ripple-column-vase",
+      "quality": "preview",
+      "pass": "warm",
+      "wallMs": 11.07425000000012,
+      "serverMs": 7.3,
+      "triangles": 27264,
+      "bytes": 1363284,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        86.46,
+        87.41,
+        134
+      ]
+    },
+    {
+      "name": "ripple-column-vase",
+      "quality": "full",
+      "pass": "first",
+      "wallMs": 93.98120800000015,
+      "serverMs": 86.2,
+      "triangles": 101520,
+      "bytes": 5076084,
+      "cacheHits": 0,
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        86.46,
+        87.41,
+        134
+      ]
+    },
+    {
+      "name": "ripple-column-vase",
+      "quality": "full",
+      "pass": "warm",
+      "wallMs": 42.924041000000216,
+      "serverMs": 29.7,
+      "triangles": 101520,
+      "bytes": 5076084,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        86.46,
+        87.41,
+        134
+      ]
+    },
+    {
+      "name": "spline-petal-dish",
+      "quality": "preview",
+      "pass": "first",
+      "wallMs": 7.6717499999999745,
+      "serverMs": 3.6,
+      "triangles": 764,
+      "bytes": 38284,
+      "cacheHits": 0,
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        85.11,
+        85.48,
+        10.4
+      ]
+    },
+    {
+      "name": "spline-petal-dish",
+      "quality": "preview",
+      "pass": "warm",
+      "wallMs": 2.9532500000000255,
+      "serverMs": 0.8,
+      "triangles": 764,
+      "bytes": 38284,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        85.11,
+        85.48,
+        10.4
+      ]
+    },
+    {
+      "name": "spline-petal-dish",
+      "quality": "full",
+      "pass": "first",
+      "wallMs": 7.678042000000005,
+      "serverMs": 5.5,
+      "triangles": 1916,
+      "bytes": 95884,
+      "cacheHits": 0,
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        85.23,
+        85.59,
+        10.4
+      ]
+    },
+    {
+      "name": "spline-petal-dish",
+      "quality": "full",
+      "pass": "warm",
+      "wallMs": 3.6927920000002814,
+      "serverMs": 1.6,
+      "triangles": 1916,
+      "bytes": 95884,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        85.23,
+        85.59,
+        10.4
+      ]
+    },
+    {
+      "name": "primitive-totem",
+      "quality": "preview",
+      "pass": "first",
+      "wallMs": 31.830540999999812,
+      "serverMs": 28.2,
+      "triangles": 8704,
+      "bytes": 435284,
+      "cacheHits": 0,
+      "cacheMisses": 10,
+      "dimensionsMm": [
+        46.8,
+        46.8,
+        96
+      ]
+    },
+    {
+      "name": "primitive-totem",
+      "quality": "preview",
+      "pass": "warm",
+      "wallMs": 10.663708000000042,
+      "serverMs": 7.7,
+      "triangles": 8704,
+      "bytes": 435284,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        46.8,
+        46.8,
+        96
+      ]
+    },
+    {
+      "name": "primitive-totem",
+      "quality": "full",
+      "pass": "first",
+      "wallMs": 36.91395800000009,
+      "serverMs": 33.7,
+      "triangles": 19200,
+      "bytes": 960084,
+      "cacheHits": 0,
+      "cacheMisses": 10,
+      "dimensionsMm": [
+        46.8,
+        46.8,
+        96
+      ]
+    },
+    {
+      "name": "primitive-totem",
+      "quality": "full",
+      "pass": "warm",
+      "wallMs": 12.675583000000188,
+      "serverMs": 9.2,
+      "triangles": 19200,
+      "bytes": 960084,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        46.8,
+        46.8,
+        96
+      ]
+    },
+    {
+      "name": "water-ripple-tile",
+      "quality": "preview",
+      "pass": "first",
+      "wallMs": 11.728791999999885,
+      "serverMs": 6.3,
+      "triangles": 6396,
+      "bytes": 319884,
+      "cacheHits": 0,
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        112,
+        88,
+        6.01
+      ]
+    },
+    {
+      "name": "water-ripple-tile",
+      "quality": "preview",
+      "pass": "warm",
+      "wallMs": 4.166374999999789,
+      "serverMs": 2,
+      "triangles": 6396,
+      "bytes": 319884,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        112,
+        88,
+        6.01
+      ]
+    },
+    {
+      "name": "water-ripple-tile",
+      "quality": "full",
+      "pass": "first",
+      "wallMs": 13.020582999999988,
+      "serverMs": 10.6,
+      "triangles": 16380,
+      "bytes": 819084,
+      "cacheHits": 0,
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        112,
+        88,
+        5.3
+      ]
+    },
+    {
+      "name": "water-ripple-tile",
+      "quality": "full",
+      "pass": "warm",
+      "wallMs": 7.429417000000285,
+      "serverMs": 4.8,
       "triangles": 16380,
       "bytes": 819084,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        112,
+        88,
+        5.3
+      ]
     },
     {
       "name": "cloth-drape-study",
       "quality": "preview",
       "pass": "first",
-      "wallMs": 69.29325000000017,
-      "serverMs": 63.7,
+      "wallMs": 51.70208300000013,
+      "serverMs": 49.2,
       "triangles": 2300,
       "bytes": 115084,
       "cacheHits": 0,
-      "cacheMisses": 3
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        111.99,
+        111.99,
+        63.41
+      ]
     },
     {
       "name": "cloth-drape-study",
       "quality": "preview",
       "pass": "warm",
-      "wallMs": 3.191334000000097,
-      "serverMs": 1,
+      "wallMs": 2.770166999999674,
+      "serverMs": 0.9,
       "triangles": 2300,
       "bytes": 115084,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        111.99,
+        111.99,
+        63.41
+      ]
     },
     {
       "name": "cloth-drape-study",
       "quality": "full",
       "pass": "first",
-      "wallMs": 62.14274999999998,
-      "serverMs": 59.7,
+      "wallMs": 60.46408399999973,
+      "serverMs": 58.4,
       "triangles": 3596,
       "bytes": 179884,
       "cacheHits": 0,
-      "cacheMisses": 3
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        111.99,
+        111.99,
+        74.75
+      ]
     },
     {
       "name": "cloth-drape-study",
       "quality": "full",
       "pass": "warm",
-      "wallMs": 4.120374999999967,
-      "serverMs": 1.6,
+      "wallMs": 3.2854999999999563,
+      "serverMs": 1.2,
       "triangles": 3596,
       "bytes": 179884,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        111.99,
+        111.99,
+        74.75
+      ]
     },
     {
       "name": "all-primitives-assembly",
       "quality": "preview",
       "pass": "first",
-      "wallMs": 12.28545800000029,
-      "serverMs": 9.6,
+      "wallMs": 10.893583000000035,
+      "serverMs": 8.8,
       "triangles": 6540,
       "bytes": 327084,
       "cacheHits": 0,
-      "cacheMisses": 11
+      "cacheMisses": 11,
+      "dimensionsMm": [
+        119.16,
+        20.33,
+        39
+      ]
     },
     {
       "name": "all-primitives-assembly",
       "quality": "preview",
       "pass": "warm",
-      "wallMs": 6.180499999999938,
+      "wallMs": 4.85287500000004,
       "serverMs": 2.8,
       "triangles": 6540,
       "bytes": 327084,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        119.16,
+        20.33,
+        39
+      ]
     },
     {
       "name": "all-primitives-assembly",
       "quality": "full",
       "pass": "first",
-      "wallMs": 11.812374999999975,
-      "serverMs": 9.4,
+      "wallMs": 11.866708000000017,
+      "serverMs": 9.6,
       "triangles": 8220,
       "bytes": 411084,
       "cacheHits": 1,
-      "cacheMisses": 9
+      "cacheMisses": 9,
+      "dimensionsMm": [
+        119.16,
+        20.33,
+        39
+      ]
     },
     {
       "name": "all-primitives-assembly",
       "quality": "full",
       "pass": "warm",
-      "wallMs": 6.65762500000028,
-      "serverMs": 4.2,
+      "wallMs": 5.829499999999825,
+      "serverMs": 3.4,
       "triangles": 8220,
       "bytes": 411084,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        119.16,
+        20.33,
+        39
+      ]
     },
     {
       "name": "modifier-gauntlet",
       "quality": "preview",
       "pass": "first",
-      "wallMs": 28.609375,
-      "serverMs": 24.9,
+      "wallMs": 29.28862500000014,
+      "serverMs": 26.6,
       "triangles": 3968,
       "bytes": 198484,
       "cacheHits": 0,
-      "cacheMisses": 3
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        64.83,
+        64.4,
+        65.52
+      ]
     },
     {
       "name": "modifier-gauntlet",
       "quality": "preview",
       "pass": "warm",
-      "wallMs": 4.595416999999998,
-      "serverMs": 2.2,
+      "wallMs": 7.906041999999616,
+      "serverMs": 3,
       "triangles": 3968,
       "bytes": 198484,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        64.83,
+        64.4,
+        65.52
+      ]
     },
     {
       "name": "modifier-gauntlet",
       "quality": "full",
       "pass": "first",
-      "wallMs": 39.64116700000022,
-      "serverMs": 36.7,
+      "wallMs": 41.118083999999726,
+      "serverMs": 38.5,
       "triangles": 9024,
       "bytes": 451284,
       "cacheHits": 0,
-      "cacheMisses": 3
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        65.32,
+        65.16,
+        65.86
+      ]
     },
     {
       "name": "modifier-gauntlet",
       "quality": "full",
       "pass": "warm",
-      "wallMs": 6.535750000000007,
-      "serverMs": 3.9,
+      "wallMs": 7.503999999999905,
+      "serverMs": 5.1,
       "triangles": 9024,
       "bytes": 451284,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        65.32,
+        65.16,
+        65.86
+      ]
     },
     {
       "name": "extrude-hole-curves",
       "quality": "preview",
       "pass": "first",
-      "wallMs": 5.229417000000012,
-      "serverMs": 2.4,
+      "wallMs": 5.429999999999836,
+      "serverMs": 3,
       "triangles": 800,
       "bytes": 40084,
       "cacheHits": 0,
-      "cacheMisses": 3
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        79.66,
+        61.85,
+        23.28
+      ]
     },
     {
       "name": "extrude-hole-curves",
       "quality": "preview",
       "pass": "warm",
-      "wallMs": 2.9569580000002134,
-      "serverMs": 0.9,
+      "wallMs": 3.0210000000001855,
+      "serverMs": 1,
       "triangles": 800,
       "bytes": 40084,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        79.66,
+        61.85,
+        23.28
+      ]
     },
     {
       "name": "extrude-hole-curves",
       "quality": "full",
       "pass": "first",
-      "wallMs": 9.855167000000165,
-      "serverMs": 7.9,
+      "wallMs": 13.950290999999652,
+      "serverMs": 11.7,
       "triangles": 3648,
       "bytes": 182484,
       "cacheHits": 0,
-      "cacheMisses": 3
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        79.67,
+        61.89,
+        23.28
+      ]
     },
     {
       "name": "extrude-hole-curves",
       "quality": "full",
       "pass": "warm",
-      "wallMs": 4.902667000000292,
-      "serverMs": 2.6,
+      "wallMs": 4.889333000000079,
+      "serverMs": 3,
       "triangles": 3648,
       "bytes": 182484,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        79.67,
+        61.89,
+        23.28
+      ]
     },
     {
       "name": "deep-repeat-graph",
       "quality": "preview",
       "pass": "first",
-      "wallMs": 37.84012500000017,
-      "serverMs": 34.8,
+      "wallMs": 38.17795799999976,
+      "serverMs": 35.5,
       "triangles": 17760,
       "bytes": 888084,
       "cacheHits": 0,
-      "cacheMisses": 6
+      "cacheMisses": 6,
+      "dimensionsMm": [
+        128.66,
+        46.28,
+        40.25
+      ]
     },
     {
       "name": "deep-repeat-graph",
       "quality": "preview",
       "pass": "warm",
-      "wallMs": 14.372292000000016,
-      "serverMs": 9.7,
-      "triangles": 17760,
-      "bytes": 888084,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "deep-repeat-graph",
-      "quality": "full",
-      "pass": "first",
-      "wallMs": 14.260499999999865,
-      "serverMs": 10.7,
-      "triangles": 17760,
-      "bytes": 888084,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "deep-repeat-graph",
-      "quality": "full",
-      "pass": "warm",
-      "wallMs": 13.370916999999736,
-      "serverMs": 10.4,
-      "triangles": 17760,
-      "bytes": 888084,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "styled-google-text",
-      "quality": "preview",
-      "pass": "first",
-      "wallMs": 71.88629200000014,
-      "serverMs": 68.8,
-      "triangles": 20692,
-      "bytes": 1034684,
-      "cacheHits": 0,
-      "cacheMisses": 3
-    },
-    {
-      "name": "styled-google-text",
-      "quality": "preview",
-      "pass": "warm",
-      "wallMs": 8.900125000000116,
-      "serverMs": 5.9,
-      "triangles": 20692,
-      "bytes": 1034684,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "styled-google-text",
-      "quality": "full",
-      "pass": "first",
-      "wallMs": 241.4800839999998,
-      "serverMs": 236.3,
-      "triangles": 79376,
-      "bytes": 3968884,
-      "cacheHits": 0,
-      "cacheMisses": 3
-    },
-    {
-      "name": "styled-google-text",
-      "quality": "full",
-      "pass": "warm",
-      "wallMs": 30.965250000000196,
-      "serverMs": 23.1,
-      "triangles": 79376,
-      "bytes": 3968884,
-      "cacheHits": 1,
-      "cacheMisses": 0
-    },
-    {
-      "name": "struts-cross",
-      "quality": "preview",
-      "pass": "first",
-      "wallMs": 229.66891600000008,
-      "serverMs": 225.7,
-      "triangles": 28056,
-      "bytes": 1402884,
-      "cacheHits": 0,
-      "cacheMisses": 2
-    },
-    {
-      "name": "struts-cross",
-      "quality": "preview",
-      "pass": "warm",
-      "wallMs": 15.285875000000033,
+      "wallMs": 15.275000000000091,
       "serverMs": 12.1,
+      "triangles": 17760,
+      "bytes": 888084,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        128.66,
+        46.28,
+        40.25
+      ]
+    },
+    {
+      "name": "deep-repeat-graph",
+      "quality": "full",
+      "pass": "first",
+      "wallMs": 18.197999999999865,
+      "serverMs": 13.2,
+      "triangles": 17760,
+      "bytes": 888084,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        128.66,
+        46.28,
+        40.25
+      ]
+    },
+    {
+      "name": "deep-repeat-graph",
+      "quality": "full",
+      "pass": "warm",
+      "wallMs": 13.19320800000014,
+      "serverMs": 10.2,
+      "triangles": 17760,
+      "bytes": 888084,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        128.66,
+        46.28,
+        40.25
+      ]
+    },
+    {
+      "name": "styled-google-text",
+      "quality": "preview",
+      "pass": "first",
+      "wallMs": 149.4647500000001,
+      "serverMs": 146.4,
+      "triangles": 20692,
+      "bytes": 1034684,
+      "cacheHits": 0,
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        142,
+        38,
+        22.06
+      ]
+    },
+    {
+      "name": "styled-google-text",
+      "quality": "preview",
+      "pass": "warm",
+      "wallMs": 8.457582999999886,
+      "serverMs": 5.8,
+      "triangles": 20692,
+      "bytes": 1034684,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        142,
+        38,
+        22.06
+      ]
+    },
+    {
+      "name": "styled-google-text",
+      "quality": "full",
+      "pass": "first",
+      "wallMs": 359.52575000000024,
+      "serverMs": 354,
+      "triangles": 79376,
+      "bytes": 3968884,
+      "cacheHits": 0,
+      "cacheMisses": 3,
+      "dimensionsMm": [
+        142,
+        38,
+        22.06
+      ]
+    },
+    {
+      "name": "styled-google-text",
+      "quality": "full",
+      "pass": "warm",
+      "wallMs": 36.38612499999999,
+      "serverMs": 28.9,
+      "triangles": 79376,
+      "bytes": 3968884,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        142,
+        38,
+        22.06
+      ]
+    },
+    {
+      "name": "exact-sphere-centimetres",
+      "quality": "preview",
+      "pass": "first",
+      "wallMs": 6.3344999999999345,
+      "serverMs": 1.1,
+      "triangles": 1258,
+      "bytes": 62984,
+      "cacheHits": 0,
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        53,
+        37,
+        61
+      ]
+    },
+    {
+      "name": "exact-sphere-centimetres",
+      "quality": "preview",
+      "pass": "warm",
+      "wallMs": 2.537666999999601,
+      "serverMs": 0.8,
+      "triangles": 1258,
+      "bytes": 62984,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        53,
+        37,
+        61
+      ]
+    },
+    {
+      "name": "exact-sphere-centimetres",
+      "quality": "full",
+      "pass": "first",
+      "wallMs": 2.1679589999998825,
+      "serverMs": 0.8,
+      "triangles": 1258,
+      "bytes": 62984,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        53,
+        37,
+        61
+      ]
+    },
+    {
+      "name": "exact-sphere-centimetres",
+      "quality": "full",
+      "pass": "warm",
+      "wallMs": 2.1654999999996107,
+      "serverMs": 0.8,
+      "triangles": 1258,
+      "bytes": 62984,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        53,
+        37,
+        61
+      ]
+    },
+    {
+      "name": "exact-opentype-text",
+      "quality": "preview",
+      "pass": "first",
+      "wallMs": 1121.9071250000002,
+      "serverMs": 1119.4,
+      "triangles": 11732,
+      "bytes": 586684,
+      "cacheHits": 0,
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        117,
+        31,
+        6
+      ]
+    },
+    {
+      "name": "exact-opentype-text",
+      "quality": "preview",
+      "pass": "warm",
+      "wallMs": 6.309499999999389,
+      "serverMs": 4,
+      "triangles": 11732,
+      "bytes": 586684,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        117,
+        31,
+        6
+      ]
+    },
+    {
+      "name": "exact-opentype-text",
+      "quality": "full",
+      "pass": "first",
+      "wallMs": 118.01895799999966,
+      "serverMs": 114.8,
+      "triangles": 24996,
+      "bytes": 1249884,
+      "cacheHits": 0,
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        117,
+        31,
+        6
+      ]
+    },
+    {
+      "name": "exact-opentype-text",
+      "quality": "full",
+      "pass": "warm",
+      "wallMs": 9.976458000000093,
+      "serverMs": 6.9,
+      "triangles": 24996,
+      "bytes": 1249884,
+      "cacheHits": 1,
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        117,
+        31,
+        6
+      ]
+    },
+    {
+      "name": "struts-cross",
+      "quality": "preview",
+      "pass": "first",
+      "wallMs": 202.67320800000016,
+      "serverMs": 199.7,
+      "triangles": 28056,
+      "bytes": 1402884,
+      "cacheHits": 0,
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        76.73,
+        76.73,
+        118
+      ]
+    },
+    {
+      "name": "struts-cross",
+      "quality": "preview",
+      "pass": "warm",
+      "wallMs": 13.77062500000011,
+      "serverMs": 10.5,
       "triangles": 28056,
       "bytes": 1402884,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        76.73,
+        76.73,
+        118
+      ]
     },
     {
       "name": "struts-cross",
       "quality": "full",
       "pass": "first",
-      "wallMs": 204.50549999999976,
-      "serverMs": 200.8,
+      "wallMs": 197.96116699999948,
+      "serverMs": 193.8,
       "triangles": 36280,
       "bytes": 1814084,
       "cacheHits": 0,
-      "cacheMisses": 2
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        76.73,
+        76.73,
+        118
+      ]
     },
     {
       "name": "struts-cross",
       "quality": "full",
       "pass": "warm",
-      "wallMs": 17.04054200000064,
-      "serverMs": 13.1,
+      "wallMs": 17.752042000000074,
+      "serverMs": 13.2,
       "triangles": 36280,
       "bytes": 1814084,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        76.73,
+        76.73,
+        118
+      ]
     },
     {
       "name": "struts-diamond",
       "quality": "preview",
       "pass": "first",
-      "wallMs": 365.337708,
-      "serverMs": 362,
+      "wallMs": 313.64024999999947,
+      "serverMs": 310.2,
       "triangles": 29896,
       "bytes": 1494884,
       "cacheHits": 0,
-      "cacheMisses": 2
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        76.73,
+        76.73,
+        118
+      ]
     },
     {
       "name": "struts-diamond",
       "quality": "preview",
       "pass": "warm",
-      "wallMs": 13.409458000000086,
-      "serverMs": 9.9,
+      "wallMs": 12.461209000000053,
+      "serverMs": 9.3,
       "triangles": 29896,
       "bytes": 1494884,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        76.73,
+        76.73,
+        118
+      ]
     },
     {
       "name": "struts-diamond",
       "quality": "full",
       "pass": "first",
-      "wallMs": 514.8892079999996,
-      "serverMs": 511.1,
+      "wallMs": 490.4667079999999,
+      "serverMs": 486.9,
       "triangles": 38696,
       "bytes": 1934884,
       "cacheHits": 0,
-      "cacheMisses": 2
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        76.73,
+        76.73,
+        118
+      ]
     },
     {
       "name": "struts-diamond",
       "quality": "full",
       "pass": "warm",
-      "wallMs": 18.20195799999965,
-      "serverMs": 14.4,
+      "wallMs": 17.795750000000226,
+      "serverMs": 13.9,
       "triangles": 38696,
       "bytes": 1934884,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        76.73,
+        76.73,
+        118
+      ]
     },
     {
       "name": "struts-radial",
       "quality": "preview",
       "pass": "first",
-      "wallMs": 163.3259169999992,
-      "serverMs": 159.7,
+      "wallMs": 175.47008300000016,
+      "serverMs": 172.2,
       "triangles": 28460,
       "bytes": 1423084,
       "cacheHits": 0,
-      "cacheMisses": 2
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        76.73,
+        76.73,
+        118
+      ]
     },
     {
       "name": "struts-radial",
       "quality": "preview",
       "pass": "warm",
-      "wallMs": 12.346083000000363,
-      "serverMs": 8.3,
+      "wallMs": 13.206000000000131,
+      "serverMs": 9.5,
       "triangles": 28460,
       "bytes": 1423084,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        76.73,
+        76.73,
+        118
+      ]
     },
     {
       "name": "struts-radial",
       "quality": "full",
       "pass": "first",
-      "wallMs": 221.57591700000012,
-      "serverMs": 217.7,
+      "wallMs": 227.35445900000013,
+      "serverMs": 222.7,
       "triangles": 37018,
       "bytes": 1850984,
       "cacheHits": 0,
-      "cacheMisses": 2
+      "cacheMisses": 2,
+      "dimensionsMm": [
+        76.73,
+        76.73,
+        118
+      ]
     },
     {
       "name": "struts-radial",
       "quality": "full",
       "pass": "warm",
-      "wallMs": 15.199625000000196,
-      "serverMs": 11,
+      "wallMs": 14.992874999999913,
+      "serverMs": 11.1,
       "triangles": 37018,
       "bytes": 1850984,
       "cacheHits": 1,
-      "cacheMisses": 0
+      "cacheMisses": 0,
+      "dimensionsMm": [
+        76.73,
+        76.73,
+        118
+      ]
     },
     {
       "name": "deep-repeat-graph",
       "quality": "preview",
       "pass": "incremental",
-      "wallMs": 32.16437500000029,
-      "serverMs": 28.8,
+      "wallMs": 25.940958999999566,
+      "serverMs": 23.1,
       "triangles": 17760,
       "bytes": 888084,
       "cacheHits": 1,
-      "cacheMisses": 1
+      "cacheMisses": 1,
+      "dimensionsMm": [
+        139.02,
+        49.42,
+        40.25
+      ]
     }
   ]
 }

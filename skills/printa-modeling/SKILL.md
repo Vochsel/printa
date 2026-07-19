@@ -31,6 +31,7 @@ Read the machine schema at `https://printa.vochsel.com/api/model/schema` when ex
 - Use `revolve` for vases, vessels, knobs, bowls, columns, and any radial profile.
 - Use `extrude` for badges, signs, trays, cutters, and custom 2D Bézier outlines.
 - Use `primitive` for structural parts and assembly building blocks.
+- Treat primitive `width`, `depth`, and `height` as exact outer bounds. For text, set `height` and `depth` for exact final dimensions and add `width` only when stretching or fitting to an exact width is intended.
 - Use `text` for any Google-Font solid. Font, weight, case, italic, underline, bevel faces, smoothing, and curve resolution all belong in the source spec.
 - Use `water` to freeze a deterministic damped-wave simulation into a solid tile.
 - Use `cloth` to drape a thickened printable sheet over a spherical collider.

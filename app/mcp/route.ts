@@ -90,8 +90,9 @@ function createServer(origin: string) {
       inputSchema: {
         text: z.string().min(1).max(24).describe("Text to turn into a 3D solid"),
         font: z.string().min(1).max(80).default("Roboto").describe("Any Google Fonts family name, such as Roboto, Lobster, or Space Grotesk"),
-        size_mm: z.number().min(0.1).default(36).describe("Letter height in millimetres. Any positive size is allowed; models over 256 mm on any axis receive a warning"),
-        depth_mm: z.number().min(0.1).default(4).describe("Extrusion depth in millimetres. Any positive size is allowed; models over 256 mm on any axis receive a warning"),
+        width_mm: z.number().min(0.1).optional().describe("Optional exact outer text width in millimetres; preserve the font's natural width when omitted"),
+        size_mm: z.number().min(0.1).default(36).describe("Exact outer visible letter height in millimetres. Any positive size is allowed; models over 256 mm on any axis receive a warning"),
+        depth_mm: z.number().min(0.1).default(4).describe("Exact outer extrusion depth including bevels in millimetres. Any positive size is allowed; models over 256 mm on any axis receive a warning"),
         bevel_mm: z.number().min(0).default(0.6).describe("Edge bevel size in millimetres with no hard maximum"),
         bevel_segments: z.number().int().min(1).max(12).default(3).describe("Number of bevel subdivisions; higher values make round bevels smoother"),
         curve_segments: z.number().int().min(2).max(24).default(10).describe("Outline curve resolution; higher values increase curved-letter detail"),
@@ -142,6 +143,7 @@ function createServer(origin: string) {
     async ({
       text,
       font,
+      width_mm,
       size_mm,
       depth_mm,
       bevel_mm,
@@ -160,6 +162,7 @@ function createServer(origin: string) {
       const options = normalizeTextModelOptions({
         text,
         font: selectedFont.id,
+        widthMm: width_mm,
         sizeMm: size_mm,
         depthMm: depth_mm,
         bevelMm: bevel_mm,
@@ -176,6 +179,7 @@ function createServer(origin: string) {
       const params = new URLSearchParams({
         text: options.text,
         font: options.font,
+        ...(options.widthMm ? { width: String(options.widthMm) } : {}),
         size: String(options.sizeMm),
         depth: String(options.depthMm),
         bevel: String(options.bevelMm),

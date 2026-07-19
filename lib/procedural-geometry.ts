@@ -241,10 +241,17 @@ function createRevolveGeometryParts(source: Extract<SourceSpec, { type: "revolve
 }
 
 function createPrimitiveGeometry(source: Extract<SourceSpec, { type: "primitive" }>) {
-  const width = source.width ?? (source.radius ? source.radius * 2 : 30);
-  const depth = source.depth ?? width;
-  const height = source.height ?? width;
-  const radius = source.radius ?? Math.min(width, depth) / 2;
+  const profileRadius = Math.max(source.radiusBottom ?? 0, source.radiusTop ?? 0);
+  const radius = source.radius ?? (profileRadius > 0 ? profileRadius : Math.min(source.width ?? 30, source.depth ?? source.width ?? 30) / 2);
+  const tube = source.tube ?? radius * 0.25;
+  const outerRadius = source.shape === "cone" || source.shape === "cylinder"
+    ? Math.max(source.radiusBottom ?? radius, source.radiusTop ?? (source.shape === "cone" ? 0 : radius))
+    : radius;
+  const radialDiameter = source.shape === "torus" ? (radius + tube) * 2 : outerRadius * 2;
+  const naturalHeight = source.shape === "torus" ? tube * 2 : radialDiameter;
+  const width = source.width ?? radialDiameter;
+  const depth = source.depth ?? radialDiameter;
+  const height = source.height ?? naturalHeight;
   let geometry: BufferGeometry;
   if (source.shape === "box") {
     geometry = new BoxGeometry(width, depth, height, 1, 1, 1);
@@ -259,9 +266,17 @@ function createPrimitiveGeometry(source: Extract<SourceSpec, { type: "primitive"
     geometry = new SphereGeometry(radius, source.segments, Math.max(8, Math.floor(source.segments / 2)));
     geometry.translate(0, 0, radius);
   } else {
-    geometry = new TorusGeometry(radius, source.tube ?? radius * 0.25, Math.max(8, Math.floor(source.segments / 4)), source.segments);
-    geometry.translate(0, 0, source.tube ?? radius * 0.25);
+    geometry = new TorusGeometry(radius, tube, Math.max(8, Math.floor(source.segments / 4)), source.segments);
+    geometry.translate(0, 0, tube);
   }
+  geometry.computeBoundingBox();
+  const bounds = geometry.boundingBox!;
+  const measuredWidth = bounds.max.x - bounds.min.x;
+  const measuredDepth = bounds.max.y - bounds.min.y;
+  const measuredHeight = bounds.max.z - bounds.min.z;
+  geometry.translate(-(bounds.min.x + bounds.max.x) / 2, -(bounds.min.y + bounds.max.y) / 2, -bounds.min.z);
+  geometry.scale(width / measuredWidth, depth / measuredDepth, height / measuredHeight);
+  geometry.computeBoundingBox();
   return geometry;
 }
 

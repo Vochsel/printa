@@ -126,7 +126,8 @@ async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>, interi
           const result = await createTextServerGeometry({
             text: node.source.text,
             font: node.source.font,
-            sizeMm: node.source.size,
+            widthMm: node.source.width,
+            sizeMm: node.source.height ?? node.source.size,
             depthMm: node.source.depth,
             bevelMm: node.source.bevel,
             bevelSegments: node.source.bevelSegments,

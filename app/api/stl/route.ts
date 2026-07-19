@@ -10,6 +10,7 @@ export async function GET(request: Request) {
   const options = normalizeTextModelOptions({
     text: url.searchParams.get("text") ?? undefined,
     font: selectedFont.id,
+    widthMm: url.searchParams.has("width") ? Number(url.searchParams.get("width")) : undefined,
     sizeMm: Number(url.searchParams.get("size") ?? 36),
     depthMm: Number(url.searchParams.get("depth") ?? 4),
     bevelMm: Number(url.searchParams.get("bevel") ?? 0.6),

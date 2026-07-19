@@ -129,7 +129,7 @@ path:
 
 ### Primitive
 
-Use `shape: box | cylinder | cone | sphere | torus`. Relevant fields include `width`, `depth`, `height`, `radius`, `radiusTop`, `radiusBottom`, `tube`, and `segments`.
+Use `shape: box | cylinder | cone | sphere | torus`. `width`, `depth`, and `height` are authoritative outer bounds in document units for every primitive, including low-resolution curved primitives. `radius`, `radiusTop`, `radiusBottom`, and `tube` define the natural profile and provide backward-compatible dimensions when an explicit axis size is omitted. `segments` controls tessellation without changing the requested bounds.
 
 ### Text
 
@@ -138,6 +138,8 @@ type: text
 text: PRINTA
 font: Space Grotesk
 size: 36
+width: 140 # optional exact outer width; omit for the font's natural aspect ratio
+height: 36 # exact visible outer height; defaults to size
 depth: 4
 bevel: 0.6
 bevelSegments: 4
@@ -150,7 +152,7 @@ italic: false
 underline: false
 ```
 
-`font` accepts any Google Fonts family. All typography and printable styling fields are part of the source, so the editor, MCP tool, preview, and STL generator use the same values.
+`font` accepts any Google Fonts family. `height` and `depth` are exact final mesh bounds, including the bevel; `width` is also exact when supplied. Measurements come from the loaded OpenType outlines and final tessellated solid, not browser CSS metrics. All typography and printable styling fields are part of the source, so the editor, MCP tool, preview, and STL generator use the same values.
 
 ## Display
 

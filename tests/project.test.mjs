@@ -61,6 +61,9 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(inspector, /loadFontPreview/);
   assert.match(inspector, /Search all Google Fonts/);
   assert.match(inspector, /scroll for all/);
+  assert.match(inspector, /Exact width/);
+  assert.match(inspector, /Exact height/);
+  assert.match(inspector, /Exact depth/);
   assert.match(inspector, /Floor W\/H gizmos/);
   assert.match(inspector, /Add layer/);
   assert.match(inspector, /Add modifier/);
@@ -109,6 +112,7 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(skillRoute, /text\/markdown/);
   assert.match(stlRoute, /Content-Type.*model\/stl/s);
   assert.match(mcpRoute, /create_extruded_text/);
+  assert.match(mcpRoute, /width_mm/);
   assert.match(mcpRoute, /create_procedural_model/);
   assert.match(mcpRoute, /bevel_segments/);
   assert.match(mcpRoute, /smooth_normals/);
