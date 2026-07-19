@@ -16,6 +16,9 @@ export function createModelWidgetHtml(origin: string) {
     body{margin:0;background:transparent;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
     button{font:inherit;cursor:pointer}
     .app{height:580px;min-height:520px;display:grid;grid-template-columns:var(--side-w) 6px minmax(0,1fr);overflow:hidden;border:1px solid var(--hair);border-radius:12px;background:var(--canvas)}
+    /* Sidebar hidden by default — showcase the shape first */
+    .app.spec-hidden{grid-template-columns:0 0 minmax(0,1fr)}
+    .app.spec-hidden .side,.app.spec-hidden .grip{display:none}
 
     /* Sidebar */
     .side{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--soft)}
@@ -82,13 +85,14 @@ export function createModelWidgetHtml(origin: string) {
 
     @media(max-width:700px){
       .app{height:auto;min-height:660px;grid-template-columns:1fr;grid-template-rows:auto 420px}
+      .app.spec-hidden{grid-template-rows:minmax(420px,1fr)}
       .grip{display:none}
       .side{border-bottom:1px solid var(--hair)}
     }
   </style>
 </head>
 <body>
-  <div class="app" id="app">
+  <div class="app spec-hidden" id="app">
     <aside class="side">
       <div class="side-head"><span class="mark">▰</span><span class="brand">PRINTA</span><span class="tag">SPEC 1.0</span></div>
       <div class="controls">
@@ -106,6 +110,7 @@ export function createModelWidgetHtml(origin: string) {
         <span id="title" class="chip title">Building model…</span>
         <span id="dims" class="chip">—</span>
         <div class="hud-actions">
+          <button id="toggleSpec" class="icon-btn" type="button" aria-label="Edit spec" title="Edit spec">✎</button>
           <button id="view" class="icon-btn" type="button" aria-label="View settings" title="View settings">◑</button>
           <button id="focus" class="icon-btn" type="button" aria-label="Frame model" title="Fit model in view">⛶</button>
           <a id="download" class="download" href="#" data-cuelume-press>⬇ STL</a>
@@ -339,6 +344,7 @@ export function createModelWidgetHtml(origin: string) {
     el("demo").addEventListener("change",event=>{play("droplet");run({demo:event.target.value})});
     el("spec").addEventListener("input",event=>{el("chars").textContent=event.target.value.length.toLocaleString()+" chars"});
     el("focus").addEventListener("click",()=>{play("tick");frame()});
+    el("toggleSpec").addEventListener("click",()=>{const hidden=el("app").classList.toggle("spec-hidden");el("toggleSpec").textContent=hidden?"✎":"×";el("toggleSpec").title=hidden?"Edit spec":"Hide spec";play("page");requestAnimationFrame(resize)});
 
     app.ontoolinput=params=>acceptInput(params.arguments||{});
     app.ontoolresult=result=>void acceptResult(result);

@@ -19,7 +19,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TEMPLATE_URI = "ui://widget/printa-extruded-text-v9.html";
-const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v6.html";
+const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v7.html";
 
 function createServer(origin: string) {
   const server = new McpServer(
