@@ -47,6 +47,8 @@ Represent the silhouette as `[radius, height]` profile points in a `revolve` sou
 - Keep the smallest inside radius larger than the wall.
 - Use a solid base at least as thick as the wall; 2.4–3.2 mm is a practical FDM default.
 - Use `topThickness` when `topCap: true`; open vases should keep `topCap: false`.
+- Enable `print.interiorStruts` when a revolved shell needs an explicit printable internal truss. Choose `diamond` for general stiffness, `cross` for a lighter horizontal brace system, or `radial` for spokes around a center mast.
+- Start around 16–24 mm spacing and 1.6–2.4 mm diameter for common FDM work, then adjust for scale and nozzle size.
 
 ## Preserve printability
 

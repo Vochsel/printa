@@ -16,6 +16,42 @@ const modifierGauntlet: ModifierSpec[] = [
   { type: "smooth", iterations: 2, strength: 0.22 },
 ];
 
+function strutBenchmark(pattern: "cross" | "diamond" | "radial"): ModelDocumentInput {
+  return {
+    version: "1.0",
+    name: `${pattern} interior struts`,
+    description: `Exercises the ${pattern} structural lattice inside a capped revolved cavity.`,
+    units: "mm",
+    root: {
+      kind: "shape",
+      id: `${pattern}-strut-vessel`,
+      source: {
+        type: "revolve",
+        profile: [[30, 0], [38, 28], [35, 72], [28, 118]],
+        segments: 112,
+        profileSegments: 80,
+        wall: 2.4,
+        bottomCap: true,
+        bottomThickness: 3.2,
+        topCap: true,
+        topThickness: 3.2,
+        interpolation: "catmull-rom",
+        axis: "z",
+      },
+      modifiers: [],
+      material: "pla-matte",
+    },
+    print: {
+      buildVolume: [256, 256, 256],
+      autoCenter: true,
+      placeOnBed: true,
+      interiorStruts: { enabled: true, pattern, spacing: 18, diameter: 1.8, boundaryInset: 3, wallOverlap: 0.8, radialSegments: 10 },
+    },
+    display: defaults.display,
+    metadata: { benchmark: true, coverage: `interior-struts-${pattern}` },
+  };
+}
+
 const addedCases = {
   "all-primitives-assembly": {
     version: "1.0",
@@ -131,6 +167,9 @@ const addedCases = {
     ...defaults,
     metadata: { benchmark: true, coverage: "text,font,case,bold,italic,underline,bevel" },
   },
+  "struts-cross": strutBenchmark("cross"),
+  "struts-diamond": strutBenchmark("diamond"),
+  "struts-radial": strutBenchmark("radial"),
 } as const satisfies Record<string, ModelDocumentInput>;
 
 export const BENCHMARK_SPECS = { ...DEMO_MODELS, ...addedCases } as const;
@@ -142,3 +181,5 @@ export const REQUIRED_BENCHMARK_COVERAGE = {
   graph: ["shape", "assembly", "repeat"],
   curves: ["move", "line", "quadratic", "bezier", "close"],
 } as const;
+
+export const REQUIRED_STRUT_PATTERNS = ["cross", "diamond", "radial"] as const;

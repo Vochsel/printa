@@ -48,6 +48,7 @@ async function createResponse(request: Request) {
         "X-Printa-Material": material,
         "X-Printa-Exceeds": String(exceeds),
         "X-Printa-Preview": String(normalized.preview),
+        "X-Printa-Interior-Struts": document.print.interiorStruts.enabled ? document.print.interiorStruts.pattern : "off",
         "X-Printa-Cache": `hit=${cacheAfter.hits - cacheBefore.hits}; miss=${cacheAfter.misses - cacheBefore.misses}; coalesced=${cacheAfter.coalesced - cacheBefore.coalesced}`,
         "Server-Timing": `compile;dur=${(performance.now() - startedAt).toFixed(1)}`,
         "X-Content-Type-Options": "nosniff",

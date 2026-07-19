@@ -248,6 +248,15 @@ function createServer(origin: string) {
         studioUrl: z.string().url(),
         exceedsBuildVolume: z.boolean(),
         warnings: z.array(z.string()),
+        interiorStruts: z.object({
+          enabled: z.boolean(),
+          pattern: z.enum(["cross", "diamond", "radial"]),
+          spacing: z.number(),
+          diameter: z.number(),
+          boundaryInset: z.number(),
+          wallOverlap: z.number(),
+          radialSegments: z.number(),
+        }),
         display: z.object({
           floor: z.boolean(),
           grid: z.boolean(),
@@ -285,6 +294,7 @@ function createServer(origin: string) {
         studioUrl,
         exceedsBuildVolume: result.exceedsBuildVolume,
         warnings: result.warnings,
+        interiorStruts: result.document.print.interiorStruts,
         display: result.document.display,
       };
       return {

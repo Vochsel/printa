@@ -14,7 +14,7 @@ import {
   Vector3,
 } from "three";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-import type { ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
+import type { InteriorStrutsSpec, ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
 
 const DEG = Math.PI / 180;
 
@@ -71,7 +71,17 @@ function sampleProfile(source: Extract<SourceSpec, { type: "revolve" }>) {
   return curve.getPoints(source.profileSegments).map((point) => [Math.max(source.wall + 0.1, point.x), point.z] as [number, number]);
 }
 
-function createRevolveGeometry(source: Extract<SourceSpec, { type: "revolve" }>) {
+function strutBetween(start: Vector3, end: Vector3, diameter: number, radialSegments: number) {
+  const direction = end.clone().sub(start);
+  const length = direction.length();
+  if (length < 1e-4) return null;
+  const geometry = new CylinderGeometry(diameter / 2, diameter / 2, length, radialSegments, 1, false);
+  geometry.applyQuaternion(new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), direction.normalize()));
+  geometry.translate((start.x + end.x) / 2, (start.y + end.y) / 2, (start.z + end.z) / 2);
+  return geometry;
+}
+
+function createRevolveGeometryParts(source: Extract<SourceSpec, { type: "revolve" }>, struts?: InteriorStrutsSpec) {
   const profile = sampleProfile(source);
   if (profile.at(-1)![1] < profile[0][1]) profile.reverse();
   const radial = source.segments;
@@ -165,9 +175,69 @@ function createRevolveGeometry(source: Extract<SourceSpec, { type: "revolve" }>)
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-  if (source.axis === "x") geometry.rotateY(Math.PI / 2);
-  else if (source.axis === "y") geometry.rotateX(-Math.PI / 2);
-  return geometry;
+  const strutGeometries: BufferGeometry[] = [];
+  if (struts?.enabled) {
+    const inset = Math.min(struts.boundaryInset, Math.max(0, (interiorTop - interiorBottom) * 0.4));
+    const zMin = interiorBottom + inset;
+    const zMax = interiorTop - inset;
+    const usableHeight = zMax - zMin;
+    if (usableHeight > struts.diameter) {
+      const layerCount = Math.max(1, Math.floor(usableHeight / struts.spacing) + 1);
+      const layers = Array.from({ length: layerCount }, (_, index) => layerCount === 1
+        ? (zMin + zMax) / 2
+        : zMin + index / (layerCount - 1) * usableHeight);
+      const pointOnWall = (angle: number, height: number) => {
+        const inside = Math.max(struts.diameter, radiusAt(height) - source.wall);
+        const overlap = Math.min(struts.wallOverlap, source.wall * 0.8, Math.max(0, source.wall - struts.diameter * 0.55));
+        const radius = inside + overlap;
+        return new Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, height);
+      };
+      const joints = new Set<string>();
+      const addJoint = (point: Vector3) => {
+        const key = [point.x, point.y, point.z].map((value) => Math.round(value * 10_000)).join(":");
+        if (joints.has(key) || strutGeometries.length >= 320) return;
+        joints.add(key);
+        const joint = new SphereGeometry(struts.diameter * 0.5, struts.radialSegments, Math.max(4, Math.floor(struts.radialSegments / 2)));
+        joint.translate(point.x, point.y, point.z);
+        strutGeometries.push(joint);
+      };
+      const addStrut = (start: Vector3, end: Vector3) => {
+        if (strutGeometries.length >= 317) return;
+        const strut = strutBetween(start, end, struts.diameter, struts.radialSegments);
+        if (strut) {
+          strutGeometries.push(strut);
+          addJoint(start);
+          addJoint(end);
+        }
+      };
+      layers.forEach((height, layer) => {
+        const angle = layer % 2 * Math.PI / 4;
+        if (struts.pattern === "radial") {
+          for (let spoke = 0; spoke < 4; spoke += 1) addStrut(new Vector3(0, 0, height), pointOnWall(angle + spoke * Math.PI / 2, height));
+        } else {
+          addStrut(pointOnWall(angle, height), pointOnWall(angle + Math.PI, height));
+          addStrut(pointOnWall(angle + Math.PI / 2, height), pointOnWall(angle + Math.PI * 1.5, height));
+        }
+      });
+      if (struts.pattern === "radial") addStrut(new Vector3(0, 0, zMin), new Vector3(0, 0, zMax));
+      if (struts.pattern === "diamond") {
+        for (let layer = 0; layer < layers.length - 1; layer += 1) {
+          const lowerAngle = layer % 2 * Math.PI / 4;
+          const upperAngle = (layer + 1) % 2 * Math.PI / 4;
+          for (let side = 0; side < 4; side += 1) {
+            addStrut(
+              pointOnWall(lowerAngle + side * Math.PI / 2, layers[layer]),
+              pointOnWall(upperAngle + (side + 1) * Math.PI / 2, layers[layer + 1]),
+            );
+          }
+        }
+      }
+    }
+  }
+  const parts = [geometry, ...strutGeometries];
+  if (source.axis === "x") parts.forEach((part) => part.rotateY(Math.PI / 2));
+  else if (source.axis === "y") parts.forEach((part) => part.rotateX(-Math.PI / 2));
+  return parts;
 }
 
 function createPrimitiveGeometry(source: Extract<SourceSpec, { type: "primitive" }>) {
@@ -353,12 +423,20 @@ function createClothGeometry(source: Extract<SourceSpec, { type: "cloth" }>) {
   return solidHeightfield(source.width, source.depth, size, size, points, source.thickness);
 }
 
-export function createSourceGeometry(source: Exclude<SourceSpec, { type: "text" }>) {
-  if (source.type === "primitive") return createPrimitiveGeometry(source);
-  if (source.type === "extrude") return createExtrudeGeometry(source);
-  if (source.type === "revolve") return createRevolveGeometry(source);
-  if (source.type === "water") return createWaterGeometry(source);
-  return createClothGeometry(source);
+export function createSourceGeometryParts(source: Exclude<SourceSpec, { type: "text" }>, options?: { interiorStruts?: InteriorStrutsSpec }) {
+  if (source.type === "primitive") return [createPrimitiveGeometry(source)];
+  if (source.type === "extrude") return [createExtrudeGeometry(source)];
+  if (source.type === "revolve") return createRevolveGeometryParts(source, options?.interiorStruts);
+  if (source.type === "water") return [createWaterGeometry(source)];
+  return [createClothGeometry(source)];
+}
+
+export function createSourceGeometry(source: Exclude<SourceSpec, { type: "text" }>, options?: { interiorStruts?: InteriorStrutsSpec }) {
+  const parts = createSourceGeometryParts(source, options);
+  if (parts.length === 1) return parts[0];
+  const geometry = mergeModelGeometries(parts);
+  parts.forEach((part) => { if (part !== geometry) part.dispose(); });
+  return geometry;
 }
 
 function boundsFor(geometry: BufferGeometry) {

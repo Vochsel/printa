@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { BufferGeometry } from "three";
 import { DEMO_MODELS } from "../lib/demo-models";
-import { BENCHMARK_SPECS, REQUIRED_BENCHMARK_COVERAGE } from "../benchmarks/specs";
+import { BENCHMARK_SPECS, REQUIRED_BENCHMARK_COVERAGE, REQUIRED_STRUT_PATTERNS } from "../benchmarks/specs";
 import {
   decodeModelDocument,
   encodeModelDocument,
@@ -15,9 +15,11 @@ import {
   applyModifiers,
   applyTransform,
   createSourceGeometry,
+  createSourceGeometryParts,
   mergeModelGeometries,
   repeatedTransform,
 } from "../lib/procedural-geometry";
+import { unionClosedGeometryParts } from "../lib/manifold-geometry";
 
 async function buildNode(node: ModelNode): Promise<BufferGeometry> {
   if (node.kind === "shape") {
@@ -64,6 +66,20 @@ function boundaryEdgeCount(geometry: BufferGeometry) {
   return [...edges.values()].filter((count) => count !== 2).length;
 }
 
+function topologicalBoundaryEdgeCount(geometry: BufferGeometry) {
+  const index = geometry.index;
+  assert.ok(index, "manifold geometry should be indexed");
+  const edges = new Map<string, number>();
+  for (let offset = 0; offset < index.count; offset += 3) {
+    const vertices = [index.getX(offset), index.getX(offset + 1), index.getX(offset + 2)];
+    for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+      const edge = vertices[a] < vertices[b] ? `${vertices[a]}|${vertices[b]}` : `${vertices[b]}|${vertices[a]}`;
+      edges.set(edge, (edges.get(edge) ?? 0) + 1);
+    }
+  }
+  return [...edges.values()].filter((count) => count !== 2).length;
+}
+
 function meshVolume(geometry: BufferGeometry) {
   const source = geometry.index ? geometry.toNonIndexed() : geometry;
   const position = source.getAttribute("position");
@@ -93,6 +109,7 @@ root:
   const fromJson = parseModelDocument(JSON.stringify(fromYaml));
   assert.deepEqual(fromJson, fromYaml);
   assert.equal(fromYaml.print.placeOnBed, true);
+  assert.equal(fromYaml.print.interiorStruts.enabled, false);
   assert.equal(fromYaml.display.dimensions.visible, true);
   assert.equal(decodeModelDocument(encodeModelDocument(fromYaml)).name, "Test cylinder");
 });
@@ -122,6 +139,7 @@ test("benchmark matrix touches every evaluator family and validates every spec",
   for (const shellField of ["wall", "bottomCap", "bottomThickness", "topCap", "topThickness"]) {
     assert.match(serialized, new RegExp(`\"${shellField}\"`), `benchmark coverage should include ${shellField}`);
   }
+  for (const pattern of REQUIRED_STRUT_PATTERNS) assert.match(serialized, new RegExp(`\"pattern\":\"${pattern}\"`));
 });
 
 test("rejects graphs that expand beyond the safe node limit", () => {
@@ -190,6 +208,35 @@ test("revolved shells support watertight solid bases and top caps with thickness
   assert.ok(meshVolume(based) > meshVolume(open), "a solid base should add material volume");
   assert.ok(meshVolume(sealed) > meshVolume(based), "a solid top cap should add material volume");
   open.dispose(); based.dispose(); sealed.dispose();
+});
+
+test("all interior strut patterns fuse into bounded manifold printable geometry", async () => {
+  const source = {
+    type: "revolve" as const,
+    profile: [[28, 0], [36, 30], [33, 74], [27, 116]] as Array<[number, number]>,
+    segments: 72,
+    profileSegments: 48,
+    wall: 2.4,
+    bottomCap: true,
+    bottomThickness: 3,
+    topCap: true,
+    topThickness: 3,
+    interpolation: "catmull-rom" as const,
+    axis: "z" as const,
+  };
+  const shell = createSourceGeometry(source);
+  const shellBounds = geometryBounds(shell);
+  const shellVertices = shell.getAttribute("position").count;
+  for (const pattern of REQUIRED_STRUT_PATTERNS) {
+    const parts = createSourceGeometryParts(source, { interiorStruts: { enabled: true, pattern, spacing: 18, diameter: 1.8, boundaryInset: 3, wallOverlap: 0.8, radialSegments: 8 } });
+    const geometry = await unionClosedGeometryParts(parts);
+    parts.forEach((part) => part.dispose());
+    assert.ok(geometry.getAttribute("position").count > shellVertices, `${pattern} should add strut triangles`);
+    assert.equal(topologicalBoundaryEdgeCount(geometry), 0, `${pattern} should be a fused 2-manifold`);
+    assert.deepEqual(geometryBounds(geometry).map((value) => value.toFixed(3)), shellBounds.map((value) => value.toFixed(3)), `${pattern} should stay inside the shell bounds`);
+    geometry.dispose();
+  }
+  shell.dispose();
 });
 
 test("every bundled demo produces finite, closed, printable-scale geometry", async (t) => {

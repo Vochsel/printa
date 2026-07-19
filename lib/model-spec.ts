@@ -10,6 +10,28 @@ const positive = finite.positive();
 const nonNegative = finite.nonnegative();
 const vec3 = z.tuple([finite, finite, finite]);
 
+export const interiorStrutsSchema = z.object({
+  enabled: z.boolean().default(false),
+  pattern: z.enum(["cross", "diamond", "radial"]).default("diamond"),
+  spacing: finite.min(4).max(100).default(18).describe("Vertical distance between lattice levels in document units"),
+  diameter: finite.min(0.4).max(12).default(1.8).describe("Printable strut diameter in document units"),
+  boundaryInset: nonNegative.max(40).default(3).describe("Clearance from the interior floor and ceiling/open rim"),
+  wallOverlap: nonNegative.max(10).default(0.8).describe("How far strut anchors overlap the shell wall"),
+  radialSegments: z.number().int().min(6).max(24).default(10).describe("Roundness of each generated strut"),
+}).strict();
+
+export type InteriorStrutsSpec = z.infer<typeof interiorStrutsSchema>;
+
+const DEFAULT_INTERIOR_STRUTS: InteriorStrutsSpec = {
+  enabled: false,
+  pattern: "diamond",
+  spacing: 18,
+  diameter: 1.8,
+  boundaryInset: 3,
+  wallOverlap: 0.8,
+  radialSegments: 10,
+};
+
 export const transformSchema = z.object({
   translate: vec3.default([0, 0, 0]),
   rotate: vec3.default([0, 0, 0]).describe("Euler rotation in degrees [x, y, z]"),
@@ -262,7 +284,8 @@ export const modelDocumentSchema = z.object({
     buildVolume: vec3.default([256, 256, 256]),
     autoCenter: z.boolean().default(true),
     placeOnBed: z.boolean().default(true),
-  }).strict().default({ buildVolume: [256, 256, 256], autoCenter: true, placeOnBed: true }),
+    interiorStruts: interiorStrutsSchema.default(DEFAULT_INTERIOR_STRUTS),
+  }).strict().default({ buildVolume: [256, 256, 256], autoCenter: true, placeOnBed: true, interiorStruts: DEFAULT_INTERIOR_STRUTS }),
   display: z.object({
     floor: z.boolean().default(true),
     grid: z.boolean().default(true),

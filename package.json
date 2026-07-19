@@ -19,6 +19,7 @@
     "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "lucide-react": "^1.25.0",
+    "manifold-3d": "^3.5.1",
     "next": "16.2.6",
     "opentype.js": "^2.0.0",
     "react": "19.2.6",

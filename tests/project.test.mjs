@@ -103,6 +103,9 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(studio, /AbortController/);
   assert.match(studio, /preview: true/);
   assert.match(studio, /PreviewSource/);
+  assert.match(studio, /Struts in STL/);
+  assert.match(modelSpec, /interiorStrutsSchema/);
+  assert.match(modelStlRoute, /X-Printa-Interior-Struts/);
   assert.match(skillRoute, /text\/markdown/);
   assert.match(stlRoute, /Content-Type.*model\/stl/s);
   assert.match(mcpRoute, /create_extruded_text/);

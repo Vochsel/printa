@@ -117,8 +117,8 @@ function SelectInput({ label, value, options, onChange }: { label: string; value
   return <label className="spec-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>;
 }
 
-function ToggleInput({ label, detail, value, onChange }: { label: string; detail?: string; value: boolean; onChange: (value: boolean) => void }) {
-  return <label className="spec-toggle"><span><strong>{label}</strong>{detail && <small>{detail}</small>}</span><input type="checkbox" checked={value} onChange={(event) => onChange(event.target.checked)} /><i /></label>;
+function ToggleInput({ label, detail, value, disabled = false, onChange }: { label: string; detail?: string; value: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {
+  return <label className={`spec-toggle${disabled ? " is-disabled" : ""}`}><span><strong>{label}</strong>{detail && <small>{detail}</small>}</span><input type="checkbox" disabled={disabled} checked={value} onChange={(event) => onChange(event.target.checked)} /><i /></label>;
 }
 
 function JsonInput({ label, value, onChange }: { label: string; value: unknown; onChange: (value: unknown) => void }) {
@@ -173,6 +173,7 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
   const selectedNode = selectionExists ?? document.root;
   const modifierIndex = activeSelection.kind === "modifier" ? activeSelection.index : -1;
   const selectedModifier = modifierIndex >= 0 ? selectedNode.modifiers[modifierIndex] : null;
+  const supportsInteriorStruts = entries.some(({ node }) => node.kind === "shape" && node.source.type === "revolve");
 
   const mutate = (recipe: (draft: ModelDocument) => void) => { const draft = structuredClone(document); recipe(draft); onChange(draft); };
   const mutateNode = (recipe: (node: ModelNode) => void) => mutate((draft) => { updateNode(draft.root, selectedNode.id, recipe); });
@@ -204,6 +205,7 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
       <div className="spec-two"><SelectInput label="Units" value={document.units} options={["mm", "cm", "in"]} onChange={(value) => mutate((draft) => { draft.units = value as ModelDocument["units"]; })} /><ToggleInput label="Place on bed" value={document.print.placeOnBed} onChange={(value) => mutate((draft) => { draft.print.placeOnBed = value; })} /></div>
       <div className="spec-three">{document.print.buildVolume.map((value, index) => <NumberInput key={index} label={["Build W", "Build H", "Build Z"][index]} value={value} min={0.1} onChange={(next) => mutate((draft) => { draft.print.buildVolume[index] = next; })} />)}</div>
       <ToggleInput label="Auto center" value={document.print.autoCenter} onChange={(value) => mutate((draft) => { draft.print.autoCenter = value; })} />
+      <div className="spec-subsection"><div className="spec-subhead"><Layers3 size={13} /> Interior 3D struts</div><ToggleInput label="Generate structural lattice" detail={supportsInteriorStruts ? "Preview + downloaded STL" : "Requires a revolved cavity"} disabled={!supportsInteriorStruts} value={document.print.interiorStruts.enabled} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.enabled = value; })} /><SelectInput label="Pattern" value={document.print.interiorStruts.pattern} options={["diamond", "cross", "radial"]} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.pattern = value as ModelDocument["print"]["interiorStruts"]["pattern"]; })} /><div className="spec-three"><NumberInput label="Spacing" value={document.print.interiorStruts.spacing} min={4} max={100} step={1} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.spacing = value; })} /><NumberInput label="Diameter" value={document.print.interiorStruts.diameter} min={0.4} max={12} step={0.1} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.diameter = value; })} /><NumberInput label="Boundary inset" value={document.print.interiorStruts.boundaryInset} min={0} max={40} step={0.5} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.boundaryInset = value; })} /></div><div className="spec-two"><NumberInput label="Wall overlap" value={document.print.interiorStruts.wallOverlap} min={0} max={10} step={0.1} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.wallOverlap = value; })} /><NumberInput label="Roundness" value={document.print.interiorStruts.radialSegments} min={6} max={24} step={1} onChange={(value) => mutate((draft) => { draft.print.interiorStruts.radialSegments = value; })} /></div></div>
     </section>
 
     <section className="spec-layer-section">

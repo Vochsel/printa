@@ -14,6 +14,14 @@ print:
   buildVolume: [256, 256, 256]
   autoCenter: true
   placeOnBed: true
+  interiorStruts:
+    enabled: false
+    pattern: diamond # diamond | cross | radial
+    spacing: 18
+    diameter: 1.8
+    boundaryInset: 3
+    wallOverlap: 0.8
+    radialSegments: 10
 display:
   floor: true
   grid: true
@@ -28,6 +36,8 @@ metadata:
 ```
 
 The renderer converts final geometry to millimetres, centers it in X/Y, and places its lowest point at Z=0 when the print flags are enabled.
+
+`print.interiorStruts` is export geometry, not slicer metadata. When enabled, Printa builds a deterministic lattice inside every revolved cavity and includes it in preview and STL. `spacing` controls lattice levels, `diameter` controls printable member size, `boundaryInset` keeps members away from the floor/ceiling or open rim, and `wallOverlap` anchors members into the shell. `radialSegments` trades roundness for mesh size. Other already-solid sources should use slicer infill; explicit interior struts currently target revolved shells where the cavity boundary is known exactly.
 
 ## Nodes
 

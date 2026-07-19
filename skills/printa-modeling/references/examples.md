@@ -25,7 +25,18 @@ root:
     - { type: radialWave, amplitude: 1.7, count: 18, phaseDeg: 0, axialTurns: 0 }
     - { type: twist, angleDeg: 220, start: 0, end: 1 }
   material: pla-matte
-print: { buildVolume: [256, 256, 256], autoCenter: true, placeOnBed: true }
+print:
+  buildVolume: [256, 256, 256]
+  autoCenter: true
+  placeOnBed: true
+  interiorStruts:
+    enabled: true
+    pattern: diamond
+    spacing: 20
+    diameter: 1.8
+    boundaryInset: 4
+    wallOverlap: 0.8
+    radialSegments: 10
 metadata: { family: vase }
 ```
 

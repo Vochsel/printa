@@ -6,12 +6,14 @@ import { createTextServerGeometry } from "@/lib/text-mesh";
 import {
   applyModifiers,
   applyTransform,
-  createSourceGeometry,
+  createSourceGeometryParts,
   mergeModelGeometries,
   repeatedTransform,
 } from "@/lib/procedural-geometry";
+import { unionClosedGeometryParts } from "@/lib/manifold-geometry";
 import {
   parseModelDocument,
+  type InteriorStrutsSpec,
   type ModelDocument,
   type ModelNode,
 } from "@/lib/model-spec";
@@ -103,8 +105,15 @@ function firstMaterial(node: ModelNode): "pla-orange" | "pla-matte" | "pla-silk"
   return firstMaterial(node.children[0]);
 }
 
-async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>) {
-  const sourceKey = `source:${fingerprint(JSON.stringify(node.source))}`;
+function hasRevolvedCavity(node: ModelNode): boolean {
+  if (node.kind === "shape") return node.source.type === "revolve";
+  if (node.kind === "repeat") return hasRevolvedCavity(node.child);
+  return node.children.some(hasRevolvedCavity);
+}
+
+async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>, interiorStruts: InteriorStrutsSpec) {
+  const strutKey = node.source.type === "revolve" ? JSON.stringify(interiorStruts) : "";
+  const sourceKey = `source:${fingerprint(JSON.stringify(node.source), strutKey)}`;
   let geometry = cachedGeometry(sourceKey);
   if (!geometry) {
     const inflight = sourceInflight.get(sourceKey);
@@ -131,7 +140,10 @@ async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>) {
           });
           return result.geometry;
         }
-        return createSourceGeometry(node.source);
+        const parts = createSourceGeometryParts(node.source, { interiorStruts });
+        if (parts.length === 1) return parts[0];
+        try { return await unionClosedGeometryParts(parts); }
+        finally { parts.forEach((part) => part.dispose()); }
       })();
       sourceInflight.set(sourceKey, build);
       try { geometry = await build; } finally { sourceInflight.delete(sourceKey); }
@@ -149,8 +161,8 @@ async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>) {
   return geometry;
 }
 
-async function nodeGeometry(node: ModelNode, fingerprints: WeakMap<object, string>): Promise<BufferGeometry> {
-  const nodeKey = `node:${nodeFingerprint(node, fingerprints)}`;
+async function nodeGeometry(node: ModelNode, fingerprints: WeakMap<object, string>, interiorStruts: InteriorStrutsSpec): Promise<BufferGeometry> {
+  const nodeKey = `node:${fingerprint(nodeFingerprint(node, fingerprints), JSON.stringify(interiorStruts))}`;
   const cached = cachedGeometry(nodeKey);
   if (cached) return cached;
   const inflight = geometryInflight.get(nodeKey);
@@ -160,16 +172,16 @@ async function nodeGeometry(node: ModelNode, fingerprints: WeakMap<object, strin
   }
   const build = (async () => {
     let result: BufferGeometry;
-    if (node.kind === "shape") result = await shapeGeometry(node);
+    if (node.kind === "shape") result = await shapeGeometry(node, interiorStruts);
     else if (node.kind === "assembly") {
-      const children = await Promise.all(node.children.map((child) => nodeGeometry(child, fingerprints)));
+      const children = await Promise.all(node.children.map((child) => nodeGeometry(child, fingerprints, interiorStruts)));
       const geometry = mergeModelGeometries(children);
       children.forEach((child) => {
         if (child !== geometry) child.dispose();
       });
       result = applyTransform(applyModifiers(geometry, node.modifiers), node.transform);
     } else {
-      const source = await nodeGeometry(node.child, fingerprints);
+      const source = await nodeGeometry(node.child, fingerprints, interiorStruts);
       const copies: BufferGeometry[] = [];
       for (let index = 0; index < node.count; index += 1) {
         const copy = source.clone();
@@ -247,7 +259,12 @@ function finishGeometry(geometry: BufferGeometry, document: ModelDocument) {
 export async function createProceduralGeometry(input: string | unknown, options: ProceduralBuildOptions = {}) {
   const document = parseModelDocument(input);
   const renderRoot = options.quality === "preview" ? previewNode(document.root) : document.root;
-  const geometry = finishGeometry(await nodeGeometry(renderRoot, new WeakMap()), document);
+  const interiorStruts = structuredClone(document.print.interiorStruts);
+  if (options.quality === "preview" && interiorStruts.enabled) {
+    interiorStruts.spacing = Math.max(interiorStruts.spacing, 22);
+    interiorStruts.radialSegments = Math.min(interiorStruts.radialSegments, 8);
+  }
+  const geometry = finishGeometry(await nodeGeometry(renderRoot, new WeakMap(), interiorStruts), document);
   return { document, geometry };
 }
 
@@ -297,6 +314,7 @@ export async function inspectProceduralModel(input: string | unknown) {
   const warnings: string[] = [];
   if (exceedsBuildVolume) warnings.push(`Model exceeds the ${document.print.buildVolume.join(" × ")} mm reference build volume.`);
   if (document.root.kind === "shape" && document.root.source.type === "cloth") warnings.push("Cloth forms can contain steep overhangs; inspect support requirements in your slicer.");
+  if (document.print.interiorStruts.enabled && !hasRevolvedCavity(document.root)) warnings.push("Interior struts currently require at least one revolved cavity source.");
   return { document, stats, materialPreset: firstMaterial(document.root), exceedsBuildVolume, warnings };
 }
 

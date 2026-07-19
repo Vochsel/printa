@@ -47,13 +47,19 @@ function encodeDocument(document: ModelDocument) {
 
 function geometryKey(document: ModelDocument) {
   const root = JSON.stringify(document.root, (key, value) => key === "id" || key === "material" ? undefined : value);
-  return `${document.units}:${document.print.autoCenter}:${document.print.placeOnBed}:${root}`;
+  return `${document.units}:${document.print.autoCenter}:${document.print.placeOnBed}:${JSON.stringify(document.print.interiorStruts)}:${root}`;
 }
 
 function documentMaterial(node: ModelDocument["root"]): PrintMaterialPreset {
   if (node.kind === "shape") return node.material ?? "pla-orange";
   if (node.kind === "repeat") return documentMaterial(node.child);
   return documentMaterial(node.children[0]);
+}
+
+function hasRevolvedCavity(node: ModelDocument["root"]): boolean {
+  if (node.kind === "shape") return node.source.type === "revolve";
+  if (node.kind === "repeat") return hasRevolvedCavity(node.child);
+  return node.children.some(hasRevolvedCavity);
 }
 
 function createDimensionLabel(text: string, color: string, worldSize: number) {
@@ -516,6 +522,7 @@ export function ProceduralStudio() {
       window.history.replaceState(window.history.state, "", studioUrl);
       return;
     }
+    setLiveUpdating(true);
     liveTimerRef.current = setTimeout(() => void compileLive(next), 170);
   }, [compileLive]);
 
@@ -586,7 +593,8 @@ export function ProceduralStudio() {
           <div className="studio-stage-head">
             <div><span className="eyebrow"><Sparkles size={13} /> Generated solid</span><h2>{result?.document.name ?? "Building form…"}</h2></div>
             {result && <span className={`studio-compile-state${liveUpdating ? " is-active" : ""}`}>{liveUpdating ? <LoaderCircle className="is-spinning" size={13} /> : <Check size={13} />}{liveUpdating ? "Compiling preview…" : compileInfo || "Graph ready"}</span>}
-            {result && <a className="studio-download" href={result.stlUrl}><Download size={15} /> Download STL</a>}
+            {document && <label className={`studio-strut-toggle${hasRevolvedCavity(document.root) ? "" : " is-disabled"}`} title={hasRevolvedCavity(document.root) ? "Include generated interior struts in the preview and downloaded STL" : "Add a revolved hollow shape to enable interior struts"}><input type="checkbox" disabled={!hasRevolvedCavity(document.root)} checked={document.print.interiorStruts.enabled} onChange={(event) => { const next = structuredClone(document); next.print.interiorStruts.enabled = event.target.checked; updateDocument(next); }} /><i /><span>Struts in STL</span></label>}
+            {result && <a className={`studio-download${liveUpdating ? " is-disabled" : ""}`} aria-disabled={liveUpdating} href={result.stlUrl} onClick={(event) => { if (liveUpdating) event.preventDefault(); }}><Download size={15} /> {liveUpdating ? "Updating STL…" : "Download STL"}</a>}
           </div>
           <div className="studio-stage-body">
             {result && preview && document && <ModelViewport source={preview} materialPreset={result.materialPreset} display={document.display} units={document.units} onReady={handleModelReady} />}
