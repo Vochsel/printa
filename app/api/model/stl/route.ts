@@ -7,10 +7,11 @@ export const dynamic = "force-dynamic";
 
 async function inputFromRequest(request: Request) {
   const url = new URL(request.url);
+  const preview = url.searchParams.get("preview") === "true";
   const demo = getDemoModel(url.searchParams.get("demo"));
-  if (demo) return demo;
+  if (demo) return { input: demo, preview };
   const encoded = url.searchParams.get("spec");
-  if (encoded) return decodeModelDocument(encoded);
+  if (encoded) return { input: decodeModelDocument(encoded), preview };
   if (request.method === "POST") {
     const text = await request.text();
     const contentType = request.headers.get("content-type") ?? "";

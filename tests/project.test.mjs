@@ -89,6 +89,11 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(modelWidget, /create_procedural_model/);
   assert.match(modelWidget, /JSON \/ YAML spec/);
   assert.match(modelWidget, /STLLoader/);
+  assert.match(modelWidget, /new App\(/);
+  assert.match(modelWidget, /app\.ontoolresult/);
+  assert.match(modelWidget, /previewUrl/);
+  assert.match(modelWidget, /The model result did not arrive/);
+  assert.match(modelWidget, /busy\?"grid":"none"/);
   assert.match(modelSpec, /MODEL_SPEC_VERSION/);
   assert.match(modelSpec, /radialWave/);
   assert.match(modelSpec, /waterSourceSchema/);
@@ -114,6 +119,7 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(mcpRoute, /create_extruded_text/);
   assert.match(mcpRoute, /width_mm/);
   assert.match(mcpRoute, /create_procedural_model/);
+  assert.match(mcpRoute, /previewUrl/);
   assert.match(mcpRoute, /bevel_segments/);
   assert.match(mcpRoute, /smooth_normals/);
   assert.match(mcpRoute, /font_weight/);

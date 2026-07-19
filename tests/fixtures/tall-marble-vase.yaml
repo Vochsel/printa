@@ -1,0 +1,72 @@
+version: "1.0"
+name: "Tall Marble-Inspired Vase"
+description: "A print-ready hollow vase approximated from the supplied reference image: narrow cylindrical base, full rounded shoulders, pinched neck, and softly flared rounded rim. Marble veining is not part of the STL and can be added with filament or finishing."
+units: "mm"
+root:
+  kind: "assembly"
+  id: "marble-vase"
+  operation: "merge"
+  children:
+    - kind: "shape"
+      id: "vase-body"
+      source:
+        type: "revolve"
+        profile:
+          - [25.5, 0]
+          - [25.5, 8]
+          - [26.0, 22]
+          - [27.5, 42]
+          - [31.5, 64]
+          - [37.0, 86]
+          - [41.5, 108]
+          - [42.0, 126]
+          - [39.5, 143]
+          - [34.0, 157]
+          - [28.0, 168]
+          - [27.0, 173]
+          - [30.0, 178]
+          - [31.0, 180]
+        segments: 192
+        profileSegments: 180
+        wall: 2.6
+        bottomCap: true
+        bottomThickness: 3.2
+        topCap: false
+        topThickness: 2.4
+        interpolation: "catmull-rom"
+        axis: "z"
+      modifiers: []
+      material: "pla-matte"
+    - kind: "shape"
+      id: "rounded-rim"
+      source:
+        type: "primitive"
+        shape: "torus"
+        radius: 28.9
+        tube: 2.5
+        segments: 160
+      modifiers: []
+      transform:
+        translate: [0, 0, 178.7]
+        rotate: [0, 0, 0]
+        scale: 1
+      material: "pla-matte"
+  modifiers: []
+print:
+  buildVolume: [256, 256, 256]
+  autoCenter: true
+  placeOnBed: true
+display:
+  floor: true
+  grid: true
+  dimensions:
+    visible: true
+    width: true
+    height: true
+    offset: 9
+    precision: 1
+metadata:
+  reference: "user-supplied vase image"
+  intended_process: "FDM or resin"
+  nominal_height_mm: 181
+  nominal_max_diameter_mm: 84

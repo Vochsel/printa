@@ -1,10 +1,13 @@
+import { readFileSync } from "node:fs";
 import { DEMO_MODELS } from "../lib/demo-models";
-import type { ModelDocumentInput, ModifierSpec } from "../lib/model-spec";
+import { parseModelDocument, type ModelDocumentInput, type ModifierSpec } from "../lib/model-spec";
 
 const defaults = {
   print: { buildVolume: [256, 256, 256] as [number, number, number], autoCenter: true, placeOnBed: true },
   display: { floor: true, grid: true, dimensions: { visible: true, width: true, height: true, offset: 9, precision: 1 as const } },
 };
+
+const tallMarbleVase = parseModelDocument(readFileSync(new URL("../tests/fixtures/tall-marble-vase.yaml", import.meta.url), "utf8"));
 
 const modifierGauntlet: ModifierSpec[] = [
   { type: "twist", angleDeg: 145, start: 0, end: 1 },
@@ -201,6 +204,7 @@ const addedCases = {
     ...defaults,
     metadata: { benchmark: true, coverage: "text,font,exact-dimensions", expectedBoundsMm: "117,31,6" },
   },
+  "tall-marble-mcp-vase": tallMarbleVase,
   "struts-cross": strutBenchmark("cross"),
   "struts-diamond": strutBenchmark("diamond"),
   "struts-radial": strutBenchmark("radial"),

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import * as opentype from "opentype.js";
 import type { BufferGeometry } from "three";
@@ -289,6 +290,17 @@ test("all interior strut patterns fuse into bounded manifold printable geometry"
     geometry.dispose();
   }
   shell.dispose();
+});
+
+test("the dense MCP vase regression spec evaluates to a finite printable mesh", async () => {
+  const input = readFileSync(new URL("./fixtures/tall-marble-vase.yaml", import.meta.url), "utf8");
+  const document = parseModelDocument(input);
+  const geometry = await buildNode(document.root);
+  const bounds = geometryBounds(geometry);
+  assert.deepEqual(bounds.map((value) => Number(value.toFixed(2))), [84.37, 84.37, 183.7]);
+  assert.equal(Math.floor((geometry.index?.count ?? geometry.getAttribute("position").count) / 3), 149_888);
+  assert.ok(geometry.getAttribute("position").count > 100_000);
+  geometry.dispose();
 });
 
 test("every bundled demo produces finite, closed, printable-scale geometry", async (t) => {
