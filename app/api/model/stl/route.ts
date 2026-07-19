@@ -12,8 +12,14 @@ async function inputFromRequest(request: Request) {
   if (demo) return { input: demo, preview };
   const encoded = url.searchParams.get("spec");
   if (encoded) {
-    try { return { input: decodeModelDocument(encoded), preview }; }
-    catch { return { input: parseModelDocument(encoded), preview }; }
+    const compact = encoded.replace(/=+$/, "");
+    const decoded = Buffer.from(compact, "base64url");
+    const isCanonicalBase64Url = /^[A-Za-z0-9_-]+$/.test(compact)
+      && decoded.toString("base64url") === compact;
+    return {
+      input: isCanonicalBase64Url ? decodeModelDocument(compact) : parseModelDocument(encoded),
+      preview,
+    };
   }
   if (request.method === "POST") {
     const text = await request.text();
