@@ -34,6 +34,9 @@ test("ships the homepage, advanced editor, MCP widget, icons, and generation rou
   assert.match(playground, /readEditorQuery/);
   assert.match(playground, /history\.replaceState/);
   assert.match(playground, /bevelSegments/);
+  assert.match(playground, /three-gpu-pathtracer/);
+  assert.match(playground, /High quality/);
+  assert.match(playground, /Print material/);
   assert.match(widget, /font-menu/);
   assert.match(widget, /ui\/notifications\/tool-input/);
   assert.match(widget, /Measurement units/);
@@ -44,6 +47,12 @@ test("ships the homepage, advanced editor, MCP widget, icons, and generation rou
   assert.match(widget, /volume-warning/);
   assert.match(widget, /Generation and download remain enabled/);
   assert.match(widget, /groundDimensions/);
+  assert.match(widget, /three-gpu-pathtracer/);
+  assert.match(widget, /material-preset/);
+  assert.match(widget, /high-quality/);
+  assert.match(widget, /app settings-collapsed/);
+  assert.match(widget, /requestDisplayMode\(\{mode:target\}\)/);
+  assert.match(widget, /Three\.js/);
   assert.match(stlRoute, /Content-Type.*model\/stl/s);
   assert.match(mcpRoute, /create_extruded_text/);
   assert.match(mcpRoute, /bevel_segments/);
@@ -52,6 +61,8 @@ test("ships the homepage, advanced editor, MCP widget, icons, and generation rou
   assert.match(mcpRoute, /underline/);
   assert.match(mcpRoute, /exceedsBuildVolume/);
   assert.match(mcpRoute, /buildVolumeLimitMm/);
+  assert.match(mcpRoute, /material_preset/);
+  assert.match(mcpRoute, /high_quality/);
   assert.match(mcpRoute, /text\/html;profile=mcp-app|RESOURCE_MIME_TYPE/);
   assert.match(fontRoute, /getGoogleFontCatalog/);
   assert.match(icon, /stacked 3D printing layers/);

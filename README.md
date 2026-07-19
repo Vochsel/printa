@@ -53,5 +53,7 @@ After deployment, add `https://your-domain.vercel.app/mcp` as the remote MCP ser
 - `font_weight` — `regular` or the closest available `bold` weight
 - `italic` — real italic variant with a synthetic slant fallback
 - `underline` — add a printable underline bar
+- `material_preset` — preview as orange PLA, matte PLA, silk PLA, PETG, or resin
+- `high_quality` — opt into progressive GPU path tracing; the embedded UI defaults to realtime Three.js
 
-It returns exact mesh dimensions, triangle count, a binary STL URL, and the attached interactive MCP UI. There is no hard physical-size limit: the editor and MCP UI provide convenient common-range sliders plus unrestricted numeric inputs. Models larger than 256 × 256 × 256 mm on any axis remain downloadable and receive both a visible warning and machine-readable warning fields in the MCP result.
+It returns exact mesh dimensions, triangle count, a binary STL URL, and the attached interactive MCP UI. Preview material presets affect appearance only; STL geometry remains material-agnostic for the slicer. High-quality mode progressively path traces the current preview. There is no hard physical-size limit: the editor and MCP UI provide convenient common-range sliders plus unrestricted numeric inputs. Models larger than 256 × 256 × 256 mm on any axis remain downloadable and receive both a visible warning and machine-readable warning fields in the MCP result.

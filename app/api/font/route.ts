@@ -11,7 +11,12 @@ export async function GET(request: Request) {
     italic: url.searchParams.get("italic") === "true",
   });
   const response = await fetch(variant.url, { next: { revalidate: 60 * 60 * 24 * 30 } });
-  if (!response.ok) return Response.json({ error: "Font file unavailable." }, { status: 502 });
+  if (!response.ok) {
+    return Response.json(
+      { error: "Font file unavailable." },
+      { status: 502, headers: { "Access-Control-Allow-Origin": "*" } },
+    );
+  }
   const bytes = await response.arrayBuffer();
   const isOpenType = variant.url.includes(".otf");
   return new Response(bytes, {
@@ -24,6 +29,18 @@ export async function GET(request: Request) {
       "X-Printa-Resolved-Weight": String(variant.resolvedWeight),
       "X-Printa-Resolved-Italic": String(variant.resolvedItalic),
       "X-Printa-Synthetic-Italic": String(variant.syntheticItalic),
+    },
+  });
+}
+
+export function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400",
     },
   });
 }

@@ -14,7 +14,7 @@ import { resolveGoogleFont } from "@/lib/google-fonts";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TEMPLATE_URI = "ui://widget/printa-extruded-text-v6.html";
+const TEMPLATE_URI = "ui://widget/printa-extruded-text-v8.html";
 
 function createServer(origin: string) {
   const server = new McpServer(
@@ -37,14 +37,14 @@ function createServer(origin: string) {
             domain: origin,
             csp: {
               connectDomains: [origin, "https://cdn.jsdelivr.net"],
-              resourceDomains: ["https://cdn.jsdelivr.net"],
+              resourceDomains: [origin, "https://cdn.jsdelivr.net"],
             },
           },
-          "openai/widgetDescription": "A full 3D text editor with searchable live Google Font previews, unit-aware sliders, surface controls, interactive preview, and STL download.",
+          "openai/widgetDescription": "A full 3D text editor with searchable live Google Font previews, print-material presets, progressive path tracing, unit-aware controls, and STL download.",
           "openai/widgetPrefersBorder": false,
           "openai/widgetCSP": {
             connect_domains: [origin, "https://cdn.jsdelivr.net"],
-            resource_domains: ["https://cdn.jsdelivr.net"],
+            resource_domains: [origin, "https://cdn.jsdelivr.net"],
           },
         },
       },
@@ -72,6 +72,8 @@ function createServer(origin: string) {
         font_weight: z.enum(["regular", "bold"]).default("regular").describe("Use the nearest available regular or bold Google Font weight"),
         italic: z.boolean().default(false).describe("Use the italic Google Font variant, with a synthetic slant fallback when unavailable"),
         underline: z.boolean().default(false).describe("Add a printable underline beneath the text"),
+        material_preset: z.enum(["pla-orange", "pla-matte", "pla-silk", "petg", "resin"]).default("pla-orange").describe("Preview the model with a common printable material appearance"),
+        high_quality: z.boolean().default(false).describe("Opt into progressive GPU path tracing; the MCP UI uses realtime Three.js by default"),
       },
       outputSchema: {
         text: z.string(),
@@ -97,6 +99,8 @@ function createServer(origin: string) {
         exceedsBuildVolume: z.boolean(),
         buildVolumeLimitMm: z.number(),
         warnings: z.array(z.string()),
+        materialPreset: z.enum(["pla-orange", "pla-matte", "pla-silk", "petg", "resin"]),
+        highQuality: z.boolean(),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: {
@@ -120,6 +124,8 @@ function createServer(origin: string) {
       font_weight,
       italic,
       underline,
+      material_preset,
+      high_quality,
     }) => {
       const selectedFont = await resolveGoogleFont(font);
       const options = normalizeTextModelOptions({
@@ -171,6 +177,8 @@ function createServer(origin: string) {
         exceedsBuildVolume,
         buildVolumeLimitMm: BUILD_VOLUME_WARNING_MM,
         warnings,
+        materialPreset: material_preset,
+        highQuality: high_quality,
       };
       return {
         structuredContent: result,
