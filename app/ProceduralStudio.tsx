@@ -98,6 +98,23 @@ function documentMaterial(node: ModelDocument["root"]): PrintMaterialPreset {
   return documentMaterial(node.children[0]);
 }
 
+// Fluid and cloth are on-command sims; a document containing one doesn't
+// auto-recompile on edits — the user presses Simulate to bake it.
+function documentHasSim(node: ModelDocument["root"]): boolean {
+  if (node.kind === "shape") return node.source.type === "fluid" || node.source.type === "cloth";
+  if (node.kind === "repeat") return documentHasSim(node.child);
+  return node.children.some(documentHasSim);
+}
+
+// Bump the bake token on every simulation source so the next compile re-runs it.
+function bumpBakeTokens(node: ModelDocument["root"]) {
+  if (node.kind === "shape") {
+    const source = node.source as { type: string; bake?: number };
+    if (source.type === "fluid" || source.type === "cloth" || source.type === "water") source.bake = (source.bake ?? 0) + 1;
+  } else if (node.kind === "repeat") bumpBakeTokens(node.child);
+  else node.children.forEach(bumpBakeTokens);
+}
+
 function createDimensionLabel(text: string, color: string, worldSize: number) {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
@@ -750,6 +767,7 @@ export function ProceduralStudio() {
   const [slice, setSlice] = useState(1);
   const [pathTraced, setPathTraced] = useState(false);
   const [pathSamples, setPathSamples] = useState(0);
+  const [simStale, setSimStale] = useState(false);
   const handleSamples = useCallback((samples: number) => setPathSamples(samples), []);
   const [soundOn, setSoundOn] = useState(() => typeof window === "undefined" || isSfxEnabled());
   const [sidebarWidth, setSidebarWidth] = useState(340);
@@ -801,6 +819,7 @@ export function ProceduralStudio() {
       if (!response.ok) throw new Error(data.error ?? "Model spec is invalid.");
       setResult(data);
       setDocument(data.document);
+      setSimStale(false);
       setSpec(data.spec);
       setPreview({
         key: data.stlUrl,
@@ -900,9 +919,35 @@ export function ProceduralStudio() {
       window.history.replaceState(window.history.state, "", studioUrl);
       return;
     }
+    // Fluid/cloth are on-command: stage the edit and wait for Simulate rather
+    // than auto-running an expensive scene-colliding simulation.
+    if (documentHasSim(next.root)) {
+      liveSequenceRef.current += 1;
+      setLiveUpdating(false);
+      setSimStale(true);
+      const encoded = encodeDocument(next);
+      const studioUrl = `/editor?spec=${encoded}`;
+      setResult((previous) => previous ? { ...previous, document: next, spec: nextSpec, stlUrl: `/make/model.stl?spec=${encoded}`, studioUrl, materialPreset: documentMaterial(next.root) } : previous);
+      window.history.replaceState(window.history.state, "", studioUrl);
+      return;
+    }
     setLiveUpdating(true);
     liveTimerRef.current = setTimeout(() => void compileLive(next), 170);
   }, [compileLive]);
+
+  const simulate = useCallback(() => {
+    if (!document) return;
+    const next = structuredClone(document);
+    bumpBakeTokens(next.root);
+    setSimStale(false);
+    sfx("press");
+    setDocument(next);
+    setSpec(JSON.stringify(next, null, 2));
+    liveAbortRef.current?.abort();
+    if (liveTimerRef.current) clearTimeout(liveTimerRef.current);
+    setLiveUpdating(true);
+    void compileLive(next);
+  }, [document, compileLive]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -1009,6 +1054,23 @@ export function ProceduralStudio() {
             >
               <Sparkles /> Assistant
             </Button>
+            {document && documentHasSim(document.root) && (
+              <>
+                <span className="mx-0.5 h-4 w-px bg-border" />
+                <Button
+                  variant={simStale ? "default" : "outline"}
+                  size="sm"
+                  disabled={liveUpdating}
+                  onClick={simulate}
+                  className={cn(simStale && "bg-[var(--accent-tool)] text-white hover:bg-[var(--accent-tool)]/90")}
+                  data-cuelume-press
+                  title="Run the fluid / cloth simulation"
+                >
+                  {liveUpdating ? <LoaderCircle className="animate-spin" /> : <Play fill="currentColor" />}
+                  {simStale ? "Simulate ●" : "Simulate"}
+                </Button>
+              </>
+            )}
             <span className="mx-0.5 h-4 w-px bg-border" />
             <Button variant="ghost" size="sm" onClick={openLoad} data-cuelume-press><FolderOpen /> Load</Button>
             <Button variant="ghost" size="sm" onClick={openSave} disabled={!document} data-cuelume-press><Save /> Save</Button>

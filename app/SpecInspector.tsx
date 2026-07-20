@@ -51,8 +51,9 @@ const SOURCE_TYPES: { value: SourceSpec["type"]; label: string; hint: string }[]
   { value: "primitive", label: "Basic shape", hint: "Box, cylinder, cone, sphere, torus" },
   { value: "extrude", label: "Extruded outline", hint: "A 2D path pulled into 3D" },
   { value: "revolve", label: "Spun profile", hint: "Vases, bowls, anything round" },
+  { value: "fluid", label: "Fluid (SPH)", hint: "Pour liquid that pools over the scene" },
   { value: "water", label: "Water ripple", hint: "Simulated ripple surface" },
-  { value: "cloth", label: "Cloth drape", hint: "Simulated draped fabric" },
+  { value: "cloth", label: "Cloth drape", hint: "Drape fabric over the scene" },
 ];
 
 const MODIFIER_META: Record<ModifierSpec["type"], { label: string; hint: string }> = {
@@ -169,8 +170,9 @@ function sourceDefaults(type: SourceSpec["type"]): SourceSpec {
   if (type === "primitive") return { type, shape: "cylinder", radius: 20, height: 60, segments: 64 };
   if (type === "revolve") return { type, profile: [[24, 0], [32, 30], [29, 70], [24, 110]], segments: 128, profileSegments: 96, radiusOffset: 0, wall: 2, bottomCap: true, bottomThickness: 2.4, topCap: false, topThickness: 2.4, interpolation: "catmull-rom", axis: "z" };
   if (type === "extrude") return { type, depth: 8, bevel: 0.8, bevelSegments: 3, curveSegments: 12, direction: [0, 0, 1], path: { commands: [{ op: "move", to: [-25, -25] }, { op: "line", to: [25, -25] }, { op: "line", to: [25, 25] }, { op: "line", to: [-25, 25] }, { op: "close" }], holes: [] } };
-  if (type === "water") return { type, width: 100, depth: 80, base: 3, resolution: 56, steps: 50, damping: 0.985, drops: [{ x: 0, y: 0, radius: 8, amplitude: 5 }] };
-  return { type: "cloth", width: 100, depth: 100, thickness: 1.2, resolution: 28, steps: 100, startHeight: 35, gravity: 0.18, constraintIterations: 4, pins: "corners" };
+  if (type === "water") return { type, width: 100, depth: 80, base: 3, resolution: 56, steps: 50, damping: 0.985, drops: [{ x: 0, y: 0, radius: 8, amplitude: 5 }], bake: 0 };
+  if (type === "fluid") return { type, width: 70, depth: 70, amount: 55, spawnHeight: 70, particleSize: 6, viscosity: 0.18, gravity: 9.8, steps: 220, surfaceResolution: 64, bake: 0 };
+  return { type: "cloth", width: 100, depth: 100, thickness: 1.2, resolution: 28, steps: 100, startHeight: 35, gravity: 0.18, constraintIterations: 4, pins: "corners", bake: 0 };
 }
 
 function modifierDefaults(type: ModifierSpec["type"]): ModifierSpec {
@@ -210,7 +212,7 @@ function updateNode(node: ModelNode, id: string, update: (target: ModelNode) => 
 function nodeIcon(node: ModelNode) {
   if (node.kind !== "shape") return <Layers3 size={13} />;
   if (node.source.type === "text") return <Type size={13} />;
-  if (node.source.type === "water" || node.source.type === "cloth") return <Waves size={13} />;
+  if (node.source.type === "water" || node.source.type === "cloth" || node.source.type === "fluid") return <Waves size={13} />;
   return <Box size={13} />;
 }
 
@@ -343,6 +345,24 @@ function SourceEditor({ source, fonts, update }: { source: SourceSpec; fonts: Fo
         <AdvancedData>
           <JsonField label="Drops" value={source.drops} onChange={(value) => set("drops", value)} />
         </AdvancedData>
+      </>}
+      {source.type === "fluid" && <>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">A column of liquid is released from above and pools over the other shapes in your scene. Press <strong className="text-foreground">Simulate</strong> to run it.</p>
+        <Grid3>
+          <NumberField label="Pour width" value={source.width} min={4} unit="mm" onChange={(value) => set("width", value)} />
+          <NumberField label="Pour depth" value={source.depth} min={4} unit="mm" onChange={(value) => set("depth", value)} />
+          <NumberField label="Amount" value={source.amount} min={4} unit="mm" onChange={(value) => set("amount", value)} />
+        </Grid3>
+        <Grid3>
+          <NumberField label="Drop height" value={source.spawnHeight} min={0} unit="mm" onChange={(value) => set("spawnHeight", value)} />
+          <NumberField label="Droplet size" value={source.particleSize} min={3} max={20} step={0.5} unit="mm" onChange={(value) => set("particleSize", value)} />
+          <NumberField label="Viscosity" value={source.viscosity} min={0} max={1} step={0.02} onChange={(value) => set("viscosity", value)} />
+        </Grid3>
+        <Grid3>
+          <NumberField label="Gravity" value={source.gravity} min={0.1} step={0.1} onChange={(value) => set("gravity", value)} />
+          <NumberField label="Sim steps" value={source.steps} min={20} max={600} onChange={(value) => set("steps", value)} />
+          <NumberField label="Surface detail" value={source.surfaceResolution} min={24} max={140} onChange={(value) => set("surfaceResolution", value)} />
+        </Grid3>
       </>}
       {source.type === "cloth" && <>
         <Grid3>

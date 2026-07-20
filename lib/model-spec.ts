@@ -19,6 +19,8 @@ const modulationField = { modulation: modifierModulationSchema.optional() };
 // `disabled` lets the editor mute a modifier to preview its effect without
 // deleting it; the geometry evaluator skips disabled modifiers.
 const disabledField = { disabled: z.boolean().optional().describe("When true the modifier is kept but not applied") };
+// A monotonic token the editor bumps to re-run an on-command simulation.
+const bakeField = { bake: z.number().int().min(0).default(0).describe("Simulation bake token; bump to force a fresh on-command sim") };
 
 export const interiorStrutsSchema = z.object({
   enabled: z.boolean().default(false),
@@ -206,6 +208,21 @@ const waterSourceSchema = z.object({
   steps: z.number().int().min(1).max(400).default(90),
   damping: finite.min(0.8).max(0.9999).default(0.985),
   drops: z.array(waterDropSchema).min(1).max(24),
+  ...bakeField,
+}).strict();
+
+const fluidSourceSchema = z.object({
+  type: z.literal("fluid"),
+  width: positive.default(70).describe("Spawn box width (X) the fluid drops from"),
+  depth: positive.default(70).describe("Spawn box depth (Y)"),
+  amount: positive.default(55).describe("Height of the released fluid column — the volume of liquid"),
+  spawnHeight: nonNegative.default(70).describe("Height above the scene the fluid is released from"),
+  particleSize: finite.min(3).max(20).default(6).describe("Particle spacing in mm — smaller is more detailed and slower"),
+  viscosity: finite.min(0).max(1).default(0.18).describe("0 = watery, 1 = thick/gloopy"),
+  gravity: positive.default(9.8),
+  steps: z.number().int().min(20).max(600).default(220).describe("Settling iterations"),
+  surfaceResolution: z.number().int().min(24).max(140).default(64).describe("Marching-cubes grid resolution for the printable surface"),
+  ...bakeField,
 }).strict();
 
 const clothColliderSchema = z.object({
@@ -226,6 +243,7 @@ const clothSourceSchema = z.object({
   constraintIterations: z.number().int().min(1).max(12).default(4),
   pins: z.enum(["corners", "top-edge", "none"]).default("corners"),
   collider: clothColliderSchema.optional(),
+  ...bakeField,
 }).strict();
 
 export const sourceSchema = z.discriminatedUnion("type", [
@@ -234,6 +252,7 @@ export const sourceSchema = z.discriminatedUnion("type", [
   revolveSourceSchema,
   textSourceSchema,
   waterSourceSchema,
+  fluidSourceSchema,
   clothSourceSchema,
 ]);
 

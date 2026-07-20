@@ -263,12 +263,30 @@ const addedCases = {
   "struts-cross": strutBenchmark("cross"),
   "struts-diamond": strutBenchmark("diamond"),
   "struts-radial": strutBenchmark("radial"),
+  "fluid-over-cone": {
+    version: "1.0",
+    name: "Fluid poured over a cone",
+    description: "SPH fluid settling and colliding with another shape, reconstructed to a printable surface.",
+    units: "mm",
+    root: {
+      kind: "assembly",
+      id: "scene",
+      operation: "merge",
+      modifiers: [],
+      children: [
+        { kind: "shape", id: "cone", source: { type: "primitive", shape: "cone", radius: 22, height: 40, segments: 40 }, modifiers: [], material: "pla-matte" },
+        { kind: "shape", id: "pour", source: { type: "fluid", width: 54, depth: 54, amount: 30, spawnHeight: 56, particleSize: 8, viscosity: 0.2, gravity: 9.8, steps: 70, surfaceResolution: 40, bake: 1 }, modifiers: [], material: "petg" },
+      ],
+    },
+    ...defaults,
+    metadata: { benchmark: true, coverage: "fluid,sph,scene-collision" },
+  },
 } as const satisfies Record<string, ModelDocumentInput>;
 
 export const BENCHMARK_SPECS = { ...DEMO_MODELS, ...addedCases } as const;
 
 export const REQUIRED_BENCHMARK_COVERAGE = {
-  sources: ["primitive", "extrude", "revolve", "text", "water", "cloth"],
+  sources: ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth"],
   primitives: ["box", "cylinder", "cone", "sphere", "torus"],
   modifiers: ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "smooth"],
   graph: ["shape", "assembly", "repeat"],

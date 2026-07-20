@@ -11,12 +11,15 @@ import {
   repeatedTransform,
 } from "@/lib/procedural-geometry";
 import { unionClosedGeometryParts } from "@/lib/manifold-geometry";
+import { buildSceneCollider } from "@/lib/scene-collider";
+import type { SceneCollider } from "@/lib/fluid-sim";
 import {
   parseModelDocument,
   type InteriorStrutsSpec,
   type ModelDocument,
   type ModelNode,
   type ModifierSpec,
+  type SourceSpec,
 } from "@/lib/model-spec";
 
 export type ProceduralModelStats = {
@@ -112,9 +115,31 @@ function hasRevolvedCavity(node: ModelNode): boolean {
   return node.children.some(hasRevolvedCavity);
 }
 
-async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>, interiorStruts: InteriorStrutsSpec) {
+// Sources that are simulations — they collide with the rest of the scene and
+// are excluded from the collider so they don't collide with themselves.
+function isSimSource(type: SourceSpec["type"]) {
+  return type === "water" || type === "fluid" || type === "cloth";
+}
+
+function subtreeHasSim(node: ModelNode): boolean {
+  if (node.kind === "shape") return isSimSource(node.source.type);
+  if (node.kind === "repeat") return subtreeHasSim(node.child);
+  return node.children.some(subtreeHasSim);
+}
+
+// Returns the tree with all simulation shapes removed (empty groups pruned),
+// used to build the solid collider the sims collide against.
+function pruneSimShapes(node: ModelNode): ModelNode | null {
+  if (node.kind === "shape") return isSimSource(node.source.type) ? null : node;
+  if (node.kind === "repeat") { const child = pruneSimShapes(node.child); return child ? { ...node, child } : null; }
+  const children = node.children.map(pruneSimShapes).filter((child): child is ModelNode => child !== null);
+  return children.length ? { ...node, children } : null;
+}
+
+async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>, interiorStruts: InteriorStrutsSpec, sceneCollider: SceneCollider | null, colliderFp: string) {
   const strutKey = node.source.type === "revolve" ? JSON.stringify(interiorStruts) : "";
-  const sourceKey = `source:${fingerprint(JSON.stringify(node.source), strutKey)}`;
+  const collideKey = isSimSource(node.source.type) ? colliderFp : "";
+  const sourceKey = `source:${fingerprint(JSON.stringify(node.source), strutKey, collideKey)}`;
   let geometry = cachedGeometry(sourceKey);
   if (!geometry) {
     const inflight = sourceInflight.get(sourceKey);
@@ -143,7 +168,7 @@ async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>, interi
           });
           return result.geometry;
         }
-        const parts = createSourceGeometryParts(node.source, { interiorStruts });
+        const parts = createSourceGeometryParts(node.source, { interiorStruts, sceneCollider });
         if (parts.length === 1) return parts[0];
         try { return await unionClosedGeometryParts(parts); }
         finally { parts.forEach((part) => part.dispose()); }
@@ -164,8 +189,11 @@ async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>, interi
   return geometry;
 }
 
-async function nodeGeometry(node: ModelNode, fingerprints: WeakMap<object, string>, interiorStruts: InteriorStrutsSpec): Promise<BufferGeometry> {
-  const nodeKey = `node:${fingerprint(nodeFingerprint(node, fingerprints), JSON.stringify(interiorStruts))}`;
+async function nodeGeometry(node: ModelNode, fingerprints: WeakMap<object, string>, interiorStruts: InteriorStrutsSpec, sceneCollider: SceneCollider | null = null, colliderFp = ""): Promise<BufferGeometry> {
+  // Fold the collider fingerprint into the key only for subtrees that simulate,
+  // so a scene change re-bakes the sim without busting every other node's cache.
+  const collideKey = subtreeHasSim(node) ? colliderFp : "";
+  const nodeKey = `node:${fingerprint(nodeFingerprint(node, fingerprints), JSON.stringify(interiorStruts), collideKey)}`;
   const cached = cachedGeometry(nodeKey);
   if (cached) return cached;
   const inflight = geometryInflight.get(nodeKey);
@@ -175,16 +203,16 @@ async function nodeGeometry(node: ModelNode, fingerprints: WeakMap<object, strin
   }
   const build = (async () => {
     let result: BufferGeometry;
-    if (node.kind === "shape") result = await shapeGeometry(node, interiorStruts);
+    if (node.kind === "shape") result = await shapeGeometry(node, interiorStruts, sceneCollider, colliderFp);
     else if (node.kind === "assembly") {
-      const children = await Promise.all(node.children.map((child) => nodeGeometry(child, fingerprints, interiorStruts)));
+      const children = await Promise.all(node.children.map((child) => nodeGeometry(child, fingerprints, interiorStruts, sceneCollider, colliderFp)));
       const geometry = mergeModelGeometries(children);
       children.forEach((child) => {
         if (child !== geometry) child.dispose();
       });
       result = applyTransform(applyModifiers(geometry, node.modifiers), node.transform);
     } else {
-      const source = await nodeGeometry(node.child, fingerprints, interiorStruts);
+      const source = await nodeGeometry(node.child, fingerprints, interiorStruts, sceneCollider, colliderFp);
       const copies: BufferGeometry[] = [];
       for (let index = 0; index < node.count; index += 1) {
         const copy = source.clone();
@@ -272,11 +300,9 @@ function resolveNode(node: ModelNode, quality: Quality): ModelNode {
     } else if (source.type === "water") {
       source.resolution = Math.min(source.resolution, 40);
       source.steps = Math.min(source.steps, 60);
-    } else if (source.type === "cloth") {
-      source.resolution = Math.min(source.resolution, 24);
-      source.steps = Math.min(source.steps, 70);
-      source.constraintIterations = Math.min(source.constraintIterations, 4);
     }
+    // cloth and fluid run on command, so they always bake at full quality —
+    // the editor preview must match the downloaded STL.
   }
   return next;
 }
@@ -317,7 +343,21 @@ export async function createProceduralGeometry(input: string | unknown, options:
     interiorStruts.spacing = Math.max(interiorStruts.spacing, 22);
     interiorStruts.radialSegments = Math.min(interiorStruts.radialSegments, 8);
   }
-  const geometry = finishGeometry(await nodeGeometry(renderRoot, new WeakMap(), interiorStruts), document);
+  // Build a collider from the solid (non-sim) shapes so fluid and cloth can
+  // collide with the rest of the scene.
+  let sceneCollider: SceneCollider | null = null;
+  let colliderGeometry: BufferGeometry | null = null;
+  let colliderFp = "";
+  if (subtreeHasSim(renderRoot)) {
+    const solidRoot = pruneSimShapes(renderRoot);
+    if (solidRoot) {
+      colliderFp = fingerprint(JSON.stringify(solidRoot));
+      colliderGeometry = await nodeGeometry(solidRoot, new WeakMap(), interiorStruts);
+      sceneCollider = buildSceneCollider(colliderGeometry);
+    }
+  }
+  const geometry = finishGeometry(await nodeGeometry(renderRoot, new WeakMap(), interiorStruts, sceneCollider, colliderFp), document);
+  colliderGeometry?.dispose();
   return { document, geometry };
 }
 

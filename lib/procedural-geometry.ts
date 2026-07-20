@@ -15,6 +15,9 @@ import {
 } from "three";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import type { InteriorStrutsSpec, ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
+import { simulateFluid, type SceneCollider } from "@/lib/fluid-sim";
+
+export type SourceBuildOptions = { interiorStruts?: InteriorStrutsSpec; sceneCollider?: SceneCollider | null };
 
 const DEG = Math.PI / 180;
 
@@ -377,7 +380,7 @@ function createWaterGeometry(source: Extract<SourceSpec, { type: "water" }>) {
   return solidHeightfield(source.width, source.depth, size, size, points, source.base, 0);
 }
 
-function createClothGeometry(source: Extract<SourceSpec, { type: "cloth" }>) {
+function createClothGeometry(source: Extract<SourceSpec, { type: "cloth" }>, sceneCollider?: SceneCollider | null) {
   const size = source.resolution;
   const count = size * size;
   const positions = Array.from({ length: count }, (_, index) => {
@@ -409,14 +412,23 @@ function createClothGeometry(source: Extract<SourceSpec, { type: "cloth" }>) {
   const collider = source.collider;
   const colliderCenter = collider ? new Vector3(...collider.center) : null;
   const delta = new Vector3();
+  const closestTarget = new Vector3();
+  const margin = source.thickness * 0.5 + 0.4;
+  // Cap per-step motion so a collision push-out can't inject a runaway verlet
+  // velocity and blow the sheet up.
+  const maxStep = Math.max(restX, restY) * 1.8;
   for (let step = 0; step < source.steps; step += 1) {
     for (let index = 0; index < count; index += 1) {
       if (pinned.has(index)) continue;
       const point = positions[index];
       const velocity = point.clone().sub(previous[index]).multiplyScalar(0.992);
+      const speed = velocity.length();
+      if (speed > maxStep) velocity.multiplyScalar(maxStep / speed);
       previous[index].copy(point);
       point.add(velocity);
       point.z -= source.gravity;
+      // rest on the print bed rather than free-falling
+      if (point.z < margin) { point.z = margin; previous[index].z = margin; }
     }
     for (let iteration = 0; iteration < source.constraintIterations; iteration += 1) {
       for (const [aIndex, bIndex, rest] of constraints) {
@@ -428,6 +440,7 @@ function createClothGeometry(source: Extract<SourceSpec, { type: "cloth" }>) {
         if (!pinned.has(aIndex)) a.add(correction);
         if (!pinned.has(bIndex)) b.sub(correction);
       }
+      // legacy explicit sphere collider
       if (collider && colliderCenter) {
         for (let index = 0; index < count; index += 1) {
           if (pinned.has(index)) continue;
@@ -436,21 +449,50 @@ function createClothGeometry(source: Extract<SourceSpec, { type: "cloth" }>) {
           if (length < collider.radius) positions[index].copy(colliderCenter).add(delta.multiplyScalar(collider.radius / Math.max(length, 1e-6)));
         }
       }
+      // drape over every other shape in the scene
+      if (sceneCollider) {
+        for (let index = 0; index < count; index += 1) {
+          if (pinned.has(index)) continue;
+          const point = positions[index];
+          const hit = sceneCollider.closest(point, closestTarget);
+          if (hit && (hit.inside || hit.distance < margin)) {
+            point.copy(closestTarget).addScaledVector(delta.set(hit.nx, hit.ny, hit.nz), margin);
+            // contact friction — bleed off velocity so the fabric grips the
+            // surface and drapes rather than sliding straight off.
+            previous[index].lerp(point, 0.5);
+          }
+        }
+      }
     }
   }
   const points = positions.map((point) => ({ x: point.x, y: point.y, z: point.z }));
   return solidHeightfield(source.width, source.depth, size, size, points, source.thickness);
 }
 
-export function createSourceGeometryParts(source: Exclude<SourceSpec, { type: "text" }>, options?: { interiorStruts?: InteriorStrutsSpec }) {
+function createFluidGeometry(source: Extract<SourceSpec, { type: "fluid" }>, collider?: SceneCollider | null) {
+  return simulateFluid({
+    width: source.width,
+    depth: source.depth,
+    amount: source.amount,
+    spawnHeight: source.spawnHeight,
+    particleSize: source.particleSize,
+    viscosity: source.viscosity,
+    gravity: source.gravity,
+    steps: source.steps,
+    surfaceResolution: source.surfaceResolution,
+  }, collider);
+}
+
+export function createSourceGeometryParts(source: Exclude<SourceSpec, { type: "text" }>, options?: SourceBuildOptions) {
   if (source.type === "primitive") return [createPrimitiveGeometry(source)];
   if (source.type === "extrude") return [createExtrudeGeometry(source)];
   if (source.type === "revolve") return createRevolveGeometryParts(source, options?.interiorStruts);
   if (source.type === "water") return [createWaterGeometry(source)];
-  return [createClothGeometry(source)];
+  if (source.type === "fluid") return [createFluidGeometry(source, options?.sceneCollider)];
+  return [createClothGeometry(source, options?.sceneCollider)];
 }
 
-export function createSourceGeometry(source: Exclude<SourceSpec, { type: "text" }>, options?: { interiorStruts?: InteriorStrutsSpec }) {
+export function createSourceGeometry(source: Exclude<SourceSpec, { type: "text" }>, options?: SourceBuildOptions) {
   const parts = createSourceGeometryParts(source, options);
   if (parts.length === 1) return parts[0];
   const geometry = mergeModelGeometries(parts);

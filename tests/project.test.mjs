@@ -144,6 +144,12 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(modelWidget, /GTAOPass/);
   assert.match(modelSpec, /disabledField/);
   assert.match(modelSpec, /disabled: z\.boolean\(\)\.optional/);
+  // Simulations: SPH fluid, scene collision, on-command bake
+  assert.match(modelSpec, /fluidSourceSchema/);
+  assert.match(modelSpec, /bakeField/);
+  assert.match(studio, /documentHasSim/);
+  assert.match(studio, /Simulate/);
+  assert.match(inspector, /Fluid \(SPH\)/);
   assert.match(modelSpec, /interiorStrutsSchema/);
   assert.match(modelStlRoute, /X-Printa-Interior-Struts/);
   assert.match(skillRoute, /text\/markdown/);
@@ -212,6 +218,23 @@ test("ships the /chat beginner page with inline 3D model previews", async () => 
   assert.match(chatRoute, /previewUrl/);
   assert.match(chatRoute, /stlUrl/);
   assert.match(home, /href="\/chat"/);
+});
+
+test("simulations: SPH fluid + scene collision are wired into the geometry pipeline", async () => {
+  const [fluid, geometry, mesh, collider] = await Promise.all([
+    readFile(new URL("lib/fluid-sim.ts", root), "utf8"),
+    readFile(new URL("lib/procedural-geometry.ts", root), "utf8"),
+    readFile(new URL("lib/procedural-mesh.ts", root), "utf8"),
+    readFile(new URL("lib/scene-collider.ts", root), "utf8"),
+  ]);
+  assert.match(fluid, /simulateFluid/);
+  assert.match(fluid, /MarchingCubes/);
+  assert.match(fluid, /SceneCollider/);
+  assert.match(geometry, /createFluidGeometry/);
+  assert.match(geometry, /sceneCollider/);
+  assert.match(mesh, /buildSceneCollider/);
+  assert.match(mesh, /pruneSimShapes/);
+  assert.match(collider, /MeshBVH/);
 });
 
 test("production build contains every public route", async () => {

@@ -51,7 +51,7 @@ A document is JSON with at least: version "1.0", a name, and a root node. Everyt
 - assembly: { kind:"assembly", id, operation:"merge", children:[…], modifiers?, transform? }  — fuse several shapes
 - repeat: { kind:"repeat", id, count, child, step, modifiers? }  — array copies with a per-copy transform step
 
-source types: primitive (box|cylinder|cone|sphere|torus), revolve (a [radius,height] profile spun into a vase/bowl), extrude (a 2D path pulled up), text (any Google font, extruded), water (ripple sim), cloth (drape sim).
+source types: primitive (box|cylinder|cone|sphere|torus), revolve (a [radius,height] profile spun into a vase/bowl), extrude (a 2D path pulled up), text (any Google font, extruded), water (ripple sim), fluid (an SPH liquid poured from above that pools over the other shapes in the scene), cloth (fabric draped over the other shapes). fluid and cloth are simulations: put them in an assembly alongside the solid shape(s) they should collide with, and the person runs them with the Simulate button.
 modifiers (applied top→bottom, may stack): twist, taper, radialWave (flutes), axialWave (ripples up the height), bend, noise (roughen), smooth.
 materials: pla-orange, pla-matte, pla-silk, petg, resin. Units default to mm; keep models roughly within a 256×256×256 mm build volume.
 
