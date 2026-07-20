@@ -134,6 +134,14 @@ const stepModifierSchema = z.object({
   ...disabledField,
 }).strict();
 
+const subdivideModifierSchema = z.object({
+  type: z.literal("subdivide"),
+  scheme: z.enum(["catmull-clark", "loop", "linear"]).default("catmull-clark").describe("Subdivision surface rule: Catmull-Clark, Loop triangles, or linear refinement"),
+  levels: z.number().int().min(1).max(3).default(1).describe("Subdivision levels; topology grows by roughly four times per level"),
+  boundary: z.enum(["sharp", "smooth"]).default("sharp").describe("Keep open borders fixed or smooth them with the subdivision surface"),
+  ...disabledField,
+}).strict();
+
 const smoothModifierSchema = z.object({
   type: z.literal("smooth"),
   iterations: z.number().int().min(1).max(8).default(1),
@@ -174,6 +182,7 @@ export const modifierSchema = z.discriminatedUnion("type", [
   voronoiModifierSchema,
   arrayModifierSchema,
   stepModifierSchema,
+  subdivideModifierSchema,
   smoothModifierSchema,
   drapeModifierSchema,
   meltModifierSchema,

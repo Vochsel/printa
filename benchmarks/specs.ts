@@ -128,6 +128,25 @@ const addedCases = {
     ...defaults,
     metadata: { benchmark: true, coverage: "all-modifiers" },
   },
+  "subdivision-schemes": {
+    version: "1.0",
+    name: "Subdivision schemes",
+    description: "Exercises Catmull-Clark, Loop, and linear refinement through the production model graph.",
+    units: "mm",
+    root: {
+      kind: "assembly",
+      id: "subdivision-suite",
+      operation: "merge",
+      modifiers: [],
+      children: [
+        { kind: "shape", id: "catmull-clark", source: { type: "primitive", shape: "sphere", radius: 12, segments: 12 }, modifiers: [{ type: "subdivide", scheme: "catmull-clark", levels: 2, boundary: "sharp" }], transform: { translate: [-34, 0, 0], rotate: [0, 0, 0], scale: 1 } },
+        { kind: "shape", id: "loop", source: { type: "primitive", shape: "sphere", radius: 12, segments: 12 }, modifiers: [{ type: "subdivide", scheme: "loop", levels: 2, boundary: "sharp" }], transform: { translate: [0, 0, 0], rotate: [0, 0, 0], scale: 1 } },
+        { kind: "shape", id: "linear", source: { type: "primitive", shape: "sphere", radius: 12, segments: 12 }, modifiers: [{ type: "subdivide", scheme: "linear", levels: 2, boundary: "sharp" }], transform: { translate: [34, 0, 0], rotate: [0, 0, 0], scale: 1 } },
+      ],
+    },
+    ...defaults,
+    metadata: { benchmark: true, coverage: "subdivide,catmull-clark,loop,linear" },
+  },
   "voronoi-cell-surface": {
     version: "1.0",
     name: "Voronoi cell surface",
@@ -336,10 +355,11 @@ export const BENCHMARK_SPECS = { ...DEMO_MODELS, ...addedCases } as const;
 export const REQUIRED_BENCHMARK_COVERAGE = {
   sources: ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic"],
   primitives: ["box", "cylinder", "cone", "sphere", "torus"],
-  modifiers: ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "array", "step", "smooth", "drape", "melt"],
+  modifiers: ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "subdivide", "array", "step", "smooth", "drape", "melt"],
   graph: ["shape", "assembly", "repeat"],
   curves: ["move", "line", "quadratic", "bezier", "close"],
 } as const;
 
 export const REQUIRED_STRUT_PATTERNS = ["cross", "diamond", "radial"] as const;
 export const REQUIRED_VORONOI_MODES = ["cells", "ridges", "wire"] as const;
+export const REQUIRED_SUBDIVISION_SCHEMES = ["catmull-clark", "loop", "linear"] as const;

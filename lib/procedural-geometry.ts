@@ -21,6 +21,7 @@ import { weldGeometryPositions } from "@/lib/geometry-weld";
 import type { InteriorStrutsSpec, ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
 import { simulateFluid, simulateFluidParticles, MAX_PARTICLES, type SceneCollider } from "@/lib/fluid-sim";
 import { remeshCapsuleNetwork, type CapsuleSegment } from "@/lib/volume-remesh";
+import { subdivideGeometry, subdivisionTriangleCount } from "@/lib/subdivision";
 
 export type SourceBuildOptions = { interiorStruts?: InteriorStrutsSpec; sceneCollider?: SceneCollider | null };
 
@@ -1264,6 +1265,18 @@ export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[],
   let bounds = boundsFor(geometry);
   for (const modifier of modifiers) {
     if (modifier.disabled) continue;
+    if (modifier.type === "subdivide") {
+      const triangles = Math.floor((geometry.index?.count ?? geometry.getAttribute("position").count) / 3);
+      const expanded = subdivisionTriangleCount(triangles, modifier.scheme, modifier.levels);
+      if (expanded > MAX_MODIFIER_TRIANGLES) {
+        throw new Error(`Subdivision modifier would create ${expanded.toLocaleString("en-US")} triangles; the safe limit is ${MAX_MODIFIER_TRIANGLES.toLocaleString("en-US")}.`);
+      }
+      const previous = geometry;
+      geometry = subdivideGeometry(geometry, modifier.scheme, modifier.levels, modifier.boundary);
+      if (previous !== geometry) previous.dispose();
+      bounds = boundsFor(geometry);
+      continue;
+    }
     if (modifier.type === "smooth") {
       const previous = geometry;
       const next = laplacianSmooth(geometry, modifier.iterations, modifier.strength);

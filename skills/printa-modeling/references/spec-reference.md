@@ -208,9 +208,10 @@ Modifiers run from first to last.
 - `axialWave`: radial `amplitude`, heightwise `cycles`, and `phaseDeg`.
 - `bend`: `angleDeg` and XY `directionDeg`.
 - `noise`: deterministic radial `amplitude`, feature `scale`, and integer `seed`.
+- `subdivide`: real topology refinement with `scheme: catmull-clark | loop | linear`, `levels: 1..3`, and `boundary: sharp | smooth`. Put it before displacement modifiers to give them more vertices, or after them to round the result.
 - `smooth`: Laplacian `iterations` and `strength`. Apply sparingly because it changes dimensions.
 
-Every vertex-based modifier except `smooth` may include the same optional modulation envelope:
+Vertex-deformation modifiers may include the same optional modulation envelope; topology and expansion modifiers such as `subdivide`, `array`, and `step` do not:
 
 ```yaml
 modulation:

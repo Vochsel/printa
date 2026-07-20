@@ -10,6 +10,7 @@ import {
   CornerDownRight,
   Eye,
   EyeOff,
+  GripVertical,
   Layers3,
   Plus,
   Printer,
@@ -32,6 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { JsonField, NumberField, PointListField, SelectField, TextField, ToggleField, VectorField } from "@/components/editor/fields";
 import { cn } from "@/lib/utils";
 import { sfx } from "@/lib/sfx";
+import { modifierDropIndex, reorderModifierStack, type ModifierDropSide } from "@/lib/modifier-order";
 import type { ModelDocument, ModelNode, ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
 
 type FontSummary = { id: string; family: string; category: string };
@@ -68,6 +70,7 @@ const MODIFIER_META: Record<ModifierSpec["type"], { label: string; hint: string 
   voronoi: { label: "Voronoi cells", hint: "Cell texture, ridges, or a smooth remeshed wire shell" },
   array: { label: "Transform array", hint: "Layer copies with incremental move, rotation, and scale" },
   step: { label: "Contour steps", hint: "Stack copies with a constant inset like layered lampshades" },
+  subdivide: { label: "Subdivision surface", hint: "Add real topology with Catmull-Clark, Loop, or linear refinement" },
   smooth: { label: "Smooth", hint: "Soften sharp detail" },
   drape: { label: "Drape (cloth)", hint: "Slump the shape like fabric over the scene · runs on Simulate" },
   melt: { label: "Melt (fluid)", hint: "Melt the shape into a puddle · runs on Simulate" },
@@ -107,6 +110,9 @@ const MODIFIER_FIELDS: Record<string, { label: string; step?: number; min?: numb
   distance: { label: "Layer spacing", step: 0.25, unit: "mm" },
   inset: { label: "Inset per layer", step: 0.25, unit: "mm" },
   twistDeg: { label: "Twist per layer", step: 1, unit: "°" },
+  scheme: { label: "Scheme", options: ["catmull-clark", "loop", "linear"] },
+  boundary: { label: "Open boundaries", options: ["sharp", "smooth"] },
+  "subdivide.levels": { label: "Subdivision levels", min: 1, max: 3 },
   "array.count": { label: "Copies", min: 2, max: 32 },
   "array.scale": { label: "Scale per copy", step: 0.01, min: 0.05, max: 4 },
 };
@@ -213,6 +219,7 @@ function modifierDefaults(type: ModifierSpec["type"]): ModifierSpec {
   if (type === "voronoi") return { type, amplitude: 1.5, scale: 14, seed: 1, mode: "cells", contrast: 1.4 };
   if (type === "array") return { type, count: 6, translate: [0, 0, 4], rotate: [0, 0, 8], scale: 1 };
   if (type === "step") return { type, levels: 8, axis: "z", distance: 3, inset: 1.2, twistDeg: 0 };
+  if (type === "subdivide") return { type, scheme: "catmull-clark", levels: 1, boundary: "sharp" };
   if (type === "drape") return { type, gravity: 0.3, frames: 160, stiffness: 0.9, inflate: 0.7, pins: "none", bake: 0 };
   if (type === "melt") return { type, gravity: 9.8, frames: 200, viscosity: 0.25, particleSize: 5, surfaceResolution: 64, bake: 0 };
   return { type: "smooth", iterations: 1, strength: 0.35 };
@@ -480,6 +487,8 @@ function TransformEditor({ value, onChange, title = "Position & rotation" }: { v
 export function SpecInspector({ document, fonts, onChange }: { document: ModelDocument; fonts: FontSummary[]; onChange: (document: ModelDocument) => void }) {
   const entries = useMemo(() => collectNodes(document.root), [document]);
   const [selection, setSelection] = useState<Selection>({ kind: "node", nodeId: document.root.id });
+  const [draggedModifier, setDraggedModifier] = useState<{ nodeId: string; index: number } | null>(null);
+  const [modifierDropTarget, setModifierDropTarget] = useState<{ nodeId: string; index: number; side: ModifierDropSide } | null>(null);
   const selectionExists = findNode(document.root, selection.nodeId);
   const activeSelection: Selection = selectionExists ? selection : { kind: "node", nodeId: document.root.id };
   const selectedNode = selectionExists ?? document.root;
@@ -517,6 +526,23 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
     setSelection({ kind: "modifier", nodeId: node.id, index: node.modifiers.length - 1 });
     sfx("droplet");
   });
+  const dropModifier = (nodeId: string, index: number, side: ModifierDropSide) => {
+    const source = draggedModifier;
+    setDraggedModifier(null);
+    setModifierDropTarget(null);
+    if (!source || source.nodeId !== nodeId) return;
+    const target = findNode(document.root, nodeId);
+    if (!target) return;
+    const destination = modifierDropIndex(target.modifiers.length, source.index, index, side);
+    if (destination === source.index) return;
+    mutate((draft) => {
+      updateNode(draft.root, nodeId, (node) => {
+        reorderModifierStack(node.modifiers, source.index, index, side);
+      });
+    });
+    setSelection({ kind: "modifier", nodeId, index: destination });
+    sfx("tick");
+  };
 
   const canDelete = document.root.kind === "assembly" && activeSelection.nodeId !== document.root.id;
 
@@ -579,12 +605,44 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
                       className={cn(
                         "group/mod flex h-6 items-center rounded-md pr-1 text-[11px] transition-colors hover:bg-muted",
                         modifierActive ? "bg-[var(--accent-tool-soft)] font-medium text-[var(--accent-tool)]" : "text-muted-foreground",
+                        draggedModifier?.nodeId === node.id && draggedModifier.index === index && "opacity-40",
+                        modifierDropTarget?.nodeId === node.id && modifierDropTarget.index === index && modifierDropTarget.side === "before" && "border-t-2 border-[var(--accent-tool)]",
+                        modifierDropTarget?.nodeId === node.id && modifierDropTarget.index === index && modifierDropTarget.side === "after" && "border-b-2 border-[var(--accent-tool)]",
                       )}
+                      onDragOver={(event) => {
+                        if (!draggedModifier || draggedModifier.nodeId !== node.id) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        const side = event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+                        setModifierDropTarget({ nodeId: node.id, index, side });
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        dropModifier(node.id, index, event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
+                      }}
                     >
                       <button
                         type="button"
+                        draggable
+                        aria-label={`Drag ${MODIFIER_META[modifier.type].label} to reorder`}
+                        title="Drag to reorder modifier"
+                        className="grid size-5 shrink-0 cursor-grab place-items-center text-muted-foreground/50 hover:text-foreground active:cursor-grabbing"
+                        style={{ marginLeft: `${20 + depth * 14}px` }}
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", `${node.id}:${index}`);
+                          setDraggedModifier({ nodeId: node.id, index });
+                          setSelection({ kind: "modifier", nodeId: node.id, index });
+                        }}
+                        onDragEnd={() => { setDraggedModifier(null); setModifierDropTarget(null); }}
+                      >
+                        <GripVertical size={11} />
+                      </button>
+                      <button
+                        type="button"
                         className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
-                        style={{ paddingLeft: `${26 + depth * 14}px` }}
                         onClick={() => { sfx("tick"); setSelection({ kind: "modifier", nodeId: node.id, index }); }}
                       >
                         <CornerDownRight size={10} className="shrink-0 opacity-60" />
@@ -640,23 +698,23 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
                 );
               })}
             </Grid2>
-            {selectedModifier.type !== "smooth" && selectedModifier.type !== "drape" && selectedModifier.type !== "melt" && selectedModifier.type !== "array" && selectedModifier.type !== "step" && <div className="mt-2 grid gap-2 border-t border-border pt-2">
+            {selectedModifier.type !== "smooth" && selectedModifier.type !== "drape" && selectedModifier.type !== "melt" && selectedModifier.type !== "array" && selectedModifier.type !== "step" && selectedModifier.type !== "subdivide" && <div className="mt-2 grid gap-2 border-t border-border pt-2">
               <ToggleField
                 label="Vary amount over shape"
                 detail="Normalized keyframes along a local axis"
                 value={Boolean(selectedModifier.modulation)}
                 onChange={(enabled) => mutateNode((node) => {
-                  const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" }>;
+                  const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" | "subdivide" }>;
                   if (enabled) modifier.modulation = { axis: "z", points: [[0, 0], [0.2, 1], [0.8, 1], [1, 0]], interpolation: "smoothstep" };
                   else delete modifier.modulation;
                 })}
               />
               {selectedModifier.modulation && <>
                 <Grid2>
-                  <SelectField label="Modulation axis" value={selectedModifier.modulation.axis} options={["x", "y", "z"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" }>; if (modifier.modulation) modifier.modulation.axis = value as "x" | "y" | "z"; })} />
-                  <SelectField label="Interpolation" value={selectedModifier.modulation.interpolation} options={["linear", "smoothstep"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" }>; if (modifier.modulation) modifier.modulation.interpolation = value as "linear" | "smoothstep"; })} />
+                  <SelectField label="Modulation axis" value={selectedModifier.modulation.axis} options={["x", "y", "z"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" | "subdivide" }>; if (modifier.modulation) modifier.modulation.axis = value as "x" | "y" | "z"; })} />
+                  <SelectField label="Interpolation" value={selectedModifier.modulation.interpolation} options={["linear", "smoothstep"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" | "subdivide" }>; if (modifier.modulation) modifier.modulation.interpolation = value as "linear" | "smoothstep"; })} />
                 </Grid2>
-                <PointListField label="Amount curve · normalized" columns={["Position 0–1", "Multiplier"]} value={selectedModifier.modulation.points} onChange={(points) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" }>; if (modifier.modulation) modifier.modulation.points = points; })} />
+                <PointListField label="Amount curve · normalized" columns={["Position 0–1", "Multiplier"]} value={selectedModifier.modulation.points} onChange={(points) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" | "subdivide" }>; if (modifier.modulation) modifier.modulation.points = points; })} />
               </>}
             </div>}
           </>

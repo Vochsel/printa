@@ -77,6 +77,9 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(inspector, /Structural lattice inside/);
   assert.match(inspector, /New layer/);
   assert.match(inspector, /Add modifier/);
+  assert.match(inspector, /Drag .* to reorder/);
+  assert.match(inspector, /onDragStart/);
+  assert.match(inspector, /onDrop/);
   assert.match(widget, /font-menu/);
   assert.match(widget, /extrude-segments/);
   assert.match(widget, /ui\/notifications\/tool-input/);
@@ -117,6 +120,7 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(modelSpec, /radiusOffset/);
   assert.match(modelSpec, /extrudeSegments/);
   assert.match(modelSpec, /modifierModulationSchema/);
+  assert.match(modelSpec, /subdivideModifierSchema/);
   assert.match(modelSpec, /display: z\.object/);
   assert.match(demos, /type-specimen/);
   assert.match(demos, /contour-spiral-vase/);

@@ -4,7 +4,7 @@ import test from "node:test";
 import * as opentype from "opentype.js";
 import type { BufferGeometry } from "three";
 import { DEMO_MODELS } from "../lib/demo-models";
-import { BENCHMARK_SPECS, REQUIRED_BENCHMARK_COVERAGE, REQUIRED_STRUT_PATTERNS, REQUIRED_VORONOI_MODES } from "../benchmarks/specs";
+import { BENCHMARK_SPECS, REQUIRED_BENCHMARK_COVERAGE, REQUIRED_STRUT_PATTERNS, REQUIRED_SUBDIVISION_SCHEMES, REQUIRED_VORONOI_MODES } from "../benchmarks/specs";
 import {
   decodeModelDocument,
   encodeModelDocument,
@@ -25,6 +25,7 @@ import { unionClosedGeometryParts } from "../lib/manifold-geometry";
 import { createTextGeometry, geometryStats } from "../lib/text-geometry";
 import { MODEL_STL_CORS_HEADERS } from "../lib/model-stl-cors";
 import { createBinaryStl } from "../lib/binary-stl";
+import { modifierDropIndex, reorderModifierStack } from "../lib/modifier-order";
 
 const openTypeRuntime = (opentype as typeof opentype & { default?: typeof opentype }).default ?? opentype;
 
@@ -33,6 +34,16 @@ test("model STL CORS policy permits and exposes MCP UI preview data", () => {
   assert.equal(MODEL_STL_CORS_HEADERS["Access-Control-Allow-Methods"], "GET, POST, OPTIONS");
   assert.match(MODEL_STL_CORS_HEADERS["Access-Control-Expose-Headers"], /X-Printa-Dimensions/);
   assert.match(MODEL_STL_CORS_HEADERS["Access-Control-Expose-Headers"], /X-Printa-Triangles/);
+});
+
+test("modifier drag ordering handles insertions in both directions", () => {
+  const down = ["twist", "subdivide", "noise", "smooth"];
+  assert.equal(modifierDropIndex(down.length, 0, 2, "after"), 2);
+  assert.equal(reorderModifierStack(down, 0, 2, "after"), 2);
+  assert.deepEqual(down, ["subdivide", "noise", "twist", "smooth"]);
+  assert.equal(reorderModifierStack(down, 3, 0, "before"), 0);
+  assert.deepEqual(down, ["smooth", "subdivide", "noise", "twist"]);
+  assert.equal(reorderModifierStack(down, 1, 1, "before"), 1);
 });
 
 test("binary STL encoding preserves every triangle, finite normals, and solid volume", () => {
@@ -174,7 +185,7 @@ test("publishes a machine-readable schema with every source family", () => {
   for (const source of ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic"]) {
     assert.match(schema, new RegExp(`\\b${source}\\b`));
   }
-  for (const modifier of ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "array", "step", "smooth", "drape", "melt"]) {
+  for (const modifier of ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "subdivide", "array", "step", "smooth", "drape", "melt"]) {
     assert.match(schema, new RegExp(modifier));
   }
   for (const textField of ["bevelSegments", "curveSegments", "extrudeSegments", "bevelSide", "smoothNormals", "textCase", "underline"]) {
@@ -197,6 +208,7 @@ test("benchmark matrix touches every evaluator family and validates every spec",
   }
   for (const pattern of REQUIRED_STRUT_PATTERNS) assert.match(serialized, new RegExp(`\"pattern\":\"${pattern}\"`));
   for (const mode of REQUIRED_VORONOI_MODES) assert.match(serialized, new RegExp(`\"mode\":\"${mode}\"`));
+  for (const scheme of REQUIRED_SUBDIVISION_SCHEMES) assert.match(serialized, new RegExp(`\"scheme\":\"${scheme}\"`));
 });
 
 test("rejects graphs that expand beyond the safe node limit", () => {
@@ -302,6 +314,41 @@ test("Voronoi wire mode extracts one smooth watertight cellular shell", () => {
   assert.equal(boundaryEdgeCount(wire), 0);
   assert.equal(connectedComponentCount(wire), 1, "polywire intersections should be fused by the volume remesh");
   wire.dispose();
+});
+
+test("subdivision modifier generates closed Catmull-Clark, Loop, and linear topology", () => {
+  const source = createSourceGeometry({ type: "primitive", shape: "box", width: 24, depth: 20, height: 28, segments: 8 });
+  const sourceTriangles = (source.index?.count ?? source.getAttribute("position").count) / 3;
+  const sourceBounds = geometryBounds(source);
+  const sourceVolume = meshVolume(source);
+  const expectations = [
+    { scheme: "catmull-clark" as const, multiplier: 6, smooths: true },
+    { scheme: "loop" as const, multiplier: 4, smooths: true },
+    { scheme: "linear" as const, multiplier: 4, smooths: false },
+  ];
+  for (const expectation of expectations) {
+    const subdivided = applyModifiers(source.clone(), [{ type: "subdivide", scheme: expectation.scheme, levels: 1, boundary: "sharp" }]);
+    assert.equal((subdivided.index?.count ?? 0) / 3, sourceTriangles * expectation.multiplier);
+    assert.equal(boundaryEdgeCount(subdivided), 0, `${expectation.scheme} should preserve a closed shell`);
+    assert.equal(connectedComponentCount(subdivided), 1);
+    const bounds = geometryBounds(subdivided);
+    if (expectation.smooths) assert.ok(meshVolume(subdivided) < sourceVolume * 0.99, `${expectation.scheme} should round the box inward`);
+    else {
+      assert.ok(bounds.every((value, axis) => Math.abs(value - sourceBounds[axis]) < 1e-5), "linear refinement should preserve the original surface");
+      assert.ok(Math.abs(meshVolume(subdivided) - sourceVolume) < 1e-4);
+    }
+    subdivided.dispose();
+  }
+  source.dispose();
+});
+
+test("subdivision refuses topology expansion beyond the modifier safety budget", () => {
+  const source = createSourceGeometry({ type: "primitive", shape: "sphere", radius: 24, segments: 128 });
+  assert.throws(
+    () => applyModifiers(source, [{ type: "subdivide", scheme: "catmull-clark", levels: 3, boundary: "sharp" }]),
+    /safe limit/,
+  );
+  source.dispose();
 });
 
 test("ordered modifiers materially deform geometry", () => {
