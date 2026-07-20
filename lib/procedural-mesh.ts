@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { Box3, BufferGeometry, Mesh, Vector3 } from "three";
-import { STLExporter } from "three/addons/exporters/STLExporter.js";
+import { Box3, BufferGeometry, Vector3 } from "three";
+import { createBinaryStl } from "@/lib/binary-stl";
 import { createTextServerGeometry } from "@/lib/text-mesh";
 import {
   applyModifiers,
@@ -31,6 +31,12 @@ export type ProceduralModelStats = {
 };
 
 export type ProceduralBuildOptions = { quality?: "full" | "preview" };
+
+export type ProceduralBuildTimings = {
+  geometryMs: number;
+  statsMs: number;
+  stlMs: number;
+};
 
 type GeometryCacheEntry = { geometry: BufferGeometry; bytes: number };
 const geometryCache = new Map<string, GeometryCacheEntry>();
@@ -347,8 +353,6 @@ function finishGeometry(geometry: BufferGeometry, document: ModelDocument) {
   }
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  geometry.deleteAttribute("normal");
-  geometry.computeVertexNormals();
   return geometry;
 }
 
@@ -430,14 +434,19 @@ export async function inspectProceduralModel(input: string | unknown) {
 }
 
 export async function createProceduralStl(input: string | unknown, options: ProceduralBuildOptions = {}) {
+  const geometryStartedAt = performance.now();
   const { document, geometry } = await createProceduralGeometry(input, options);
-  const stats = proceduralGeometryStats(geometry, { includeVolume: options.quality !== "preview" });
-  const mesh = new Mesh(geometry);
-  mesh.updateMatrixWorld(true);
-  const view = new STLExporter().parse(mesh, { binary: true });
-  const bytes = new Uint8Array(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+  const geometryMs = performance.now() - geometryStartedAt;
+  const statsStartedAt = performance.now();
+  const stats = proceduralGeometryStats(geometry, { includeVolume: false });
+  const statsMs = performance.now() - statsStartedAt;
+  const stlStartedAt = performance.now();
+  const encoded = createBinaryStl(geometry, { includeVolume: options.quality !== "preview" });
+  stats.volumeEstimateMm3 = encoded.volumeEstimate;
+  const bytes = encoded.bytes;
+  const stlMs = performance.now() - stlStartedAt;
   geometry.dispose();
-  return { document, stats, bytes };
+  return { document, stats, bytes, timings: { geometryMs, statsMs, stlMs } satisfies ProceduralBuildTimings };
 }
 
 export function makeProceduralFilename(name: string) {

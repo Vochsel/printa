@@ -24,6 +24,7 @@ import {
 import { unionClosedGeometryParts } from "../lib/manifold-geometry";
 import { createTextGeometry, geometryStats } from "../lib/text-geometry";
 import { MODEL_STL_CORS_HEADERS } from "../lib/model-stl-cors";
+import { createBinaryStl } from "../lib/binary-stl";
 
 const openTypeRuntime = (opentype as typeof opentype & { default?: typeof opentype }).default ?? opentype;
 
@@ -32,6 +33,29 @@ test("model STL CORS policy permits and exposes MCP UI preview data", () => {
   assert.equal(MODEL_STL_CORS_HEADERS["Access-Control-Allow-Methods"], "GET, POST, OPTIONS");
   assert.match(MODEL_STL_CORS_HEADERS["Access-Control-Expose-Headers"], /X-Printa-Dimensions/);
   assert.match(MODEL_STL_CORS_HEADERS["Access-Control-Expose-Headers"], /X-Printa-Triangles/);
+});
+
+test("binary STL encoding preserves every triangle, finite normals, and solid volume", () => {
+  const geometry = createSourceGeometry({
+    type: "primitive", shape: "box", width: 12, depth: 18, height: 24, segments: 8,
+  });
+  const expectedTriangles = Math.floor((geometry.index?.count ?? geometry.getAttribute("position").count) / 3);
+  const expectedVolume = meshVolume(geometry);
+  const encoded = createBinaryStl(geometry);
+  const view = new DataView(encoded.bytes.buffer, encoded.bytes.byteOffset, encoded.bytes.byteLength);
+  assert.equal(encoded.bytes.byteLength, 84 + expectedTriangles * 50);
+  assert.equal(view.getUint32(80, true), expectedTriangles);
+  assert.equal(encoded.triangles, expectedTriangles);
+  assert.ok(Math.abs(encoded.volumeEstimate - expectedVolume) < 1e-5);
+  for (let triangle = 0; triangle < expectedTriangles; triangle += 1) {
+    const offset = 84 + triangle * 50;
+    const normal = [view.getFloat32(offset, true), view.getFloat32(offset + 4, true), view.getFloat32(offset + 8, true)];
+    assert.ok(normal.every(Number.isFinite));
+    assert.ok(Math.abs(Math.hypot(...normal) - 1) < 1e-6);
+    assert.equal(view.getUint16(offset + 48, true), 0);
+  }
+  assert.equal(createBinaryStl(geometry, { includeVolume: false }).volumeEstimate, 0);
+  geometry.dispose();
 });
 
 async function buildNode(node: ModelNode): Promise<BufferGeometry> {
@@ -130,10 +154,10 @@ root:
 
 test("publishes a machine-readable schema with every source family", () => {
   const schema = JSON.stringify(modelSpecJsonSchema());
-  for (const source of ["primitive", "extrude", "revolve", "text", "water", "cloth"]) {
+  for (const source of ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic"]) {
     assert.match(schema, new RegExp(`\\b${source}\\b`));
   }
-  for (const modifier of ["twist", "taper", "radialWave", "bend", "noise", "smooth"]) {
+  for (const modifier of ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "array", "step", "smooth", "drape", "melt"]) {
     assert.match(schema, new RegExp(modifier));
   }
   for (const textField of ["bevelSegments", "curveSegments", "extrudeSegments", "bevelSide", "smoothNormals", "textCase", "underline"]) {
@@ -181,9 +205,9 @@ test("rejects graphs that expand beyond the safe node limit", () => {
 
 test("water and cloth solvers are deterministic", () => {
   for (const id of ["water-ripple-tile", "cloth-drape-study"] as const) {
-    const source = DEMO_MODELS[id].root;
+    const source = parseModelDocument(DEMO_MODELS[id]).root;
     assert.equal(source.kind, "shape");
-    if (source.kind !== "shape") continue;
+    if (source.kind !== "shape" || source.source.type === "text") continue;
     const first = createSourceGeometry(source.source);
     const second = createSourceGeometry(source.source);
     assert.deepEqual(Array.from(first.getAttribute("position").array), Array.from(second.getAttribute("position").array));
@@ -191,6 +215,64 @@ test("water and cloth solvers are deterministic", () => {
     first.dispose();
     second.dispose();
   }
+});
+
+test("cellular lattices and organic growth are deterministic, bounded closed solids", () => {
+  const cases = [
+    {
+      name: "cellular",
+      source: {
+        type: "cellular" as const, width: 52, depth: 48, height: 64, cellSize: 17,
+        strutDiameter: 2.2, jitter: 0.6, neighbors: 3, seed: 21, radialSegments: 8,
+      },
+      limits: [52, 48, 64],
+    },
+    {
+      name: "organic",
+      source: {
+        type: "organic" as const, width: 58, depth: 54, height: 82, trunkDiameter: 6.5,
+        levels: 4, branching: 2, angleDeg: 35, twistDeg: 137.5, taper: 0.72, seed: 13, radialSegments: 8,
+      },
+      limits: [58, 54, 82],
+    },
+  ];
+  for (const item of cases) {
+    const first = createSourceGeometry(item.source);
+    const second = createSourceGeometry(item.source);
+    assert.deepEqual(Array.from(first.getAttribute("position").array), Array.from(second.getAttribute("position").array), `${item.name} positions should be seeded`);
+    assert.deepEqual(Array.from(first.index?.array ?? []), Array.from(second.index?.array ?? []), `${item.name} topology should be seeded`);
+    assert.equal(boundaryEdgeCount(first), 0, `${item.name} should contain only closed shells`);
+    assert.ok(Math.floor((first.index?.count ?? first.getAttribute("position").count) / 3) > 100);
+    const bounds = geometryBounds(first);
+    assert.ok(bounds.every((value, index) => value <= item.limits[index] + 1e-4), `${item.name} should remain inside requested bounds`);
+    assert.ok(Math.abs(bounds[2] - item.limits[2]) < 1e-4, `${item.name} should use the requested height`);
+    first.dispose();
+    second.dispose();
+  }
+});
+
+test("Voronoi, array, and contour-step modifiers deterministically expand printable topology", () => {
+  const source = createSourceGeometry({ type: "primitive", shape: "box", width: 28, depth: 22, height: 10, segments: 8 });
+  const sourceTriangles = Math.floor((source.index?.count ?? source.getAttribute("position").count) / 3);
+
+  const voronoiSpec = { type: "voronoi" as const, amplitude: 1.1, scale: 7, seed: 9, mode: "ridges" as const, contrast: 1.6 };
+  const voronoi = applyModifiers(source.clone(), [voronoiSpec]);
+  const voronoiAgain = applyModifiers(source.clone(), [voronoiSpec]);
+  assert.ok((voronoi.index?.count ?? 0) / 3 > sourceTriangles, "Voronoi should tessellate sparse source meshes before displacement");
+  assert.deepEqual(Array.from(voronoi.getAttribute("position").array), Array.from(voronoiAgain.getAttribute("position").array));
+  assert.notDeepEqual(geometryBounds(voronoi).map((value) => value.toFixed(4)), geometryBounds(source).map((value) => value.toFixed(4)));
+  assert.equal(boundaryEdgeCount(voronoi), 0);
+
+  const arrayed = applyModifiers(source.clone(), [{ type: "array", count: 4, translate: [1, 0, 4], rotate: [0, 0, 11], scale: 0.96 }]);
+  assert.equal((arrayed.index?.count ?? 0) / 3, sourceTriangles * 4);
+  assert.equal(boundaryEdgeCount(arrayed), 0);
+
+  const stepped = applyModifiers(source.clone(), [{ type: "step", levels: 5, axis: "z", distance: 3, inset: 1.2, twistDeg: 4 }]);
+  assert.equal((stepped.index?.count ?? 0) / 3, sourceTriangles * 5);
+  assert.ok(geometryBounds(stepped)[2] > geometryBounds(source)[2]);
+  assert.equal(boundaryEdgeCount(stepped), 0);
+
+  source.dispose(); voronoi.dispose(); voronoiAgain.dispose(); arrayed.dispose(); stepped.dispose();
 });
 
 test("ordered modifiers materially deform geometry", () => {
@@ -204,6 +286,23 @@ test("ordered modifiers materially deform geometry", () => {
   assert.notDeepEqual(geometryBounds(modified).map((value) => value.toFixed(3)), original.map((value) => value.toFixed(3)));
   source.dispose();
   modified.dispose();
+});
+
+test("model merges retain indexed topology and every source triangle", () => {
+  const first = createSourceGeometry({ type: "primitive", shape: "box", width: 12, depth: 10, height: 8, segments: 8 });
+  const second = createSourceGeometry({ type: "primitive", shape: "sphere", radius: 6, segments: 24 });
+  second.translate(18, 0, 0);
+  const expectedTriangles = [first, second].reduce(
+    (total, geometry) => total + Math.floor((geometry.index?.count ?? geometry.getAttribute("position").count) / 3),
+    0,
+  );
+  const expectedVertices = first.getAttribute("position").count + second.getAttribute("position").count;
+  const merged = mergeModelGeometries([first, second]);
+  assert.ok(merged.index);
+  assert.equal(merged.index.count / 3, expectedTriangles);
+  assert.equal(merged.getAttribute("position").count, expectedVertices);
+  assert.deepEqual(geometryBounds(merged).map((value) => Number(value.toFixed(4))), [30, 12, 12]);
+  first.dispose(); second.dispose(); merged.dispose();
 });
 
 test("modifier modulation can fade a deformation across a local axis", () => {
@@ -368,7 +467,7 @@ test("the dense MCP vase regression spec evaluates to a finite printable mesh", 
   const bounds = geometryBounds(geometry);
   assert.deepEqual(bounds.map((value) => Number(value.toFixed(2))), [84.37, 84.37, 183.7]);
   assert.equal(Math.floor((geometry.index?.count ?? geometry.getAttribute("position").count) / 3), 149_888);
-  assert.ok(geometry.getAttribute("position").count > 100_000);
+  assert.ok(geometry.index && geometry.index.count > 400_000);
   geometry.dispose();
 });
 

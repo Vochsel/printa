@@ -12,6 +12,9 @@ type Sample = {
   pass: "first" | "warm" | "incremental";
   wallMs: number;
   serverMs: number;
+  geometryMs: number;
+  statsMs: number;
+  stlMs: number;
   triangles: number;
   bytes: number;
   cacheHits: number;
@@ -31,6 +34,8 @@ type BenchmarkSummary = {
   warmMedianServerMs: number;
   warmP95ServerMs: number;
   warmCacheHitRate: number;
+  incrementalMedianServerMs: number;
+  incrementalP95ServerMs: number;
   samples: Sample[];
 };
 
@@ -51,6 +56,17 @@ type HistoryPoint = Omit<BenchmarkSummary, "samples" | "baseUrl"> & {
     fullTriangles?: number;
     previewBytes?: number;
     fullBytes?: number;
+    previewFirstGeometryMs?: number;
+    previewWarmGeometryMs?: number;
+    fullFirstGeometryMs?: number;
+    fullWarmGeometryMs?: number;
+    previewFirstEncodeMs?: number;
+    previewWarmEncodeMs?: number;
+    fullFirstEncodeMs?: number;
+    fullWarmEncodeMs?: number;
+    incrementalMs?: number;
+    incrementalGeometryMs?: number;
+    incrementalEncodeMs?: number;
   }>;
 };
 
@@ -91,17 +107,36 @@ function currentRevisionMetadata(): RevisionMetadata {
 function compactCaseMetrics(samples: Sample[]) {
   const output: HistoryPoint["caseMetrics"] = {};
   for (const sample of samples) {
-    if (sample.pass === "incremental") continue;
     const metrics = output[sample.name] ??= {};
     const latency = Number(sample.serverMs.toFixed(2));
+    if (sample.pass === "incremental") {
+      metrics.incrementalMs = latency;
+      metrics.incrementalGeometryMs = Number(sample.geometryMs.toFixed(2));
+      metrics.incrementalEncodeMs = Number((sample.statsMs + sample.stlMs).toFixed(2));
+      continue;
+    }
     if (sample.quality === "preview") {
-      if (sample.pass === "first") metrics.previewFirstMs = latency;
-      else metrics.previewWarmMs = latency;
+      if (sample.pass === "first") {
+        metrics.previewFirstMs = latency;
+        metrics.previewFirstGeometryMs = Number(sample.geometryMs.toFixed(2));
+        metrics.previewFirstEncodeMs = Number((sample.statsMs + sample.stlMs).toFixed(2));
+      } else {
+        metrics.previewWarmMs = latency;
+        metrics.previewWarmGeometryMs = Number(sample.geometryMs.toFixed(2));
+        metrics.previewWarmEncodeMs = Number((sample.statsMs + sample.stlMs).toFixed(2));
+      }
       metrics.previewTriangles = sample.triangles;
       metrics.previewBytes = sample.bytes;
     } else {
-      if (sample.pass === "first") metrics.fullFirstMs = latency;
-      else metrics.fullWarmMs = latency;
+      if (sample.pass === "first") {
+        metrics.fullFirstMs = latency;
+        metrics.fullFirstGeometryMs = Number(sample.geometryMs.toFixed(2));
+        metrics.fullFirstEncodeMs = Number((sample.statsMs + sample.stlMs).toFixed(2));
+      } else {
+        metrics.fullWarmMs = latency;
+        metrics.fullWarmGeometryMs = Number(sample.geometryMs.toFixed(2));
+        metrics.fullWarmEncodeMs = Number((sample.statsMs + sample.stlMs).toFixed(2));
+      }
       metrics.fullTriangles = sample.triangles;
       metrics.fullBytes = sample.bytes;
     }
@@ -127,6 +162,8 @@ function historyPoint(summary: BenchmarkSummary, metadata: RevisionMetadata): Hi
     warmMedianServerMs: summary.warmMedianServerMs,
     warmP95ServerMs: summary.warmP95ServerMs,
     warmCacheHitRate: summary.warmCacheHitRate,
+    incrementalMedianServerMs: summary.incrementalMedianServerMs,
+    incrementalP95ServerMs: summary.incrementalP95ServerMs,
     suiteFingerprint: suiteFingerprint(summary.samples),
     caseMetrics: compactCaseMetrics(summary.samples),
   };
@@ -187,6 +224,11 @@ function parseMetric(header: string | null, key: string) {
   return Number(match?.[1] ?? 0);
 }
 
+function parseTiming(header: string | null, key: string) {
+  const match = header?.match(new RegExp(`(?:^|,\\s*)${key};dur=([0-9.]+)`));
+  return Number(match?.[1] ?? 0);
+}
+
 function percentile(values: number[], fraction: number) {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))] ?? 0;
@@ -238,13 +280,17 @@ async function build(name: string, spec: unknown, quality: Quality, pass: Sample
     throw new Error(`${name} (${quality}) dimensions ${dimensionsMm.join(" × ")} mm do not match expected ${expected.join(" × ")} mm.`);
   }
   const serverTiming = response.headers.get("Server-Timing")?.match(/dur=([0-9.]+)/);
+  const serverTimingHeader = response.headers.get("Server-Timing");
   const cache = response.headers.get("X-Printa-Cache");
   return {
     name,
     quality,
     pass,
     wallMs: performance.now() - startedAt,
-    serverMs: Number(serverTiming?.[1] ?? 0),
+    serverMs: parseTiming(serverTimingHeader, "compile") || Number(serverTiming?.[1] ?? 0),
+    geometryMs: parseTiming(serverTimingHeader, "geometry"),
+    statsMs: parseTiming(serverTimingHeader, "stats"),
+    stlMs: parseTiming(serverTimingHeader, "stl"),
     triangles,
     bytes: bytes.byteLength,
     cacheHits: parseMetric(cache, "hit"),
@@ -254,9 +300,10 @@ async function build(name: string, spec: unknown, quality: Quality, pass: Sample
 }
 
 function printTable(samples: Sample[]) {
-  const heading = ["case", "quality", "pass", "server ms", "wall ms", "triangles", "STL KB", "cache h/m"];
+  const heading = ["case", "quality", "pass", "server ms", "geometry", "encode", "wall ms", "triangles", "STL KB", "cache h/m"];
   const rows = samples.map((sample) => [
-    sample.name, sample.quality, sample.pass, sample.serverMs.toFixed(1), sample.wallMs.toFixed(1),
+    sample.name, sample.quality, sample.pass, sample.serverMs.toFixed(1), sample.geometryMs.toFixed(1),
+    (sample.statsMs + sample.stlMs).toFixed(1), sample.wallMs.toFixed(1),
     sample.triangles.toLocaleString("en-US"), (sample.bytes / 1024).toFixed(1), `${sample.cacheHits}/${sample.cacheMisses}`,
   ]);
   const widths = heading.map((value, column) => Math.max(value.length, ...rows.map((row) => row[column].length)));
@@ -280,10 +327,19 @@ async function main() {
   const incremental = JSON.parse(JSON.stringify(BENCHMARK_SPECS["deep-repeat-graph"])) as { root: { step: { translate: [number, number, number] } } };
   incremental.root.step.translate[0] += 0.15;
   samples.push(await build("deep-repeat-graph", incremental, "preview", "incremental"));
+  const incrementalText = JSON.parse(JSON.stringify(BENCHMARK_SPECS["exact-opentype-text"])) as { root: { source: { text: string } } };
+  incrementalText.root.source.text += "s";
+  samples.push(await build("exact-opentype-text", incrementalText, "preview", "incremental"));
+  const incrementalLayers = JSON.parse(JSON.stringify(BENCHMARK_SPECS["layered-contour-lamp"])) as { root: { modifiers: Array<{ type: string; rotate?: [number, number, number] }> } };
+  const arrayModifier = incrementalLayers.root.modifiers.find((modifier) => modifier.type === "array");
+  if (!arrayModifier?.rotate) throw new Error("Layered contour benchmark is missing its array modifier.");
+  arrayModifier.rotate[2] += 1;
+  samples.push(await build("layered-contour-lamp", incrementalLayers, "preview", "incremental"));
 
   printTable(samples);
   const warm = samples.filter((sample) => sample.pass === "warm");
   const first = samples.filter((sample) => sample.pass === "first");
+  const incrementalSamples = samples.filter((sample) => sample.pass === "incremental");
   const summary: BenchmarkSummary = {
     generatedAt: new Date().toISOString(),
     runtime: process.version,
@@ -296,13 +352,17 @@ async function main() {
     warmMedianServerMs: percentile(warm.map((sample) => sample.serverMs), 0.5),
     warmP95ServerMs: percentile(warm.map((sample) => sample.serverMs), 0.95),
     warmCacheHitRate: warm.reduce((sum, sample) => sum + sample.cacheHits, 0) / Math.max(1, warm.reduce((sum, sample) => sum + sample.cacheHits + sample.cacheMisses, 0)),
+    incrementalMedianServerMs: percentile(incrementalSamples.map((sample) => sample.serverMs), 0.5),
+    incrementalP95ServerMs: percentile(incrementalSamples.map((sample) => sample.serverMs), 0.95),
     samples,
   };
   const uncachedWarm = warm.filter((sample) => sample.cacheHits < 1);
   const slowWarm = warm.filter((sample) => sample.serverMs > 500);
+  const slowIncremental = incrementalSamples.filter((sample) => sample.serverMs > 100);
   if (uncachedWarm.length) throw new Error(`Warm-cache regression: ${uncachedWarm.map((sample) => `${sample.name}/${sample.quality}`).join(", ")}`);
   if (slowWarm.length) throw new Error(`Warm-build budget exceeded: ${slowWarm.map((sample) => `${sample.name}/${sample.quality} ${sample.serverMs.toFixed(1)}ms`).join(", ")}`);
-  console.log(`\n${summary.cases} cases · ${summary.builds} builds · first median ${summary.firstMedianServerMs.toFixed(1)} ms · warm median ${summary.warmMedianServerMs.toFixed(1)} ms · warm cache ${(summary.warmCacheHitRate * 100).toFixed(1)}%`);
+  if (slowIncremental.length) throw new Error(`Incremental-build budget exceeded: ${slowIncremental.map((sample) => `${sample.name}/${sample.quality} ${sample.serverMs.toFixed(1)}ms`).join(", ")}`);
+  console.log(`\n${summary.cases} cases · ${summary.builds} builds · first median ${summary.firstMedianServerMs.toFixed(1)} ms · warm median ${summary.warmMedianServerMs.toFixed(1)} ms · incremental p95 ${summary.incrementalP95ServerMs.toFixed(1)} ms · warm cache ${(summary.warmCacheHitRate * 100).toFixed(1)}%`);
   const outputDirectory = new URL("./results/", import.meta.url);
   await mkdir(outputDirectory, { recursive: true });
   await writeFile(new URL("latest.json", outputDirectory), `${JSON.stringify(summary, null, 2)}\n`);

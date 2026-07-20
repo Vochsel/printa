@@ -1,7 +1,7 @@
 import * as opentype from "opentype.js";
 import type { Font as OpenTypeFont } from "opentype.js";
 import { BufferGeometry, ExtrudeGeometry, Shape, ShapePath } from "three";
-import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { weldGeometryPositions } from "@/lib/geometry-weld";
 
 export type BevelSide = "both" | "top" | "bottom";
 export type TextCase = "original" | "uppercase" | "lowercase" | "titlecase";
@@ -180,16 +180,20 @@ export function createTextGeometry(
     return next;
   };
 
-  // OpenType.js scales outlines from the font's unitsPerEm. Iterate against the
-  // tessellated bounds so requested height remains exact across fonts, glyphs,
-  // underlines, synthetic italics, and bevel configurations.
+  // OpenType outlines scale linearly with font size while ExtrudeGeometry adds a
+  // fixed bevelSize around both Y edges. Solve those two components directly so
+  // exact-height text normally needs one corrective extrusion instead of four.
+  // The final normalization below still guarantees exact tessellated bounds.
   let fontSize = options.sizeMm;
   let geometry: BufferGeometry = extrude(fontSize);
-  for (let iteration = 0; iteration < 4; iteration += 1) {
+  const fixedBevelHeight = bevel > 0 ? bevel * 0.72 * 2 : 0;
+  for (let iteration = 0; iteration < 2; iteration += 1) {
     const bounds = geometry.boundingBox!;
     const measuredHeight = bounds.max.y - bounds.min.y;
     if (!Number.isFinite(measuredHeight) || measuredHeight <= 1e-8) break;
-    const ratio = options.sizeMm / measuredHeight;
+    const scalableHeight = measuredHeight - fixedBevelHeight;
+    const scalableTarget = options.sizeMm - fixedBevelHeight;
+    const ratio = scalableHeight > 1e-8 ? scalableTarget / scalableHeight : options.sizeMm / measuredHeight;
     if (Math.abs(1 - ratio) < 1e-5) break;
     fontSize *= ratio;
     geometry.dispose();
@@ -207,7 +211,11 @@ export function createTextGeometry(
   );
 
   geometry.deleteAttribute("normal");
-  if (options.smoothNormals) geometry = mergeVertices(geometry, 1e-4);
+  if (options.smoothNormals) {
+    const source = geometry;
+    geometry = weldGeometryPositions(source, 1e-4);
+    source.dispose();
+  }
   geometry.computeVertexNormals();
 
   geometry.computeBoundingBox();

@@ -56,9 +56,11 @@ export function getGoogleFontCatalog() {
 }
 
 export async function resolveGoogleFont(value?: string | null) {
-  const catalog = await getGoogleFontCatalog();
   const requested = value?.trim() || "Roboto";
   const slug = slugifyFont(requested);
+  const bundled = FALLBACK_FONTS.find((font) => font.id === slug || font.family.toLowerCase() === requested.toLowerCase());
+  if (bundled) return bundled;
+  const catalog = await getGoogleFontCatalog();
   return (
     catalog.find((font) => font.id === slug || font.family.toLowerCase() === requested.toLowerCase()) ??
     catalog.find((font) => font.id === "roboto") ??
