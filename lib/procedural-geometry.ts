@@ -15,7 +15,7 @@ import {
 } from "three";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import type { InteriorStrutsSpec, ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
-import { simulateFluid, type SceneCollider } from "@/lib/fluid-sim";
+import { simulateFluid, simulateFluidParticles, MAX_PARTICLES, type SceneCollider } from "@/lib/fluid-sim";
 
 export type SourceBuildOptions = { interiorStruts?: InteriorStrutsSpec; sceneCollider?: SceneCollider | null };
 
@@ -573,7 +573,120 @@ function laplacianSmooth(input: BufferGeometry, iterations: number, strength: nu
   return geometry;
 }
 
-export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[]) {
+// Treat a shape's own mesh as cloth: weld coincident verts, use the mesh edges
+// as distance constraints, then settle under gravity + scene collision. Returns
+// a welded geometry with the same topology but drooped vertices.
+function drapeGeometry(
+  input: BufferGeometry,
+  modifier: Extract<ModifierSpec, { type: "drape" }>,
+  sceneCollider?: SceneCollider | null,
+): BufferGeometry {
+  const geometry = mergeVertices(input.index ? input : mergeVertices(input));
+  const index = geometry.index;
+  const position = geometry.getAttribute("position") as BufferAttribute;
+  const count = position.count;
+  const positions = Array.from({ length: count }, (_, i) => new Vector3(position.getX(i), position.getY(i), position.getZ(i)));
+  const previous = positions.map((p) => p.clone());
+
+  const bounds = boundsFor(geometry);
+  const minZ = bounds.minZ;
+  const maxZ = minZ + bounds.height;
+  const band = Math.max(1e-3, bounds.height * 0.06);
+  const pinned = new Set<number>();
+  if (modifier.pins === "top") positions.forEach((p, i) => { if (p.z >= maxZ - band) pinned.add(i); });
+  else if (modifier.pins === "base") positions.forEach((p, i) => { if (p.z <= minZ + band) pinned.add(i); });
+
+  // Unique edges → distance constraints at their current rest length.
+  const constraints: Array<[number, number, number]> = [];
+  const seen = new Set<number>();
+  const addEdge = (a: number, b: number) => {
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    const key = lo * count + hi;
+    if (seen.has(key)) return;
+    seen.add(key);
+    constraints.push([lo, hi, positions[lo].distanceTo(positions[hi])]);
+  };
+  if (index) {
+    for (let i = 0; i < index.count; i += 3) {
+      const a = index.getX(i), b = index.getX(i + 1), c = index.getX(i + 2);
+      addEdge(a, b); addEdge(b, c); addEdge(c, a);
+    }
+  }
+
+  const stiffness = modifier.stiffness;
+  const delta = new Vector3();
+  const closestTarget = new Vector3();
+  const margin = Math.max(0.4, bounds.height * 0.01);
+  let maxRest = 0;
+  for (const [, , rest] of constraints) if (rest > maxRest) maxRest = rest;
+  const maxStep = Math.max(maxRest * 1.8, 1);
+  const iterations = 4;
+  for (let step = 0; step < modifier.frames; step += 1) {
+    for (let i = 0; i < count; i += 1) {
+      if (pinned.has(i)) continue;
+      const point = positions[i];
+      const velocity = point.clone().sub(previous[i]).multiplyScalar(0.992);
+      const speed = velocity.length();
+      if (speed > maxStep) velocity.multiplyScalar(maxStep / speed);
+      previous[i].copy(point);
+      point.add(velocity);
+      point.z -= modifier.gravity;
+      if (point.z < margin) { point.z = margin; previous[i].z = margin; }
+    }
+    for (let iter = 0; iter < iterations; iter += 1) {
+      for (const [a, b, rest] of constraints) {
+        const pa = positions[a], pb = positions[b];
+        delta.subVectors(pb, pa);
+        const length = Math.max(delta.length(), 1e-6);
+        const correction = delta.multiplyScalar((length - rest) / length * 0.5 * stiffness);
+        if (!pinned.has(a)) pa.add(correction);
+        if (!pinned.has(b)) pb.sub(correction);
+      }
+      if (sceneCollider) {
+        for (let i = 0; i < count; i += 1) {
+          if (pinned.has(i)) continue;
+          const point = positions[i];
+          const hit = sceneCollider.closest(point, closestTarget);
+          if (hit && (hit.inside || hit.distance < margin)) {
+            point.copy(closestTarget).addScaledVector(delta.set(hit.nx, hit.ny, hit.nz), margin);
+            previous[i].lerp(point, 0.5);
+          }
+        }
+      }
+    }
+  }
+  for (let i = 0; i < count; i += 1) position.setXYZ(i, positions[i].x, positions[i].y, positions[i].z);
+  position.needsUpdate = true;
+  geometry.deleteAttribute("normal");
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  return geometry;
+}
+
+// Seed SPH particles from a shape's own vertices, settle them into a puddle,
+// then reconstruct a new watertight surface — a melting-solid effect.
+function meltGeometry(
+  input: BufferGeometry,
+  modifier: Extract<ModifierSpec, { type: "melt" }>,
+  sceneCollider?: SceneCollider | null,
+): BufferGeometry {
+  const welded = mergeVertices(input);
+  const position = welded.getAttribute("position") as BufferAttribute;
+  const total = position.count;
+  const stride = Math.max(1, Math.ceil(total / MAX_PARTICLES));
+  const seeds: Vector3[] = [];
+  for (let i = 0; i < total; i += stride) seeds.push(new Vector3(position.getX(i), position.getY(i), position.getZ(i)));
+  welded.dispose();
+  return simulateFluidParticles(seeds, {
+    particleSize: modifier.particleSize,
+    viscosity: modifier.viscosity,
+    gravity: modifier.gravity,
+    steps: modifier.frames,
+    surfaceResolution: modifier.surfaceResolution,
+  }, sceneCollider);
+}
+
+export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[], sceneCollider?: SceneCollider | null) {
   let geometry = input;
   let bounds = boundsFor(geometry);
   for (const modifier of modifiers) {
@@ -582,6 +695,20 @@ export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[])
       const previous = geometry;
       const next = laplacianSmooth(geometry, modifier.iterations, modifier.strength);
       geometry = next;
+      if (previous !== geometry) previous.dispose();
+      bounds = boundsFor(geometry);
+      continue;
+    }
+    if (modifier.type === "drape") {
+      const previous = geometry;
+      geometry = drapeGeometry(geometry, modifier, sceneCollider);
+      if (previous !== geometry) previous.dispose();
+      bounds = boundsFor(geometry);
+      continue;
+    }
+    if (modifier.type === "melt") {
+      const previous = geometry;
+      geometry = meltGeometry(geometry, modifier, sceneCollider);
       if (previous !== geometry) previous.dispose();
       bounds = boundsFor(geometry);
       continue;

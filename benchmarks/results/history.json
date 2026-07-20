@@ -4237,5 +4237,276 @@
         "fullWarmMs": 1.7
       }
     }
+  },
+  {
+    "generatedAt": "2026-07-20T04:57:18.926Z",
+    "revision": "61cc1d6bfaf3+395eb266",
+    "commit": "61cc1d6bfaf3",
+    "subject": "Add on-command SPH fluid + scene-colliding cloth simulations",
+    "branch": "main",
+    "dirty": true,
+    "target": "local",
+    "runtime": "v25.8.1",
+    "platform": "darwin-arm64",
+    "cases": 25,
+    "builds": 101,
+    "firstMedianServerMs": 42.6,
+    "firstP95ServerMs": 346.3,
+    "warmMedianServerMs": 7,
+    "warmP95ServerMs": 24.7,
+    "warmCacheHitRate": 1,
+    "suiteFingerprint": "3274a0eba31f",
+    "caseMetrics": {
+      "type-specimen": {
+        "previewFirstMs": 1402.8,
+        "previewTriangles": 8700,
+        "previewBytes": 435084,
+        "previewWarmMs": 6.9,
+        "fullFirstMs": 75.7,
+        "fullTriangles": 15760,
+        "fullBytes": 788084,
+        "fullWarmMs": 4.5
+      },
+      "contour-spiral-vase": {
+        "previewFirstMs": 42.6,
+        "previewTriangles": 36288,
+        "previewBytes": 1814484,
+        "previewWarmMs": 11.1,
+        "fullFirstMs": 64.8,
+        "fullTriangles": 102816,
+        "fullBytes": 5140884,
+        "fullWarmMs": 28.9
+      },
+      "zenith-twist": {
+        "previewFirstMs": 18.3,
+        "previewTriangles": 27648,
+        "previewBytes": 1382484,
+        "previewWarmMs": 7,
+        "fullFirstMs": 52.4,
+        "fullTriangles": 92880,
+        "fullBytes": 4644084,
+        "fullWarmMs": 22.5
+      },
+      "fluted-bud-vase": {
+        "previewFirstMs": 85,
+        "previewTriangles": 32480,
+        "previewBytes": 1624084,
+        "previewWarmMs": 15.6,
+        "fullFirstMs": 58.2,
+        "fullTriangles": 86016,
+        "fullBytes": 4300884,
+        "fullWarmMs": 23.4
+      },
+      "ripple-column-vase": {
+        "previewFirstMs": 17.5,
+        "previewTriangles": 27264,
+        "previewBytes": 1363284,
+        "previewWarmMs": 6.9,
+        "fullFirstMs": 60.1,
+        "fullTriangles": 101520,
+        "fullBytes": 5076084,
+        "fullWarmMs": 24.7
+      },
+      "spline-petal-dish": {
+        "previewFirstMs": 4,
+        "previewTriangles": 764,
+        "previewBytes": 38284,
+        "previewWarmMs": 0.7,
+        "fullFirstMs": 10.9,
+        "fullTriangles": 1916,
+        "fullBytes": 95884,
+        "fullWarmMs": 1.1
+      },
+      "primitive-totem": {
+        "previewFirstMs": 26.3,
+        "previewTriangles": 8704,
+        "previewBytes": 435284,
+        "previewWarmMs": 6.3,
+        "fullFirstMs": 39.2,
+        "fullTriangles": 19200,
+        "fullBytes": 960084,
+        "fullWarmMs": 7.9
+      },
+      "water-ripple-tile": {
+        "previewFirstMs": 5.2,
+        "previewTriangles": 6396,
+        "previewBytes": 319884,
+        "previewWarmMs": 1.7,
+        "fullFirstMs": 10.6,
+        "fullTriangles": 16380,
+        "fullBytes": 819084,
+        "fullWarmMs": 4
+      },
+      "cloth-drape-study": {
+        "previewFirstMs": 123.1,
+        "previewTriangles": 3596,
+        "previewBytes": 179884,
+        "previewWarmMs": 1,
+        "fullFirstMs": 1,
+        "fullTriangles": 3596,
+        "fullBytes": 179884,
+        "fullWarmMs": 1.3
+      },
+      "modulated-offset-vase": {
+        "previewFirstMs": 25.8,
+        "previewTriangles": 27840,
+        "previewBytes": 1392084,
+        "previewWarmMs": 13,
+        "fullFirstMs": 41.1,
+        "fullTriangles": 52992,
+        "fullBytes": 2649684,
+        "fullWarmMs": 13
+      },
+      "all-primitives-assembly": {
+        "previewFirstMs": 10.1,
+        "previewTriangles": 6540,
+        "previewBytes": 327084,
+        "previewWarmMs": 3.6,
+        "fullFirstMs": 9.6,
+        "fullTriangles": 8220,
+        "fullBytes": 411084,
+        "fullWarmMs": 3.6
+      },
+      "modifier-gauntlet": {
+        "previewFirstMs": 25.3,
+        "previewTriangles": 3968,
+        "previewBytes": 198484,
+        "previewWarmMs": 2.1,
+        "fullFirstMs": 32.2,
+        "fullTriangles": 9024,
+        "fullBytes": 451284,
+        "fullWarmMs": 3.5
+      },
+      "extrude-hole-curves": {
+        "previewFirstMs": 3.2,
+        "previewTriangles": 800,
+        "previewBytes": 40084,
+        "previewWarmMs": 0.7,
+        "fullFirstMs": 8.9,
+        "fullTriangles": 3648,
+        "fullBytes": 182484,
+        "fullWarmMs": 2.7
+      },
+      "deep-repeat-graph": {
+        "previewFirstMs": 33.8,
+        "previewTriangles": 17760,
+        "previewBytes": 888084,
+        "previewWarmMs": 8.7,
+        "fullFirstMs": 9.4,
+        "fullTriangles": 17760,
+        "fullBytes": 888084,
+        "fullWarmMs": 9.7
+      },
+      "styled-google-text": {
+        "previewFirstMs": 99,
+        "previewTriangles": 20692,
+        "previewBytes": 1034684,
+        "previewWarmMs": 7.4,
+        "fullFirstMs": 346.3,
+        "fullTriangles": 79376,
+        "fullBytes": 3968884,
+        "fullWarmMs": 20.8
+      },
+      "segmented-google-text": {
+        "previewFirstMs": 106.6,
+        "previewTriangles": 23632,
+        "previewBytes": 1181684,
+        "previewWarmMs": 7,
+        "fullFirstMs": 174.2,
+        "fullTriangles": 47720,
+        "fullBytes": 2386084,
+        "fullWarmMs": 12.1
+      },
+      "exact-sphere-centimetres": {
+        "previewFirstMs": 1.2,
+        "previewTriangles": 1258,
+        "previewBytes": 62984,
+        "previewWarmMs": 0.7,
+        "fullFirstMs": 0.7,
+        "fullTriangles": 1258,
+        "fullBytes": 62984,
+        "fullWarmMs": 0.6
+      },
+      "exact-opentype-text": {
+        "previewFirstMs": 54.6,
+        "previewTriangles": 11732,
+        "previewBytes": 586684,
+        "previewWarmMs": 3.2,
+        "fullFirstMs": 105.8,
+        "fullTriangles": 24996,
+        "fullBytes": 1249884,
+        "fullWarmMs": 7.3
+      },
+      "tall-marble-mcp-vase": {
+        "previewFirstMs": 33.1,
+        "previewTriangles": 29696,
+        "previewBytes": 1484884,
+        "previewWarmMs": 12.2,
+        "fullFirstMs": 142.9,
+        "fullTriangles": 149888,
+        "fullBytes": 7494484,
+        "fullWarmMs": 57.5
+      },
+      "struts-cross": {
+        "previewFirstMs": 208.6,
+        "previewTriangles": 28056,
+        "previewBytes": 1402884,
+        "previewWarmMs": 16.5,
+        "fullFirstMs": 186.7,
+        "fullTriangles": 36280,
+        "fullBytes": 1814084,
+        "fullWarmMs": 14
+      },
+      "struts-diamond": {
+        "previewFirstMs": 283.8,
+        "previewTriangles": 29896,
+        "previewBytes": 1494884,
+        "previewWarmMs": 8.6,
+        "fullFirstMs": 446,
+        "fullTriangles": 38696,
+        "fullBytes": 1934884,
+        "fullWarmMs": 17
+      },
+      "struts-radial": {
+        "previewFirstMs": 155.2,
+        "previewTriangles": 28460,
+        "previewBytes": 1423084,
+        "previewWarmMs": 12.5,
+        "fullFirstMs": 209,
+        "fullTriangles": 37018,
+        "fullBytes": 1850984,
+        "fullWarmMs": 10.3
+      },
+      "fluid-over-cone": {
+        "previewFirstMs": 157.3,
+        "previewTriangles": 3100,
+        "previewBytes": 155084,
+        "previewWarmMs": 2.4,
+        "fullFirstMs": 2.5,
+        "fullTriangles": 3100,
+        "fullBytes": 155084,
+        "fullWarmMs": 2.5
+      },
+      "drape-modifier": {
+        "previewFirstMs": 82.4,
+        "previewTriangles": 2220,
+        "previewBytes": 111084,
+        "previewWarmMs": 2.2,
+        "fullFirstMs": 1.9,
+        "fullTriangles": 2220,
+        "fullBytes": 111084,
+        "fullWarmMs": 1.9
+      },
+      "melt-modifier": {
+        "previewFirstMs": 54.9,
+        "previewTriangles": 2804,
+        "previewBytes": 140284,
+        "previewWarmMs": 2.5,
+        "fullFirstMs": 2.5,
+        "fullTriangles": 2804,
+        "fullBytes": 140284,
+        "fullWarmMs": 2.3
+      }
+    }
   }
 ]

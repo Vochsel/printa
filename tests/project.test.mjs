@@ -237,6 +237,43 @@ test("simulations: SPH fluid + scene collision are wired into the geometry pipel
   assert.match(collider, /MeshBVH/);
 });
 
+test("simulations as modifiers: drape (cloth) + melt (fluid) run on a shape's own geometry", async () => {
+  const [modelSpec, fluid, geometry, mesh, inspector, studio, specs] = await Promise.all([
+    readFile(new URL("lib/model-spec.ts", root), "utf8"),
+    readFile(new URL("lib/fluid-sim.ts", root), "utf8"),
+    readFile(new URL("lib/procedural-geometry.ts", root), "utf8"),
+    readFile(new URL("lib/procedural-mesh.ts", root), "utf8"),
+    readFile(new URL("app/SpecInspector.tsx", root), "utf8"),
+    readFile(new URL("app/ProceduralStudio.tsx", root), "utf8"),
+    readFile(new URL("benchmarks/specs.ts", root), "utf8"),
+  ]);
+  // schema: drape + melt are modifiers
+  assert.match(modelSpec, /drapeModifierSchema/);
+  assert.match(modelSpec, /meltModifierSchema/);
+  // solver: melt reseeds arbitrary particles; geometry applies both
+  assert.match(fluid, /simulateFluidParticles/);
+  assert.match(geometry, /drapeGeometry/);
+  assert.match(geometry, /meltGeometry/);
+  assert.match(geometry, /applyModifiers\(input: BufferGeometry, modifiers: ModifierSpec\[\], sceneCollider/);
+  // pipeline: sim modifiers collide with the scene and force full-quality bakes
+  assert.match(mesh, /hasSimModifier/);
+  // editor: registered + on-command gating detects sim modifiers
+  assert.match(inspector, /Drape \(cloth\)/);
+  assert.match(inspector, /Melt \(fluid\)/);
+  assert.match(studio, /hasSimModifier/);
+  // benchmark coverage
+  assert.match(specs, /"drape-modifier"/);
+  assert.match(specs, /"melt-modifier"/);
+});
+
+test("step-by-step simulation: a frame count control steps and re-bakes sims", async () => {
+  const studio = await readFile(new URL("app/ProceduralStudio.tsx", root), "utf8");
+  assert.match(studio, /simFrameCount/);
+  assert.match(studio, /frameDelta/);
+  assert.match(studio, /simulate\(-10\)/);
+  assert.match(studio, /simulate\(10\)/);
+});
+
 test("production build contains every public route", async () => {
   const assets = await Promise.all([
     access(new URL(".next/server/app/page.js", root)),

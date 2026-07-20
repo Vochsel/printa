@@ -281,6 +281,39 @@ const addedCases = {
     ...defaults,
     metadata: { benchmark: true, coverage: "fluid,sph,scene-collision" },
   },
+  "drape-modifier": {
+    version: "1.0",
+    name: "Box draped over a sphere",
+    description: "Drape modifier simulating a shape's own mesh as cloth, colliding with another shape.",
+    units: "mm",
+    root: {
+      kind: "assembly",
+      id: "scene",
+      operation: "merge",
+      modifiers: [],
+      children: [
+        { kind: "shape", id: "ball", source: { type: "primitive", shape: "sphere", radius: 18, segments: 48 }, modifiers: [], material: "pla-matte" },
+        { kind: "shape", id: "sheet", source: { type: "primitive", shape: "box", width: 60, depth: 60, height: 3, segments: 14 }, modifiers: [{ type: "drape", gravity: 0.4, frames: 90, stiffness: 0.9, pins: "none", bake: 1 }], transform: { translate: [0, 0, 46], rotate: [0, 0, 0], scale: 1 }, material: "petg" },
+      ],
+    },
+    ...defaults,
+    metadata: { benchmark: true, coverage: "drape,cloth-modifier,scene-collision" },
+  },
+  "melt-modifier": {
+    version: "1.0",
+    name: "Melted box",
+    description: "Melt modifier reseeding a shape's mesh as SPH fluid and reconstructing a puddle.",
+    units: "mm",
+    root: {
+      kind: "shape",
+      id: "blob",
+      source: { type: "primitive", shape: "box", width: 34, depth: 34, height: 40, segments: 6 },
+      modifiers: [{ type: "melt", gravity: 9.8, frames: 90, viscosity: 0.25, particleSize: 7, surfaceResolution: 44, bake: 1 }],
+      material: "pla-silk",
+    },
+    ...defaults,
+    metadata: { benchmark: true, coverage: "melt,fluid-modifier,sph" },
+  },
 } as const satisfies Record<string, ModelDocumentInput>;
 
 export const BENCHMARK_SPECS = { ...DEMO_MODELS, ...addedCases } as const;
@@ -288,7 +321,7 @@ export const BENCHMARK_SPECS = { ...DEMO_MODELS, ...addedCases } as const;
 export const REQUIRED_BENCHMARK_COVERAGE = {
   sources: ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth"],
   primitives: ["box", "cylinder", "cone", "sphere", "torus"],
-  modifiers: ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "smooth"],
+  modifiers: ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "smooth", "drape", "melt"],
   graph: ["shape", "assembly", "repeat"],
   curves: ["move", "line", "quadratic", "bezier", "close"],
 } as const;

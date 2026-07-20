@@ -121,16 +121,30 @@ function isSimSource(type: SourceSpec["type"]) {
   return type === "water" || type === "fluid" || type === "cloth";
 }
 
+// Modifiers that run a scene-colliding simulation on the shape's own geometry.
+function hasSimModifier(modifiers: ModifierSpec[]) {
+  return modifiers.some((m) => m.type === "drape" || m.type === "melt");
+}
+
+// Whether a node itself is a simulation (sim source or a shape/group carrying a
+// sim modifier) — such nodes collide with the scene and are pruned from it.
+function nodeIsSim(node: ModelNode): boolean {
+  if (node.kind === "shape") return isSimSource(node.source.type) || hasSimModifier(node.modifiers);
+  return hasSimModifier(node.modifiers);
+}
+
 function subtreeHasSim(node: ModelNode): boolean {
-  if (node.kind === "shape") return isSimSource(node.source.type);
+  if (nodeIsSim(node)) return true;
+  if (node.kind === "shape") return false;
   if (node.kind === "repeat") return subtreeHasSim(node.child);
   return node.children.some(subtreeHasSim);
 }
 
-// Returns the tree with all simulation shapes removed (empty groups pruned),
+// Returns the tree with all simulation nodes removed (empty groups pruned),
 // used to build the solid collider the sims collide against.
 function pruneSimShapes(node: ModelNode): ModelNode | null {
-  if (node.kind === "shape") return isSimSource(node.source.type) ? null : node;
+  if (nodeIsSim(node)) return null;
+  if (node.kind === "shape") return node;
   if (node.kind === "repeat") { const child = pruneSimShapes(node.child); return child ? { ...node, child } : null; }
   const children = node.children.map(pruneSimShapes).filter((child): child is ModelNode => child !== null);
   return children.length ? { ...node, children } : null;
@@ -180,10 +194,11 @@ async function shapeGeometry(node: Extract<ModelNode, { kind: "shape" }>, interi
   if (!geometry) throw new Error("Could not evaluate shape source.");
   if (!geometryCache.has(sourceKey)) cacheGeometry(sourceKey, geometry);
   if (node.modifiers.length) {
-    const modifierKey = `modifiers:${fingerprint(sourceKey, JSON.stringify(node.modifiers))}`;
+    const modCollideKey = hasSimModifier(node.modifiers) ? colliderFp : "";
+    const modifierKey = `modifiers:${fingerprint(sourceKey, JSON.stringify(node.modifiers), modCollideKey)}`;
     const modified = cachedGeometry(modifierKey);
     if (modified) { geometry.dispose(); geometry = modified; }
-    else { geometry = applyModifiers(geometry, node.modifiers); cacheGeometry(modifierKey, geometry); }
+    else { geometry = applyModifiers(geometry, node.modifiers, sceneCollider); cacheGeometry(modifierKey, geometry); }
   }
   applyTransform(geometry, node.transform);
   return geometry;
@@ -210,7 +225,7 @@ async function nodeGeometry(node: ModelNode, fingerprints: WeakMap<object, strin
       children.forEach((child) => {
         if (child !== geometry) child.dispose();
       });
-      result = applyTransform(applyModifiers(geometry, node.modifiers), node.transform);
+      result = applyTransform(applyModifiers(geometry, node.modifiers, sceneCollider), node.transform);
     } else {
       const source = await nodeGeometry(node.child, fingerprints, interiorStruts, sceneCollider, colliderFp);
       const copies: BufferGeometry[] = [];
@@ -224,7 +239,7 @@ async function nodeGeometry(node: ModelNode, fingerprints: WeakMap<object, strin
       copies.forEach((copy) => {
         if (copy !== geometry) copy.dispose();
       });
-      result = applyTransform(applyModifiers(geometry, node.modifiers), node.transform);
+      result = applyTransform(applyModifiers(geometry, node.modifiers, sceneCollider), node.transform);
     }
     cacheGeometry(nodeKey, result);
     return result;
@@ -279,6 +294,9 @@ function resolveNode(node: ModelNode, quality: Quality): ModelNode {
   if (next.kind === "assembly") next.children = next.children.map((child) => resolveNode(child, quality));
   if (next.kind === "repeat") next.child = resolveNode(next.child, quality);
   if (next.kind !== "shape") return next;
+  // A drape/melt modifier bakes on command from the shape's own mesh, so the
+  // preview must build the same geometry the download will — never a coarser one.
+  if (hasSimModifier(next.modifiers)) quality = "full";
   const source = next.source;
   const maxLobes = activeModifierMax(next.modifiers, "radialWave", "count");
   const maxCycles = activeModifierMax(next.modifiers, "axialWave", "cycles");

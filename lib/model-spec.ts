@@ -111,6 +111,28 @@ const smoothModifierSchema = z.object({
   ...disabledField,
 }).strict();
 
+// Simulation modifiers — run on the shape's own geometry, on command.
+const drapeModifierSchema = z.object({
+  type: z.literal("drape"),
+  gravity: positive.default(0.3).describe("Downward pull per frame"),
+  frames: z.number().int().min(1).max(600).default(160).describe("Simulation frames to run"),
+  stiffness: finite.min(0).max(1).default(0.9).describe("How rigid the fabric edges are"),
+  pins: z.enum(["top", "base", "none"]).default("none").describe("Vertices held in place"),
+  ...disabledField,
+  ...bakeField,
+}).strict();
+
+const meltModifierSchema = z.object({
+  type: z.literal("melt"),
+  gravity: positive.default(9.8),
+  frames: z.number().int().min(1).max(600).default(200).describe("Simulation frames to run"),
+  viscosity: finite.min(0).max(1).default(0.25).describe("0 = runny, 1 = gloopy"),
+  particleSize: finite.min(2).max(20).default(5).describe("Melt droplet size in mm"),
+  surfaceResolution: z.number().int().min(24).max(140).default(64),
+  ...disabledField,
+  ...bakeField,
+}).strict();
+
 export const modifierSchema = z.discriminatedUnion("type", [
   twistModifierSchema,
   taperModifierSchema,
@@ -119,6 +141,8 @@ export const modifierSchema = z.discriminatedUnion("type", [
   bendModifierSchema,
   noiseModifierSchema,
   smoothModifierSchema,
+  drapeModifierSchema,
+  meltModifierSchema,
 ]);
 
 const curveCommandSchema = z.discriminatedUnion("op", [

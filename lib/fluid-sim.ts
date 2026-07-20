@@ -31,9 +31,49 @@ export type SceneCollider = {
   closest: (point: Vector3, target: Vector3) => { distance: number; inside: boolean; nx: number; ny: number; nz: number } | null;
 };
 
-const MAX_PARTICLES = 6500;
+export const MAX_PARTICLES = 6500;
+
+/** SPH solve parameters shared by the fluid source and the melt modifier. */
+export type FluidSolveParams = {
+  particleSize: number;
+  viscosity: number;
+  gravity: number;
+  steps: number;
+  surfaceResolution: number;
+};
 
 export function simulateFluid(params: FluidParams, collider?: SceneCollider | null): BufferGeometry {
+  const spacing = params.particleSize;
+
+  // --- spawn particles as a released grid column ---
+  const nx = Math.max(2, Math.round(params.width / spacing));
+  const ny = Math.max(2, Math.round(params.depth / spacing));
+  let nz = Math.max(2, Math.round(params.amount / spacing));
+  while (nx * ny * nz > MAX_PARTICLES && nz > 2) nz -= 1;
+  const positions: Vector3[] = [];
+  for (let iz = 0; iz < nz; iz += 1)
+    for (let iy = 0; iy < ny; iy += 1)
+      for (let ix = 0; ix < nx; ix += 1) {
+        const jitter = ((((ix * 73856093) ^ (iy * 19349663) ^ (iz * 83492791)) >>> 0) % 1000) / 1000 - 0.5;
+        positions.push(new Vector3(
+          (ix / Math.max(1, nx - 1) - 0.5) * params.width + jitter * spacing * 0.25,
+          (iy / Math.max(1, ny - 1) - 0.5) * params.depth + jitter * spacing * 0.25,
+          params.spawnHeight + iz * spacing,
+        ));
+      }
+  return simulateFluidParticles(positions, params, collider);
+}
+
+/**
+ * Settle an arbitrary set of seed particles under SPH + gravity + scene
+ * collision, then reconstruct a watertight surface. The fluid source seeds a
+ * poured column; the melt modifier seeds particles from a shape's own mesh.
+ */
+export function simulateFluidParticles(
+  positions: Vector3[],
+  params: FluidSolveParams,
+  collider?: SceneCollider | null,
+): BufferGeometry {
   const spacing = params.particleSize;
   const h = spacing * 1.7;
   const h2 = h * h;
@@ -44,25 +84,13 @@ export function simulateFluid(params: FluidParams, collider?: SceneCollider | nu
   const gravity = params.gravity;
   const radius = spacing * 0.5;
 
-  // --- spawn particles as a released grid column ---
-  const nx = Math.max(2, Math.round(params.width / spacing));
-  const ny = Math.max(2, Math.round(params.depth / spacing));
-  let nz = Math.max(2, Math.round(params.amount / spacing));
-  while (nx * ny * nz > MAX_PARTICLES && nz > 2) nz -= 1;
-  const positions: Vector3[] = [];
-  const velocities: Vector3[] = [];
-  for (let iz = 0; iz < nz; iz += 1)
-    for (let iy = 0; iy < ny; iy += 1)
-      for (let ix = 0; ix < nx; ix += 1) {
-        const jitter = ((((ix * 73856093) ^ (iy * 19349663) ^ (iz * 83492791)) >>> 0) % 1000) / 1000 - 0.5;
-        positions.push(new Vector3(
-          (ix / Math.max(1, nx - 1) - 0.5) * params.width + jitter * spacing * 0.25,
-          (iy / Math.max(1, ny - 1) - 0.5) * params.depth + jitter * spacing * 0.25,
-          params.spawnHeight + iz * spacing,
-        ));
-        velocities.push(new Vector3());
-      }
+  const velocities: Vector3[] = positions.map(() => new Vector3());
   const count = positions.length;
+  // soft outer bound so nothing escapes to infinity, from the seed extent
+  const bmin = new Vector3(Infinity, Infinity, Infinity);
+  const bmax = new Vector3(-Infinity, -Infinity, -Infinity);
+  for (const p of positions) { bmin.min(p); bmax.max(p); }
+  const spread = Math.max(bmax.x - bmin.x, bmax.y - bmin.y, Math.abs(bmax.x), Math.abs(bmax.y), 1) * 1.6 + 80;
   const density = new Float64Array(count);
   const pressure = new Float64Array(count);
 
@@ -101,7 +129,6 @@ export function simulateFluid(params: FluidParams, collider?: SceneCollider | nu
   const accel = new Vector3();
   const fx = new Vector3();
   const fvisc = new Vector3();
-  const spread = Math.max(params.width, params.depth) * 1.6 + 80;
 
   for (let step = 0; step < params.steps; step += 1) {
     rebuildGrid();

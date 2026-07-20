@@ -64,6 +64,8 @@ const MODIFIER_META: Record<ModifierSpec["type"], { label: string; hint: string 
   bend: { label: "Bend", hint: "Lean the shape over" },
   noise: { label: "Roughen", hint: "Organic bumpy texture" },
   smooth: { label: "Smooth", hint: "Soften sharp detail" },
+  drape: { label: "Drape (cloth)", hint: "Slump the shape like fabric over the scene · runs on Simulate" },
+  melt: { label: "Melt (fluid)", hint: "Melt the shape into a puddle · runs on Simulate" },
 };
 
 const MODIFIER_FIELDS: Record<string, { label: string; step?: number; min?: number; max?: number; unit?: string; options?: readonly string[] }> = {
@@ -83,6 +85,13 @@ const MODIFIER_FIELDS: Record<string, { label: string; step?: number; min?: numb
   seed: { label: "Seed", min: 0 },
   iterations: { label: "Passes", min: 1, max: 10 },
   strength: { label: "Strength", step: 0.05, min: 0, max: 1 },
+  frames: { label: "Frames", min: 1, max: 600 },
+  gravity: { label: "Gravity", step: 0.1, min: 0 },
+  stiffness: { label: "Stiffness", step: 0.05, min: 0, max: 1 },
+  pins: { label: "Pinned", options: ["none", "top", "base"] },
+  viscosity: { label: "Viscosity", step: 0.05, min: 0, max: 1 },
+  particleSize: { label: "Droplet size", step: 0.5, min: 2, max: 20, unit: "mm" },
+  surfaceResolution: { label: "Surface detail", min: 24, max: 140 },
 };
 
 const fontPreviewCache = new Map<string, Promise<void>>();
@@ -182,6 +191,8 @@ function modifierDefaults(type: ModifierSpec["type"]): ModifierSpec {
   if (type === "axialWave") return { type, amplitude: 2, cycles: 3, phaseDeg: 0 };
   if (type === "bend") return { type, angleDeg: 20, directionDeg: 0 };
   if (type === "noise") return { type, amplitude: 1, scale: 12, seed: 1 };
+  if (type === "drape") return { type, gravity: 0.3, frames: 160, stiffness: 0.9, pins: "none", bake: 0 };
+  if (type === "melt") return { type, gravity: 9.8, frames: 200, viscosity: 0.25, particleSize: 5, surfaceResolution: 64, bake: 0 };
   return { type: "smooth", iterations: 1, strength: 0.35 };
 }
 
@@ -551,7 +562,7 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
             </SectionHead>
             <p className="mb-2 text-[10px] text-muted-foreground">{selectedModifier.disabled ? "Muted — not applied to the model right now." : `${MODIFIER_META[selectedModifier.type].hint}. Modifiers apply top to bottom.`}</p>
             <Grid2>
-              {Object.entries(selectedModifier).filter(([key]) => key !== "type" && key !== "modulation" && key !== "disabled").map(([key, value]) => {
+              {Object.entries(selectedModifier).filter(([key]) => key !== "type" && key !== "modulation" && key !== "disabled" && key !== "bake").map(([key, value]) => {
                 const meta = MODIFIER_FIELDS[key] ?? { label: key };
                 const write = (next: unknown) => mutateNode((node) => { (node.modifiers[modifierIndex] as unknown as Record<string, unknown>)[key] = next; });
                 return typeof value === "number" ? (
@@ -561,23 +572,23 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
                 );
               })}
             </Grid2>
-            {selectedModifier.type !== "smooth" && <div className="mt-2 grid gap-2 border-t border-border pt-2">
+            {selectedModifier.type !== "smooth" && selectedModifier.type !== "drape" && selectedModifier.type !== "melt" && <div className="mt-2 grid gap-2 border-t border-border pt-2">
               <ToggleField
                 label="Vary amount over shape"
                 detail="Normalized keyframes along a local axis"
                 value={Boolean(selectedModifier.modulation)}
                 onChange={(enabled) => mutateNode((node) => {
-                  const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" }>;
+                  const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" }>;
                   if (enabled) modifier.modulation = { axis: "z", points: [[0, 0], [0.2, 1], [0.8, 1], [1, 0]], interpolation: "smoothstep" };
                   else delete modifier.modulation;
                 })}
               />
               {selectedModifier.modulation && <>
                 <Grid2>
-                  <SelectField label="Modulation axis" value={selectedModifier.modulation.axis} options={["x", "y", "z"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" }>; if (modifier.modulation) modifier.modulation.axis = value as "x" | "y" | "z"; })} />
-                  <SelectField label="Interpolation" value={selectedModifier.modulation.interpolation} options={["linear", "smoothstep"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" }>; if (modifier.modulation) modifier.modulation.interpolation = value as "linear" | "smoothstep"; })} />
+                  <SelectField label="Modulation axis" value={selectedModifier.modulation.axis} options={["x", "y", "z"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" }>; if (modifier.modulation) modifier.modulation.axis = value as "x" | "y" | "z"; })} />
+                  <SelectField label="Interpolation" value={selectedModifier.modulation.interpolation} options={["linear", "smoothstep"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" }>; if (modifier.modulation) modifier.modulation.interpolation = value as "linear" | "smoothstep"; })} />
                 </Grid2>
-                <PointListField label="Amount curve · normalized" columns={["Position 0–1", "Multiplier"]} value={selectedModifier.modulation.points} onChange={(points) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" }>; if (modifier.modulation) modifier.modulation.points = points; })} />
+                <PointListField label="Amount curve · normalized" columns={["Position 0–1", "Multiplier"]} value={selectedModifier.modulation.points} onChange={(points) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" }>; if (modifier.modulation) modifier.modulation.points = points; })} />
               </>}
             </div>}
           </>

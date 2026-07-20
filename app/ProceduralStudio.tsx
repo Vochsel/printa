@@ -12,7 +12,9 @@ import {
   FolderOpen,
   Layers3,
   LoaderCircle,
+  Minus,
   Play,
+  Plus,
   Rotate3D,
   Save,
   Scan,
@@ -98,21 +100,50 @@ function documentMaterial(node: ModelDocument["root"]): PrintMaterialPreset {
   return documentMaterial(node.children[0]);
 }
 
-// Fluid and cloth are on-command sims; a document containing one doesn't
-// auto-recompile on edits — the user presses Simulate to bake it.
+// Fluid and cloth are on-command sims — as sources, or as drape/melt modifiers
+// on any shape. A document containing one doesn't auto-recompile on edits; the
+// user presses Simulate to bake it.
+function hasSimModifier(modifiers: ModelDocument["root"]["modifiers"]): boolean {
+  return modifiers.some((m) => m.type === "drape" || m.type === "melt");
+}
+
 function documentHasSim(node: ModelDocument["root"]): boolean {
+  if (hasSimModifier(node.modifiers)) return true;
   if (node.kind === "shape") return node.source.type === "fluid" || node.source.type === "cloth";
   if (node.kind === "repeat") return documentHasSim(node.child);
   return node.children.some(documentHasSim);
 }
 
-// Bump the bake token on every simulation source so the next compile re-runs it.
-function bumpBakeTokens(node: ModelDocument["root"]) {
+// Bump the bake token on every simulation source and sim modifier so the next
+// compile re-runs it. Optionally step the frame count by `frameDelta`.
+function bumpBakeTokens(node: ModelDocument["root"], frameDelta = 0) {
+  for (const m of node.modifiers) {
+    if (m.type === "drape" || m.type === "melt") {
+      m.bake = (m.bake ?? 0) + 1;
+      if (frameDelta) m.frames = Math.max(1, Math.min(600, m.frames + frameDelta));
+    }
+  }
   if (node.kind === "shape") {
-    const source = node.source as { type: string; bake?: number };
-    if (source.type === "fluid" || source.type === "cloth" || source.type === "water") source.bake = (source.bake ?? 0) + 1;
-  } else if (node.kind === "repeat") bumpBakeTokens(node.child);
-  else node.children.forEach(bumpBakeTokens);
+    const source = node.source as { type: string; bake?: number; steps?: number };
+    if (source.type === "fluid" || source.type === "cloth" || source.type === "water") {
+      source.bake = (source.bake ?? 0) + 1;
+      if (frameDelta && typeof source.steps === "number") source.steps = Math.max(1, Math.min(600, source.steps + frameDelta));
+    }
+  } else if (node.kind === "repeat") bumpBakeTokens(node.child, frameDelta);
+  else node.children.forEach((child) => bumpBakeTokens(child, frameDelta));
+}
+
+// Total simulation frames configured across the document (max over all sims),
+// shown in the frame stepper.
+function simFrameCount(node: ModelDocument["root"]): number {
+  let max = 0;
+  for (const m of node.modifiers) if (m.type === "drape" || m.type === "melt") max = Math.max(max, m.frames);
+  if (node.kind === "shape") {
+    const source = node.source as { type: string; steps?: number };
+    if ((source.type === "fluid" || source.type === "cloth" || source.type === "water") && typeof source.steps === "number") max = Math.max(max, source.steps);
+  } else if (node.kind === "repeat") max = Math.max(max, simFrameCount(node.child));
+  else for (const child of node.children) max = Math.max(max, simFrameCount(child));
+  return max;
 }
 
 function createDimensionLabel(text: string, color: string, worldSize: number) {
@@ -935,10 +966,10 @@ export function ProceduralStudio() {
     liveTimerRef.current = setTimeout(() => void compileLive(next), 170);
   }, [compileLive]);
 
-  const simulate = useCallback(() => {
+  const simulate = useCallback((frameDelta = 0) => {
     if (!document) return;
     const next = structuredClone(document);
-    bumpBakeTokens(next.root);
+    bumpBakeTokens(next.root, frameDelta);
     setSimStale(false);
     sfx("press");
     setDocument(next);
@@ -1061,14 +1092,19 @@ export function ProceduralStudio() {
                   variant={simStale ? "default" : "outline"}
                   size="sm"
                   disabled={liveUpdating}
-                  onClick={simulate}
+                  onClick={() => simulate()}
                   className={cn(simStale && "bg-[var(--accent-tool)] text-white hover:bg-[var(--accent-tool)]/90")}
                   data-cuelume-press
-                  title="Run the fluid / cloth simulation"
+                  title="Run the fluid / cloth simulation to its configured frame count"
                 >
                   {liveUpdating ? <LoaderCircle className="animate-spin" /> : <Play fill="currentColor" />}
                   {simStale ? "Simulate ●" : "Simulate"}
                 </Button>
+                <div className="flex items-center rounded-md border border-border" title="Step the simulation frame count and re-bake">
+                  <Button variant="ghost" size="icon-sm" aria-label="Simulate 10 fewer frames" disabled={liveUpdating} onClick={() => simulate(-10)}><Minus /></Button>
+                  <span className="min-w-[3.5rem] text-center text-[11px] tabular-nums text-muted-foreground">{simFrameCount(document.root)} fr</span>
+                  <Button variant="ghost" size="icon-sm" aria-label="Simulate 10 more frames" disabled={liveUpdating} onClick={() => simulate(10)}><Plus /></Button>
+                </div>
               </>
             )}
             <span className="mx-0.5 h-4 w-px bg-border" />
