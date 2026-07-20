@@ -24,6 +24,7 @@ import {
 import { unionClosedGeometryParts } from "../lib/manifold-geometry";
 import { createTextGeometry, geometryStats } from "../lib/text-geometry";
 import { MODEL_STL_CORS_HEADERS } from "../lib/model-stl-cors";
+import { createBinaryStl } from "../lib/binary-stl";
 
 const openTypeRuntime = (opentype as typeof opentype & { default?: typeof opentype }).default ?? opentype;
 
@@ -32,6 +33,29 @@ test("model STL CORS policy permits and exposes MCP UI preview data", () => {
   assert.equal(MODEL_STL_CORS_HEADERS["Access-Control-Allow-Methods"], "GET, POST, OPTIONS");
   assert.match(MODEL_STL_CORS_HEADERS["Access-Control-Expose-Headers"], /X-Printa-Dimensions/);
   assert.match(MODEL_STL_CORS_HEADERS["Access-Control-Expose-Headers"], /X-Printa-Triangles/);
+});
+
+test("binary STL encoding preserves every triangle, finite normals, and solid volume", () => {
+  const geometry = createSourceGeometry({
+    type: "primitive", shape: "box", width: 12, depth: 18, height: 24, segments: 8,
+  });
+  const expectedTriangles = Math.floor((geometry.index?.count ?? geometry.getAttribute("position").count) / 3);
+  const expectedVolume = meshVolume(geometry);
+  const encoded = createBinaryStl(geometry);
+  const view = new DataView(encoded.bytes.buffer, encoded.bytes.byteOffset, encoded.bytes.byteLength);
+  assert.equal(encoded.bytes.byteLength, 84 + expectedTriangles * 50);
+  assert.equal(view.getUint32(80, true), expectedTriangles);
+  assert.equal(encoded.triangles, expectedTriangles);
+  assert.ok(Math.abs(encoded.volumeEstimate - expectedVolume) < 1e-5);
+  for (let triangle = 0; triangle < expectedTriangles; triangle += 1) {
+    const offset = 84 + triangle * 50;
+    const normal = [view.getFloat32(offset, true), view.getFloat32(offset + 4, true), view.getFloat32(offset + 8, true)];
+    assert.ok(normal.every(Number.isFinite));
+    assert.ok(Math.abs(Math.hypot(...normal) - 1) < 1e-6);
+    assert.equal(view.getUint16(offset + 48, true), 0);
+  }
+  assert.equal(createBinaryStl(geometry, { includeVolume: false }).volumeEstimate, 0);
+  geometry.dispose();
 });
 
 async function buildNode(node: ModelNode): Promise<BufferGeometry> {
@@ -206,6 +230,23 @@ test("ordered modifiers materially deform geometry", () => {
   modified.dispose();
 });
 
+test("model merges retain indexed topology and every source triangle", () => {
+  const first = createSourceGeometry({ type: "primitive", shape: "box", width: 12, depth: 10, height: 8, segments: 8 });
+  const second = createSourceGeometry({ type: "primitive", shape: "sphere", radius: 6, segments: 24 });
+  second.translate(18, 0, 0);
+  const expectedTriangles = [first, second].reduce(
+    (total, geometry) => total + Math.floor((geometry.index?.count ?? geometry.getAttribute("position").count) / 3),
+    0,
+  );
+  const expectedVertices = first.getAttribute("position").count + second.getAttribute("position").count;
+  const merged = mergeModelGeometries([first, second]);
+  assert.ok(merged.index);
+  assert.equal(merged.index.count / 3, expectedTriangles);
+  assert.equal(merged.getAttribute("position").count, expectedVertices);
+  assert.deepEqual(geometryBounds(merged).map((value) => Number(value.toFixed(4))), [30, 12, 12]);
+  first.dispose(); second.dispose(); merged.dispose();
+});
+
 test("modifier modulation can fade a deformation across a local axis", () => {
   const source = createSourceGeometry({
     type: "revolve",
@@ -368,7 +409,7 @@ test("the dense MCP vase regression spec evaluates to a finite printable mesh", 
   const bounds = geometryBounds(geometry);
   assert.deepEqual(bounds.map((value) => Number(value.toFixed(2))), [84.37, 84.37, 183.7]);
   assert.equal(Math.floor((geometry.index?.count ?? geometry.getAttribute("position").count) / 3), 149_888);
-  assert.ok(geometry.getAttribute("position").count > 100_000);
+  assert.ok(geometry.index && geometry.index.count > 400_000);
   geometry.dispose();
 });
 

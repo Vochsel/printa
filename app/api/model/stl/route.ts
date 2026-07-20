@@ -41,7 +41,7 @@ async function createResponse(request: Request) {
     const normalized = "input" in requestInput ? requestInput : { input: requestInput, preview: false };
     const startedAt = performance.now();
     const cacheBefore = proceduralCacheMetrics();
-    const { document, stats, bytes } = await createProceduralStl(normalized.input, { quality: normalized.preview ? "preview" : "full" });
+    const { document, stats, bytes, timings } = await createProceduralStl(normalized.input, { quality: normalized.preview ? "preview" : "full" });
     const cacheAfter = proceduralCacheMetrics();
     const material = (() => {
       const first = (node: typeof document.root): string => node.kind === "shape" ? node.material ?? "pla-orange" : node.kind === "repeat" ? first(node.child) : first(node.children[0]);
@@ -62,7 +62,12 @@ async function createResponse(request: Request) {
         "X-Printa-Preview": String(normalized.preview),
         "X-Printa-Interior-Struts": document.print.interiorStruts.enabled ? document.print.interiorStruts.pattern : "off",
         "X-Printa-Cache": `hit=${cacheAfter.hits - cacheBefore.hits}; miss=${cacheAfter.misses - cacheBefore.misses}; coalesced=${cacheAfter.coalesced - cacheBefore.coalesced}`,
-        "Server-Timing": `compile;dur=${(performance.now() - startedAt).toFixed(1)}`,
+        "Server-Timing": [
+          `geometry;dur=${timings.geometryMs.toFixed(1)}`,
+          `stats;dur=${timings.statsMs.toFixed(1)}`,
+          `stl;dur=${timings.stlMs.toFixed(1)}`,
+          `compile;dur=${(performance.now() - startedAt).toFixed(1)}`,
+        ].join(", "),
         "X-Content-Type-Options": "nosniff",
         ...MODEL_STL_CORS_HEADERS,
       },

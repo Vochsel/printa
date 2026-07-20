@@ -1,6 +1,5 @@
 import "server-only";
-import { Mesh } from "three";
-import { STLExporter } from "three/addons/exporters/STLExporter.js";
+import { createBinaryStl as encodeBinaryStl } from "@/lib/binary-stl";
 import { getGoogleFontFileUrl, resolveGoogleFont } from "@/lib/google-fonts";
 import {
   createTextGeometry,
@@ -10,27 +9,72 @@ import {
   type TextModelOptions,
 } from "@/lib/text-geometry";
 
-const fontCache = new Map<string, Promise<ReturnType<typeof parseOpenTypeFont>>>();
+type LoadedFont = {
+  font: ReturnType<typeof parseOpenTypeFont>;
+  resolved: Awaited<ReturnType<typeof resolveGoogleFont>>;
+  syntheticItalic: boolean;
+};
+
+const fontCache = new Map<string, Promise<LoadedFont>>();
+const editFontCache = new Map<string, Promise<LoadedFont>>();
+const servedVariants = new Set<string>();
+const SHARED_PRINTABLE_GLYPHS = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+
+function loadFontSubset(
+  font: Awaited<ReturnType<typeof resolveGoogleFont>>,
+  text: string,
+  fontWeight: "regular" | "bold",
+  italic: boolean,
+) {
+  return getGoogleFontFileUrl(font, text, {
+    weight: fontWeight === "bold" ? 700 : 400,
+    italic,
+  }).then(async (variant) => {
+    const response = await fetch(variant.url, { next: { revalidate: 60 * 60 * 24 * 30 } });
+    if (!response.ok) throw new Error(`Could not load ${font.family}.`);
+    return {
+      font: parseOpenTypeFont(await response.arrayBuffer()),
+      resolved: font,
+      syntheticItalic: variant.syntheticItalic,
+    };
+  });
+}
+
+function warmEditFont(
+  font: Awaited<ReturnType<typeof resolveGoogleFont>>,
+  variantKey: string,
+  fontWeight: "regular" | "bold",
+  italic: boolean,
+) {
+  if (!editFontCache.has(variantKey)) {
+    const loading = loadFontSubset(font, SHARED_PRINTABLE_GLYPHS, fontWeight, italic);
+    editFontCache.set(variantKey, loading);
+    void loading.catch(() => editFontCache.delete(variantKey));
+  }
+  return editFontCache.get(variantKey)!;
+}
 
 async function loadFont(requestedFont: string, text: string, fontWeight: "regular" | "bold", italic: boolean) {
   const font = await resolveGoogleFont(requestedFont);
+  const variantKey = `${font.id}:${fontWeight}:${italic}`;
   const cacheKey = `${font.id}:${fontWeight}:${italic}:${text}`;
-  const variant = await getGoogleFontFileUrl(font, text, {
-    weight: fontWeight === "bold" ? 700 : 400,
-    italic,
-  });
-  if (!fontCache.has(cacheKey)) {
-    fontCache.set(
-      cacheKey,
-      fetch(variant.url, { next: { revalidate: 60 * 60 * 24 * 30 } })
-        .then((response) => {
-          if (!response.ok) throw new Error(`Could not load ${font.family}.`);
-          return response.arrayBuffer();
-        })
-        .then(parseOpenTypeFont),
-    );
+  const exact = fontCache.get(cacheKey);
+  if (exact) return exact;
+
+  const isFollowup = servedVariants.has(variantKey);
+  servedVariants.add(variantKey);
+  if (isFollowup && [...text].every((character) => SHARED_PRINTABLE_GLYPHS.includes(character))) {
+    return warmEditFont(font, variantKey, fontWeight, italic);
   }
-  return { font: await fontCache.get(cacheKey)!, resolved: font, syntheticItalic: variant.syntheticItalic };
+
+  if (!fontCache.has(cacheKey)) {
+    const loading = loadFontSubset(font, text, fontWeight, italic);
+    fontCache.set(cacheKey, loading);
+    void loading.catch(() => fontCache.delete(cacheKey));
+  }
+  const loaded = await fontCache.get(cacheKey)!;
+  void warmEditFont(font, variantKey, fontWeight, italic);
+  return loaded;
 }
 
 export async function createTextServerGeometry(input: Partial<TextModelOptions>) {
@@ -49,12 +93,9 @@ export async function getTextModelStats(input: Partial<TextModelOptions>) {
 
 export async function createBinaryStl(input: Partial<TextModelOptions>) {
   const { geometry, options } = await createTextServerGeometry(input);
-  const mesh = new Mesh(geometry);
-  mesh.updateMatrixWorld(true);
-  const view = new STLExporter().parse(mesh, { binary: true });
-  const copy = new Uint8Array(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+  const bytes = encodeBinaryStl(geometry, { includeVolume: false }).bytes;
   geometry.dispose();
-  return { bytes: copy, options };
+  return { bytes, options };
 }
 
 export function makeStlFilename(text: string) {

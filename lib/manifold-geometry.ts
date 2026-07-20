@@ -1,6 +1,6 @@
 import Module, { type ManifoldToplevel } from "manifold-3d";
 import { BufferAttribute, BufferGeometry } from "three";
-import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { weldPositionArrays } from "@/lib/geometry-weld";
 
 let runtimePromise: Promise<ManifoldToplevel> | null = null;
 
@@ -9,32 +9,17 @@ async function runtime() {
   return runtimePromise;
 }
 
-function weldForManifold(source: BufferGeometry) {
-  const working = source.clone();
-  for (const name of Object.keys(working.attributes)) {
-    if (name !== "position") working.deleteAttribute(name);
-  }
-  const welded = mergeVertices(working, 1e-5);
-  if (welded !== working) working.dispose();
-  if (!welded.index) {
-    welded.setIndex(Array.from({ length: welded.getAttribute("position").count }, (_, index) => index));
-  }
-  return welded;
-}
-
 export async function unionClosedGeometryParts(parts: BufferGeometry[]) {
   if (parts.length === 1) return parts[0].clone();
   const wasm = await runtime();
   const solids = parts.map((part, index) => {
-    const geometry = weldForManifold(part);
-    const position = geometry.getAttribute("position");
+    const geometry = weldPositionArrays(part, 1e-5);
     const mesh = new wasm.Mesh({
       numProp: 3,
-      vertProperties: new Float32Array(position.array as ArrayLike<number>),
-      triVerts: new Uint32Array(geometry.index!.array as ArrayLike<number>),
+      vertProperties: geometry.positions,
+      triVerts: geometry.triangles,
     });
     const solid = new wasm.Manifold(mesh);
-    geometry.dispose();
     const status = solid.status();
     if (status !== "NoError") {
       solid.delete();

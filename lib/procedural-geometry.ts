@@ -15,7 +15,7 @@ import {
   TorusGeometry,
   Vector3,
 } from "three";
-import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { MeshBVH } from "three-mesh-bvh";
 import type { InteriorStrutsSpec, ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
 import { simulateFluid, simulateFluidParticles, MAX_PARTICLES, type SceneCollider } from "@/lib/fluid-sim";
@@ -415,6 +415,7 @@ function createClothGeometry(source: Extract<SourceSpec, { type: "cloth" }>, sce
   const collider = source.collider;
   const colliderCenter = collider ? new Vector3(...collider.center) : null;
   const delta = new Vector3();
+  const velocity = new Vector3();
   const closestTarget = new Vector3();
   const margin = source.thickness * 0.5 + 0.4;
   // Cap per-step motion so a collision push-out can't inject a runaway verlet
@@ -424,7 +425,7 @@ function createClothGeometry(source: Extract<SourceSpec, { type: "cloth" }>, sce
     for (let index = 0; index < count; index += 1) {
       if (pinned.has(index)) continue;
       const point = positions[index];
-      const velocity = point.clone().sub(previous[index]).multiplyScalar(0.992);
+      velocity.subVectors(point, previous[index]).multiplyScalar(0.992);
       const speed = velocity.length();
       if (speed > maxStep) velocity.multiplyScalar(maxStep / speed);
       previous[index].copy(point);
@@ -457,6 +458,7 @@ function createClothGeometry(source: Extract<SourceSpec, { type: "cloth" }>, sce
         for (let index = 0; index < count; index += 1) {
           if (pinned.has(index)) continue;
           const point = positions[index];
+          if (sceneCollider.mayContact && !sceneCollider.mayContact(point, margin)) continue;
           const hit = sceneCollider.closest(point, closestTarget);
           if (hit && (hit.inside || hit.distance < margin)) {
             point.copy(closestTarget).addScaledVector(delta.set(hit.nx, hit.ny, hit.nz), margin);
@@ -735,6 +737,7 @@ function drapeGeometry(
   const ac = new Vector3();
   const faceNormal = new Vector3();
   const delta = new Vector3();
+  const velocity = new Vector3();
   const closestTarget = new Vector3();
   const margin = Math.max(0.4, bounds.height * 0.01);
   let maxRest = 0;
@@ -745,7 +748,7 @@ function drapeGeometry(
     for (let i = 0; i < count; i += 1) {
       if (pinned.has(i)) continue;
       const point = positions[i];
-      const velocity = point.clone().sub(previous[i]).multiplyScalar(0.992);
+      velocity.subVectors(point, previous[i]).multiplyScalar(0.992);
       const speed = velocity.length();
       if (speed > maxStep) velocity.multiplyScalar(maxStep / speed);
       previous[i].copy(point);
@@ -799,6 +802,7 @@ function drapeGeometry(
       for (let i = 0; i < count; i += 1) {
         if (pinned.has(i)) continue;
         const point = positions[i];
+        if (sceneCollider.mayContact && !sceneCollider.mayContact(point, margin)) continue;
         const hit = sceneCollider.closest(point, closestTarget);
         if (hit && (hit.inside || hit.distance < margin)) {
           point.copy(closestTarget).addScaledVector(delta.set(hit.nx, hit.ny, hit.nz), margin);
@@ -962,16 +966,39 @@ export function repeatedTransform(transform: TransformSpec, index: number): Tran
 
 export function mergeModelGeometries(geometries: BufferGeometry[]) {
   if (geometries.length === 1) return geometries[0];
-  const clean = geometries.map((source) => {
-    const geometry = source.index ? source.toNonIndexed() : source.clone();
-    for (const name of Object.keys(geometry.attributes)) {
-      if (name !== "position") geometry.deleteAttribute(name);
+  let vertexCount = 0;
+  let indexCount = 0;
+  for (const geometry of geometries) {
+    const position = geometry.getAttribute("position");
+    if (!position || position.itemSize !== 3) throw new Error("Could not merge model geometry without XYZ positions.");
+    vertexCount += position.count;
+    indexCount += geometry.index?.count ?? position.count;
+  }
+
+  const positions = new Float32Array(vertexCount * 3);
+  const indices = vertexCount <= 65_535 ? new Uint16Array(indexCount) : new Uint32Array(indexCount);
+  let vertexOffset = 0;
+  let indexOffset = 0;
+  for (const geometry of geometries) {
+    const position = geometry.getAttribute("position") as BufferAttribute;
+    for (let vertex = 0; vertex < position.count; vertex += 1) {
+      const target = (vertexOffset + vertex) * 3;
+      positions[target] = position.getX(vertex);
+      positions[target + 1] = position.getY(vertex);
+      positions[target + 2] = position.getZ(vertex);
     }
-    return geometry;
-  });
-  const merged = mergeGeometries(clean, false);
-  clean.forEach((geometry) => geometry.dispose());
-  if (!merged) throw new Error("Could not merge model geometries.");
+    const sourceIndex = geometry.index;
+    const count = sourceIndex?.count ?? position.count;
+    for (let index = 0; index < count; index += 1) {
+      indices[indexOffset + index] = vertexOffset + (sourceIndex ? sourceIndex.getX(index) : index);
+    }
+    vertexOffset += position.count;
+    indexOffset += count;
+  }
+
+  const merged = new BufferGeometry();
+  merged.setAttribute("position", new BufferAttribute(positions, 3));
+  merged.setIndex(new BufferAttribute(indices, 1));
   merged.computeVertexNormals();
   merged.computeBoundingBox();
   return merged;

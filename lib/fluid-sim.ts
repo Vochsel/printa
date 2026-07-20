@@ -28,6 +28,7 @@ export type FluidParams = {
  * inside flag, and the outward unit surface normal for push-out.
  */
 export type SceneCollider = {
+  mayContact?: (point: Vector3, margin: number) => boolean;
   closest: (point: Vector3, target: Vector3) => { distance: number; inside: boolean; nx: number; ny: number; nz: number } | null;
 };
 
@@ -173,7 +174,7 @@ export function simulateFluidParticles(
       pi.x = Math.max(-spread, Math.min(spread, pi.x));
       pi.y = Math.max(-spread, Math.min(spread, pi.y));
       // scene collision — keep particles out of solid shapes, along the surface normal
-      if (collider) {
+      if (collider && (!collider.mayContact || collider.mayContact(pi, radius))) {
         const hit = collider.closest(pi, closestTarget);
         if (hit && (hit.inside || hit.distance < radius)) {
           diff.set(hit.nx, hit.ny, hit.nz);
