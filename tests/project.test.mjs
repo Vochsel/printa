@@ -204,6 +204,11 @@ test("ships the /chat beginner page with inline 3D model previews", async () => 
   assert.match(preview, /STLLoader/);
   assert.match(preview, /toCreasedNormals/);
   assert.match(preview, /GTAOPass/);
+  const mesh = await readFile(new URL("lib/procedural-mesh.ts", root), "utf8");
+  assert.match(mesh, /autoRadialSegments/);
+  assert.match(mesh, /autoProfileSegments/);
+  assert.match(mesh, /resolveNode/);
+  assert.match(mesh, /radialWave.*12|12.*lobe/s);
   assert.match(chatRoute, /previewUrl/);
   assert.match(chatRoute, /stlUrl/);
   assert.match(home, /href="\/chat"/);

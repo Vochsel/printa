@@ -16,6 +16,7 @@ import {
   type InteriorStrutsSpec,
   type ModelDocument,
   type ModelNode,
+  type ModifierSpec,
 } from "@/lib/model-spec";
 
 export type ProceduralModelStats = {
@@ -204,30 +205,78 @@ async function nodeGeometry(node: ModelNode, fingerprints: WeakMap<object, strin
   try { return await build; } finally { geometryInflight.delete(nodeKey); }
 }
 
-function previewNode(node: ModelNode): ModelNode {
+type Quality = "full" | "preview";
+
+const clampRound = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(value)));
+
+// Largest value of `field` among the enabled modifiers of a given type.
+function activeModifierMax(modifiers: ModifierSpec[], type: ModifierSpec["type"], field: string) {
+  let max = 0;
+  for (const modifier of modifiers) {
+    if (modifier.disabled || modifier.type !== type) continue;
+    const value = (modifier as unknown as Record<string, number>)[field];
+    if (typeof value === "number") max = Math.max(max, Math.abs(value));
+  }
+  return max;
+}
+
+// Auto radial (around-the-axis) resolution. The user's spec value is the base
+// (preview keeps a speed cap); a radialWave adds enough segments to render its
+// lobes smoothly (~12 per lobe at full, ~7 at preview), since modifiers only
+// displace existing vertices. The user's value is a floor — never reduced.
+function autoRadialSegments(userSegments: number, maxLobes: number, quality: Quality, ceiling: number, previewCap: number) {
+  const lobeFull = maxLobes ? Math.ceil(maxLobes * 12) : 0;
+  const full = clampRound(Math.max(userSegments, lobeFull), 24, ceiling);
+  if (quality === "full") return full;
+  const lobePreview = maxLobes ? Math.ceil(maxLobes * 7) : 0;
+  return clampRound(Math.max(Math.min(userSegments, previewCap), lobePreview), 24, Math.min(full, previewCap + 64));
+}
+
+// Auto profile (along-the-height) resolution for revolved shells — boosted for
+// an axialWave's cycles so ripples up the height stay smooth.
+function autoProfileSegments(userSegments: number, maxCycles: number, quality: Quality) {
+  const cycleFull = maxCycles ? Math.ceil(maxCycles * 16) : 0;
+  const full = clampRound(Math.max(userSegments, cycleFull), 16, 256);
+  if (quality === "full") return full;
+  const cyclePreview = maxCycles ? Math.ceil(maxCycles * 10) : 0;
+  return clampRound(Math.max(Math.min(userSegments, 72), cyclePreview), 16, Math.min(full, 130));
+}
+
+// Derive effective mesh resolution from model size and modifier detail. Curved
+// sources (revolve, primitive) get an auto radial/profile count for both a
+// lighter preview and a detailed full/export build; simulation and text/extrude
+// sources keep the preview-speed caps.
+function resolveNode(node: ModelNode, quality: Quality): ModelNode {
   const next = structuredClone(node);
-  if (next.kind === "assembly") next.children = next.children.map(previewNode);
-  if (next.kind === "repeat") next.child = previewNode(next.child);
+  if (next.kind === "assembly") next.children = next.children.map((child) => resolveNode(child, quality));
+  if (next.kind === "repeat") next.child = resolveNode(next.child, quality);
   if (next.kind !== "shape") return next;
   const source = next.source;
-  if (source.type === "text") {
-    source.curveSegments = Math.min(source.curveSegments, 8);
-    source.bevelSegments = Math.min(source.bevelSegments, 3);
-    source.extrudeSegments = Math.min(source.extrudeSegments, 4);
-  } else if (source.type === "primitive") source.segments = Math.min(source.segments, 64);
-  else if (source.type === "extrude") {
-    source.curveSegments = Math.min(source.curveSegments, 12);
-    source.bevelSegments = Math.min(source.bevelSegments, 3);
-  } else if (source.type === "revolve") {
-    source.segments = Math.min(source.segments, 96);
-    source.profileSegments = Math.min(source.profileSegments, 72);
-  } else if (source.type === "water") {
-    source.resolution = Math.min(source.resolution, 40);
-    source.steps = Math.min(source.steps, 60);
-  } else if (source.type === "cloth") {
-    source.resolution = Math.min(source.resolution, 24);
-    source.steps = Math.min(source.steps, 70);
-    source.constraintIterations = Math.min(source.constraintIterations, 4);
+  const maxLobes = activeModifierMax(next.modifiers, "radialWave", "count");
+  const maxCycles = activeModifierMax(next.modifiers, "axialWave", "cycles");
+  if (source.type === "revolve") {
+    source.segments = autoRadialSegments(source.segments, maxLobes, quality, 512, 96);
+    source.profileSegments = autoProfileSegments(source.profileSegments, maxCycles, quality);
+  } else if (source.type === "primitive") {
+    if (source.shape !== "box") {
+      source.segments = autoRadialSegments(source.segments, maxLobes, quality, 256, 64);
+    }
+  } else if (quality === "preview") {
+    if (source.type === "text") {
+      source.curveSegments = Math.min(source.curveSegments, 8);
+      source.bevelSegments = Math.min(source.bevelSegments, 3);
+      source.extrudeSegments = Math.min(source.extrudeSegments, 4);
+    } else if (source.type === "extrude") {
+      source.curveSegments = Math.min(source.curveSegments, 12);
+      source.bevelSegments = Math.min(source.bevelSegments, 3);
+    } else if (source.type === "water") {
+      source.resolution = Math.min(source.resolution, 40);
+      source.steps = Math.min(source.steps, 60);
+    } else if (source.type === "cloth") {
+      source.resolution = Math.min(source.resolution, 24);
+      source.steps = Math.min(source.steps, 70);
+      source.constraintIterations = Math.min(source.constraintIterations, 4);
+    }
   }
   return next;
 }
@@ -261,7 +310,8 @@ function finishGeometry(geometry: BufferGeometry, document: ModelDocument) {
 
 export async function createProceduralGeometry(input: string | unknown, options: ProceduralBuildOptions = {}) {
   const document = parseModelDocument(input);
-  const renderRoot = options.quality === "preview" ? previewNode(document.root) : document.root;
+  const quality: Quality = options.quality === "preview" ? "preview" : "full";
+  const renderRoot = resolveNode(document.root, quality);
   const interiorStruts = structuredClone(document.print.interiorStruts);
   if (options.quality === "preview" && interiorStruts.enabled) {
     interiorStruts.spacing = Math.max(interiorStruts.spacing, 22);
