@@ -65,7 +65,7 @@ const MODIFIER_META: Record<ModifierSpec["type"], { label: string; hint: string 
   axialWave: { label: "Ripples", hint: "Waves running up the height" },
   bend: { label: "Bend", hint: "Lean the shape over" },
   noise: { label: "Roughen", hint: "Organic bumpy texture" },
-  voronoi: { label: "Voronoi cells", hint: "Cellular panels or raised boundary ridges" },
+  voronoi: { label: "Voronoi cells", hint: "Cell texture, ridges, or a smooth remeshed wire shell" },
   array: { label: "Transform array", hint: "Layer copies with incremental move, rotation, and scale" },
   step: { label: "Contour steps", hint: "Stack copies with a constant inset like layered lampshades" },
   smooth: { label: "Smooth", hint: "Soften sharp detail" },
@@ -98,7 +98,7 @@ const MODIFIER_FIELDS: Record<string, { label: string; step?: number; min?: numb
   viscosity: { label: "Viscosity", step: 0.05, min: 0, max: 1 },
   particleSize: { label: "Droplet size", step: 0.05, min: 0.05, max: 20, unit: "mm" },
   surfaceResolution: { label: "Surface detail", min: 24, max: 140 },
-  mode: { label: "Cell style", options: ["cells", "ridges"] },
+  mode: { label: "Cell style", options: ["cells", "ridges", "wire"] },
   contrast: { label: "Contrast", step: 0.1, min: 0.1, max: 6 },
   translate: { label: "Move per copy" },
   rotate: { label: "Rotate per copy" },
@@ -199,7 +199,7 @@ function sourceDefaults(type: SourceSpec["type"]): SourceSpec {
   if (type === "water") return { type, width: 100, depth: 80, base: 3, resolution: 56, steps: 50, damping: 0.985, drops: [{ x: 0, y: 0, radius: 8, amplitude: 5 }], bake: 0 };
   if (type === "fluid") return { type, width: 70, depth: 70, amount: 55, spawnHeight: 70, particleSize: 6, viscosity: 0.18, gravity: 9.8, steps: 220, surfaceResolution: 64, bake: 0 };
   if (type === "cellular") return { type, width: 64, depth: 64, height: 72, cellSize: 18, strutDiameter: 2.2, jitter: 0.62, neighbors: 3, seed: 1, radialSegments: 8 };
-  if (type === "organic") return { type, width: 70, depth: 70, height: 100, trunkDiameter: 7, levels: 4, branching: 2, angleDeg: 34, twistDeg: 137.5, taper: 0.72, seed: 1, radialSegments: 9 };
+  if (type === "organic") return { type, width: 70, depth: 70, height: 100, trunkDiameter: 7, levels: 4, branching: 2, angleDeg: 34, twistDeg: 137.5, taper: 0.72, seed: 1, radialSegments: 9, surfaceResolution: 60, smoothness: 0.75 };
   return { type: "cloth", width: 100, depth: 100, thickness: 1.2, resolution: 28, steps: 100, startHeight: 35, gravity: 0.18, constraintIterations: 4, pins: "corners", bake: 0 };
 }
 
@@ -402,6 +402,10 @@ function SourceEditor({ source, fonts, update }: { source: SourceSpec; fonts: Fo
         <Grid2>
           <NumberField label="Seed" value={source.seed} onChange={(value) => set("seed", value)} />
           <NumberField label="Roundness" value={source.radialSegments} min={6} max={24} onChange={(value) => set("radialSegments", value)} />
+        </Grid2>
+        <Grid2>
+          <NumberField label="Surface detail" value={source.surfaceResolution} min={32} max={96} onChange={(value) => set("surfaceResolution", value)} />
+          <NumberField label="Branch blending" value={source.smoothness} min={0} max={2} step={0.05} onChange={(value) => set("smoothness", value)} />
         </Grid2>
       </>}
       {source.type === "water" && <>

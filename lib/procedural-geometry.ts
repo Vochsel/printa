@@ -20,6 +20,7 @@ import { MeshBVH } from "three-mesh-bvh";
 import { weldGeometryPositions } from "@/lib/geometry-weld";
 import type { InteriorStrutsSpec, ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
 import { simulateFluid, simulateFluidParticles, MAX_PARTICLES, type SceneCollider } from "@/lib/fluid-sim";
+import { remeshCapsuleNetwork, type CapsuleSegment } from "@/lib/volume-remesh";
 
 export type SourceBuildOptions = { interiorStruts?: InteriorStrutsSpec; sceneCollider?: SceneCollider | null };
 
@@ -402,58 +403,65 @@ function createCellularGeometry(source: Extract<SourceSpec, { type: "cellular" }
 }
 
 function createOrganicGeometry(source: Extract<SourceSpec, { type: "organic" }>) {
-  type Tip = { point: Vector3; direction: Vector3; diameter: number };
-  const parts: BufferGeometry[] = [];
-  const jointKeys = new Set<string>();
-  const addJoint = (point: Vector3, diameter: number) => {
-    const key = `${Math.round(point.x * 1e4)}:${Math.round(point.y * 1e4)}:${Math.round(point.z * 1e4)}`;
-    if (jointKeys.has(key)) return;
-    jointKeys.add(key);
-    addNetworkJoint(parts, point, diameter, source.radialSegments);
-  };
-  const addBranch = (start: Vector3, end: Vector3, diameter: number) => {
-    const branch = strutBetween(start, end, diameter, source.radialSegments, diameter * 0.2);
-    if (!branch) return;
-    parts.push(branch);
-    addJoint(start, diameter);
-    addJoint(end, diameter * source.taper);
-  };
-
-  const base = new Vector3(0, 0, source.trunkDiameter / 2);
-  const trunkEnd = new Vector3(0, 0, Math.max(source.trunkDiameter, source.height / (source.levels + 1)));
-  addBranch(base, trunkEnd, source.trunkDiameter);
-  let tips: Tip[] = [{ point: trunkEnd, direction: new Vector3(0, 0, 1), diameter: source.trunkDiameter * source.taper }];
-  const nominalLength = source.height / (source.levels + 1);
+  type Tip = { point: Vector3; direction: Vector3; radius: number; lineage: number };
+  const segments: CapsuleSegment[] = [];
+  const rootRadius = source.trunkDiameter / 2;
+  const minRadius = Math.max(0.6, rootRadius * 0.38);
+  const stepsPerLevel = 3;
+  const nominalLength = source.height / (source.levels + 1) / stepsPerLevel;
   const maxSegments = 240;
-  let segmentCount = 1;
+  let tips: Tip[] = [{ point: new Vector3(0, 0, rootRadius), direction: new Vector3(0, 0, 1), radius: rootRadius, lineage: 1 }];
 
-  for (let level = 0; level < source.levels && tips.length && segmentCount < maxSegments; level += 1) {
+  // Grow a point graph in short curved advances. Branches share their exact
+  // parent point; the graph is converted to a single smooth field below rather
+  // than appending cylinders and spheres at every advance.
+  for (let level = 0; level <= source.levels && tips.length && segments.length < maxSegments; level += 1) {
     const next: Tip[] = [];
-    for (let tipIndex = 0; tipIndex < tips.length && segmentCount < maxSegments; tipIndex += 1) {
+    for (let tipIndex = 0; tipIndex < tips.length && segments.length < maxSegments; tipIndex += 1) {
       const tip = tips[tipIndex];
-      for (let branchIndex = 0; branchIndex < source.branching && segmentCount < maxSegments; branchIndex += 1) {
-        const phase = source.twistDeg * DEG * (level + branchIndex / Math.max(1, source.branching));
-        const randomPhase = (seededUnit(source.seed, level, tipIndex, branchIndex, 53) - 0.5) * Math.PI * 0.7;
-        const randomTilt = 0.78 + seededUnit(source.seed, level, tipIndex, branchIndex, 71) * 0.44;
-        const tilt = source.angleDeg * DEG * randomTilt;
-        const radial = new Vector3(Math.cos(phase + randomPhase), Math.sin(phase + randomPhase), 0);
-        const direction = tip.direction.clone().multiplyScalar(0.58)
-          .addScaledVector(radial, Math.sin(tilt))
-          .addScaledVector(new Vector3(0, 0, 1), Math.cos(tilt) * 0.62)
+      let point = tip.point.clone();
+      const direction = tip.direction.clone();
+      let radius = tip.radius;
+      for (let advance = 0; advance < stepsPerLevel && segments.length < maxSegments; advance += 1) {
+        const phase = source.twistDeg * DEG * (level + advance / stepsPerLevel + tip.lineage * 0.071);
+        const wander = (seededUnit(source.seed, level, tip.lineage, advance, 53) - 0.5) * Math.PI * 0.82;
+        const tilt = source.angleDeg * DEG * (0.24 + seededUnit(source.seed, level, tip.lineage, advance, 71) * 0.32);
+        const radial = new Vector3(Math.cos(phase + wander), Math.sin(phase + wander), 0);
+        const desired = direction.clone().multiplyScalar(0.72)
+          .addScaledVector(radial, Math.sin(tilt) * 0.52)
+          .addScaledVector(new Vector3(0, 0, 1), Math.cos(tilt) * 0.26)
           .normalize();
-        if (direction.z < 0.12) direction.z = 0.12;
+        direction.lerp(desired, 0.28 + seededUnit(source.seed, level, tip.lineage, advance, 83) * 0.18).normalize();
+        if (direction.z < 0.08) direction.z = 0.08;
         direction.normalize();
-        const length = nominalLength * (0.82 + seededUnit(source.seed, level, tipIndex, branchIndex, 89) * 0.3) * source.taper ** (level * 0.22);
-        const end = tip.point.clone().addScaledVector(direction, length);
-        addBranch(tip.point, end, tip.diameter);
-        next.push({ point: end, direction, diameter: Math.max(source.trunkDiameter * 0.18, tip.diameter * source.taper) });
-        segmentCount += 1;
+        const length = nominalLength * (0.82 + seededUnit(source.seed, level, tip.lineage, advance, 89) * 0.34) * source.taper ** (level * 0.12);
+        const end = point.clone().addScaledVector(direction, length);
+        const endRadius = Math.max(minRadius, radius * source.taper ** (1 / stepsPerLevel));
+        segments.push({ start: point, end, startRadius: radius, endRadius });
+        point = end;
+        radius = endRadius;
+      }
+      if (level >= source.levels) continue;
+      for (let branch = 0; branch < source.branching && segments.length + next.length < maxSegments; branch += 1) {
+        const phase = source.twistDeg * DEG * (level + branch / Math.max(1, source.branching) + tip.lineage * 0.11);
+        const wander = (seededUnit(source.seed, level, tip.lineage, branch, 101) - 0.5) * Math.PI * 0.6;
+        const tilt = source.angleDeg * DEG * (0.78 + seededUnit(source.seed, level, tip.lineage, branch, 113) * 0.42);
+        const radial = new Vector3(Math.cos(phase + wander), Math.sin(phase + wander), 0);
+        const branchDirection = direction.clone().multiplyScalar(0.42)
+          .addScaledVector(radial, Math.sin(tilt))
+          .addScaledVector(new Vector3(0, 0, 1), Math.cos(tilt) * 0.7)
+          .normalize();
+        next.push({ point: point.clone(), direction: branchDirection, radius, lineage: tip.lineage * 5 + branch + 1 });
       }
     }
     tips = next;
   }
 
-  const geometry = mergeClosedNetwork(parts);
+  const geometry = remeshCapsuleNetwork(segments, {
+    resolution: Math.max(source.surfaceResolution, source.radialSegments * 5),
+    blend: rootRadius * source.smoothness,
+    smoothIterations: 2,
+  });
   geometry.computeBoundingBox();
   const bounds = geometry.boundingBox!;
   const measured = bounds.getSize(new Vector3());
@@ -1141,6 +1149,116 @@ function tessellateForVoronoi(input: BufferGeometry, featureSize: number) {
   return geometry;
 }
 
+function voronoiWireGeometry(input: BufferGeometry, modifier: Extract<ModifierSpec, { type: "voronoi" }>) {
+  const surface = tessellateForVoronoi(input, modifier.scale);
+  const position = surface.getAttribute("position") as BufferAttribute;
+  const index = surface.index;
+  if (!index) {
+    surface.dispose();
+    throw new Error("Voronoi wire requires indexed surface topology.");
+  }
+
+  const cumulativeArea: number[] = [];
+  let surfaceArea = 0;
+  const a = new Vector3(); const b = new Vector3(); const c = new Vector3();
+  const ab = new Vector3(); const ac = new Vector3();
+  for (let offset = 0; offset < index.count; offset += 3) {
+    a.fromBufferAttribute(position, index.getX(offset));
+    b.fromBufferAttribute(position, index.getX(offset + 1));
+    c.fromBufferAttribute(position, index.getX(offset + 2));
+    surfaceArea += ab.subVectors(b, a).cross(ac.subVectors(c, a)).length() * 0.5;
+    cumulativeArea.push(surfaceArea);
+  }
+  const targetSeeds = Math.max(6, Math.min(72, Math.round(surfaceArea / (modifier.scale * modifier.scale) * 0.85)));
+  const seeds: Vector3[] = [];
+  const minDistance2 = (modifier.scale * 0.42) ** 2;
+  const candidateLimit = targetSeeds * 24;
+  for (let candidate = 0; candidate < candidateLimit && seeds.length < targetSeeds; candidate += 1) {
+    const areaPick = seededUnit(modifier.seed, candidate, 0, 0, 211) * surfaceArea;
+    let low = 0; let high = cumulativeArea.length - 1;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (cumulativeArea[middle] < areaPick) low = middle + 1;
+      else high = middle;
+    }
+    const offset = low * 3;
+    a.fromBufferAttribute(position, index.getX(offset));
+    b.fromBufferAttribute(position, index.getX(offset + 1));
+    c.fromBufferAttribute(position, index.getX(offset + 2));
+    const root = Math.sqrt(seededUnit(modifier.seed, candidate, 0, 0, 223));
+    const beta = seededUnit(modifier.seed, candidate, 0, 0, 227);
+    const wa = 1 - root;
+    const wb = root * (1 - beta);
+    const wc = root * beta;
+    const point = new Vector3(
+      a.x * wa + b.x * wb + c.x * wc,
+      a.y * wa + b.y * wb + c.y * wc,
+      a.z * wa + b.z * wb + c.z * wc,
+    );
+    if (seeds.every((seed) => seed.distanceToSquared(point) >= minDistance2)) seeds.push(point);
+  }
+  // Thin or unusually folded surfaces can reject many Poisson candidates. Fill
+  // deterministically so every request still yields a useful cell network.
+  for (let candidate = 0; seeds.length < targetSeeds && candidate < targetSeeds * 8; candidate += 1) {
+    const vertex = Math.floor(seededUnit(modifier.seed, candidate, 0, 0, 239) * position.count) % position.count;
+    seeds.push(new Vector3().fromBufferAttribute(position, vertex));
+  }
+
+  const labels = new Uint16Array(position.count);
+  const point = new Vector3();
+  for (let vertex = 0; vertex < position.count; vertex += 1) {
+    point.fromBufferAttribute(position, vertex);
+    let nearest = 0;
+    let nearestDistance = Infinity;
+    for (let seed = 0; seed < seeds.length; seed += 1) {
+      const distance = point.distanceToSquared(seeds[seed]);
+      if (distance < nearestDistance) { nearest = seed; nearestDistance = distance; }
+    }
+    labels[vertex] = nearest;
+  }
+
+  const wireRadius = Math.max(0.2, Math.abs(modifier.amplitude));
+  const segments: CapsuleSegment[] = [];
+  const seen = new Set<string>();
+  const addSegment = (start: Vector3, end: Vector3) => {
+    if (start.distanceToSquared(end) < wireRadius * wireRadius * 0.04) return;
+    const keyOf = (value: Vector3) => `${Math.round(value.x * 1e4)},${Math.round(value.y * 1e4)},${Math.round(value.z * 1e4)}`;
+    const first = keyOf(start); const second = keyOf(end);
+    const key = first < second ? `${first}|${second}` : `${second}|${first}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    segments.push({ start: start.clone(), end: end.clone(), startRadius: wireRadius, endRadius: wireRadius });
+  };
+  const va = new Vector3(); const vb = new Vector3(); const vc = new Vector3();
+  for (let offset = 0; offset < index.count; offset += 3) {
+    const ia = index.getX(offset); const ib = index.getX(offset + 1); const ic = index.getX(offset + 2);
+    const la = labels[ia]; const lb = labels[ib]; const lc = labels[ic];
+    if (la === lb && lb === lc) continue;
+    va.fromBufferAttribute(position, ia);
+    vb.fromBufferAttribute(position, ib);
+    vc.fromBufferAttribute(position, ic);
+    const transitions: Vector3[] = [];
+    if (la !== lb) transitions.push(va.clone().add(vb).multiplyScalar(0.5));
+    if (lb !== lc) transitions.push(vb.clone().add(vc).multiplyScalar(0.5));
+    if (lc !== la) transitions.push(vc.clone().add(va).multiplyScalar(0.5));
+    if (transitions.length === 2) addSegment(transitions[0], transitions[1]);
+    else if (transitions.length === 3) {
+      const center = va.clone().add(vb).add(vc).multiplyScalar(1 / 3);
+      transitions.forEach((transition) => addSegment(center, transition));
+    }
+  }
+  surface.computeBoundingBox();
+  const size = surface.boundingBox!.getSize(new Vector3());
+  surface.dispose();
+  if (!segments.length) throw new Error("Voronoi wire did not find enough cell boundaries; reduce cell scale.");
+  const resolution = Math.max(40, Math.min(48, Math.ceil(Math.max(size.x, size.y, size.z) / Math.max(wireRadius * 0.72, modifier.scale / 10))));
+  return remeshCapsuleNetwork(segments, {
+    resolution,
+    blend: wireRadius * Math.min(1.15, 0.45 + modifier.contrast * 0.2),
+    smoothIterations: 2,
+  });
+}
+
 export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[], sceneCollider?: SceneCollider | null) {
   let geometry = input;
   let bounds = boundsFor(geometry);
@@ -1177,6 +1295,12 @@ export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[],
     }
     if (modifier.type === "voronoi") {
       const previous = geometry;
+      if (modifier.mode === "wire") {
+        geometry = voronoiWireGeometry(geometry, modifier);
+        if (previous !== geometry) previous.dispose();
+        bounds = boundsFor(geometry);
+        continue;
+      }
       geometry = tessellateForVoronoi(geometry, modifier.scale);
       if (previous !== geometry) previous.dispose();
       bounds = boundsFor(geometry);

@@ -4,7 +4,7 @@ import test from "node:test";
 import * as opentype from "opentype.js";
 import type { BufferGeometry } from "three";
 import { DEMO_MODELS } from "../lib/demo-models";
-import { BENCHMARK_SPECS, REQUIRED_BENCHMARK_COVERAGE, REQUIRED_STRUT_PATTERNS } from "../benchmarks/specs";
+import { BENCHMARK_SPECS, REQUIRED_BENCHMARK_COVERAGE, REQUIRED_STRUT_PATTERNS, REQUIRED_VORONOI_MODES } from "../benchmarks/specs";
 import {
   decodeModelDocument,
   encodeModelDocument,
@@ -117,6 +117,23 @@ function topologicalBoundaryEdgeCount(geometry: BufferGeometry) {
   return [...edges.values()].filter((count) => count !== 2).length;
 }
 
+function connectedComponentCount(geometry: BufferGeometry) {
+  const index = geometry.index;
+  assert.ok(index, "connected-component checks require indexed geometry");
+  const vertexCount = geometry.getAttribute("position").count;
+  const parent = new Uint32Array(vertexCount);
+  for (let vertex = 0; vertex < vertexCount; vertex += 1) parent[vertex] = vertex;
+  const find = (vertex: number): number => parent[vertex] === vertex ? vertex : (parent[vertex] = find(parent[vertex]));
+  const join = (a: number, b: number) => { const rootA = find(a); const rootB = find(b); if (rootA !== rootB) parent[rootA] = rootB; };
+  const used = new Set<number>();
+  for (let offset = 0; offset < index.count; offset += 3) {
+    const a = index.getX(offset); const b = index.getX(offset + 1); const c = index.getX(offset + 2);
+    used.add(a).add(b).add(c);
+    join(a, b); join(b, c);
+  }
+  return new Set([...used].map(find)).size;
+}
+
 function meshVolume(geometry: BufferGeometry) {
   const source = geometry.index ? geometry.toNonIndexed() : geometry;
   const position = source.getAttribute("position");
@@ -179,6 +196,7 @@ test("benchmark matrix touches every evaluator family and validates every spec",
     assert.match(serialized, new RegExp(`\"${shellField}\"`), `benchmark coverage should include ${shellField}`);
   }
   for (const pattern of REQUIRED_STRUT_PATTERNS) assert.match(serialized, new RegExp(`\"pattern\":\"${pattern}\"`));
+  for (const mode of REQUIRED_VORONOI_MODES) assert.match(serialized, new RegExp(`\"mode\":\"${mode}\"`));
 });
 
 test("rejects graphs that expand beyond the safe node limit", () => {
@@ -232,6 +250,7 @@ test("cellular lattices and organic growth are deterministic, bounded closed sol
       source: {
         type: "organic" as const, width: 58, depth: 54, height: 82, trunkDiameter: 6.5,
         levels: 4, branching: 2, angleDeg: 35, twistDeg: 137.5, taper: 0.72, seed: 13, radialSegments: 8,
+        surfaceResolution: 52, smoothness: 0.75,
       },
       limits: [58, 54, 82],
     },
@@ -246,6 +265,7 @@ test("cellular lattices and organic growth are deterministic, bounded closed sol
     const bounds = geometryBounds(first);
     assert.ok(bounds.every((value, index) => value <= item.limits[index] + 1e-4), `${item.name} should remain inside requested bounds`);
     assert.ok(Math.abs(bounds[2] - item.limits[2]) < 1e-4, `${item.name} should use the requested height`);
+    if (item.name === "organic") assert.equal(connectedComponentCount(first), 1, "organic growth should be one unified remeshed surface");
     first.dispose();
     second.dispose();
   }
@@ -273,6 +293,15 @@ test("Voronoi, array, and contour-step modifiers deterministically expand printa
   assert.equal(boundaryEdgeCount(stepped), 0);
 
   source.dispose(); voronoi.dispose(); voronoiAgain.dispose(); arrayed.dispose(); stepped.dispose();
+});
+
+test("Voronoi wire mode extracts one smooth watertight cellular shell", () => {
+  const source = createSourceGeometry({ type: "primitive", shape: "sphere", width: 46, depth: 44, height: 50, radius: 23, segments: 28 });
+  const wire = applyModifiers(source, [{ type: "voronoi", amplitude: 1.6, scale: 12, seed: 17, mode: "wire", contrast: 1.3 }]);
+  assert.ok((wire.index?.count ?? 0) / 3 > 500, "wire remeshing should produce a smooth tessellated surface");
+  assert.equal(boundaryEdgeCount(wire), 0);
+  assert.equal(connectedComponentCount(wire), 1, "polywire intersections should be fused by the volume remesh");
+  wire.dispose();
 });
 
 test("ordered modifiers materially deform geometry", () => {

@@ -26,7 +26,7 @@ function createServer(origin: string) {
     { name: "printa", version: "0.6.0" },
     {
       instructions:
-        `Create ready-to-print geometry with create_procedural_model or use create_extruded_text for the focused text workflow. Printa Spec 1.0 composes primitive, custom-curve extrusion, revolve, text, cellular lattice, organic growth, water, fluid, and cloth sources with ordered modifiers including Voronoi texture, transformed arrays, and inset contour steps. Assemblies, repeats, and transforms are supported. JSON and YAML are accepted. If the MCP app is unavailable, encode the same JSON spec into ${origin}/make/model.stl?spec= as documented at ${origin}/skills.`,
+        `Create ready-to-print geometry with create_procedural_model or use create_extruded_text for the focused text workflow. Printa Spec 1.0 composes primitive, custom-curve extrusion, revolve, text, cellular lattice, volumetrically remeshed organic growth, water, fluid, and cloth sources with ordered modifiers including Voronoi texture or smooth open wire shells, transformed arrays, and inset contour steps. Assemblies, repeats, and transforms are supported. JSON and YAML are accepted. If the MCP app is unavailable, encode the same JSON spec into ${origin}/make/model.stl?spec= as documented at ${origin}/skills.`,
     },
   );
 
@@ -236,10 +236,10 @@ function createServer(origin: string) {
     "create_procedural_model",
     {
       title: "Create a procedural printable model",
-      description: "Validate and build a Printa Spec 1.0 document supplied as JSON or YAML, then show the result as an interactive 3D model with STL download. Use sources for primitives, custom Bézier extrusion, profile revolution, text, cellular lattices, organic branching growth, water, fluid, or cloth simulation. Revolved profiles support a global radius offset. Modulation keyframes can vary flute, wave, twist, taper, bend, noise, and Voronoi amount over any local axis. Compose ordered modifiers, transformed arrays, inset contour steps, merge assemblies, or repeat transformed nodes.",
+      description: "Validate and build a Printa Spec 1.0 document supplied as JSON or YAML, then show the result as an interactive 3D model with STL download. Use sources for primitives, custom Bézier extrusion, profile revolution, text, cellular lattices, smooth volumetric organic branching growth, water, fluid, or cloth simulation. Voronoi modifiers support displaced cells, raised ridges, or wire mode for an open polywired and remeshed cellular shell. Revolved profiles support a global radius offset. Compose ordered modifiers, transformed arrays, inset contour steps, merge assemblies, or repeat transformed nodes.",
       inputSchema: {
         spec: z.string().min(20).max(6_000).optional().describe("Complete Printa Spec 1.0 document as JSON or YAML. Prefer YAML for readability. Omit only when using a built-in demo."),
-        demo: z.enum(["type-specimen", "contour-spiral-vase", "zenith-twist", "fluted-bud-vase", "ripple-column-vase", "spline-petal-dish", "primitive-totem", "water-ripple-tile", "cloth-drape-study", "cellular-lattice", "organic-coral", "layered-contour-lamp"]).default("type-specimen").describe("Built-in starting model used when spec is omitted"),
+        demo: z.enum(["type-specimen", "contour-spiral-vase", "zenith-twist", "fluted-bud-vase", "ripple-column-vase", "spline-petal-dish", "primitive-totem", "water-ripple-tile", "cloth-drape-study", "cellular-lattice", "organic-coral", "voronoi-shell-lamp", "layered-contour-lamp"]).default("type-specimen").describe("Built-in starting model used when spec is omitted"),
       },
       outputSchema: {
         name: z.string(),

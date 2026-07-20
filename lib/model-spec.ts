@@ -109,7 +109,7 @@ const voronoiModifierSchema = z.object({
   amplitude: finite.min(-40).max(40).default(1.5).describe("Signed cellular displacement depth in document units"),
   scale: finite.min(1).max(200).default(14).describe("Average cellular feature size in document units"),
   seed: z.number().int().default(1),
-  mode: z.enum(["cells", "ridges"]).default("cells").describe("Raise cell centers or the boundaries between cells"),
+  mode: z.enum(["cells", "ridges", "wire"]).default("cells").describe("Displace cell centers/ridges or replace the surface with a smooth wired cell boundary network"),
   contrast: finite.min(0.1).max(6).default(1.4),
   ...modulationField,
   ...disabledField,
@@ -330,6 +330,8 @@ const organicSourceSchema = z.object({
   taper: finite.min(0.35).max(0.95).default(0.72),
   seed: z.number().int().default(1),
   radialSegments: z.number().int().min(6).max(24).default(9),
+  surfaceResolution: z.number().int().min(32).max(96).default(60).describe("Voxel resolution used for the unified organic surface"),
+  smoothness: finite.min(0).max(2).default(0.75).describe("Blend radius at branch intersections"),
 }).strict();
 
 export const sourceSchema = z.discriminatedUnion("type", [

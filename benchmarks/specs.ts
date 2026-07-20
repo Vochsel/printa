@@ -128,6 +128,21 @@ const addedCases = {
     ...defaults,
     metadata: { benchmark: true, coverage: "all-modifiers" },
   },
+  "voronoi-cell-surface": {
+    version: "1.0",
+    name: "Voronoi cell surface",
+    description: "Exercises seeded cellular displacement independently of the volumetric wire-shell path.",
+    units: "mm",
+    root: {
+      kind: "shape",
+      id: "cell-surface",
+      source: { type: "primitive", shape: "sphere", width: 58, depth: 54, height: 64, radius: 29, segments: 64 },
+      modifiers: [{ type: "voronoi", amplitude: 1.2, scale: 14, seed: 23, mode: "cells", contrast: 1.25 }],
+      material: "resin",
+    },
+    ...defaults,
+    metadata: { benchmark: true, coverage: "voronoi-cells" },
+  },
   "extrude-hole-curves": {
     version: "1.0",
     name: "Extrude hole curves",
@@ -327,3 +342,4 @@ export const REQUIRED_BENCHMARK_COVERAGE = {
 } as const;
 
 export const REQUIRED_STRUT_PATTERNS = ["cross", "diamond", "radial"] as const;
+export const REQUIRED_VORONOI_MODES = ["cells", "ridges", "wire"] as const;
