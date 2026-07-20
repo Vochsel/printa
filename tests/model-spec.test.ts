@@ -185,7 +185,7 @@ test("publishes a machine-readable schema with every source family", () => {
   for (const source of ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic"]) {
     assert.match(schema, new RegExp(`\\b${source}\\b`));
   }
-  for (const modifier of ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "subdivide", "array", "step", "smooth", "drape", "melt"]) {
+  for (const modifier of ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "vine", "subdivide", "array", "step", "smooth", "drape", "melt"]) {
     assert.match(schema, new RegExp(modifier));
   }
   for (const textField of ["bevelSegments", "curveSegments", "extrudeSegments", "bevelSide", "smoothNormals", "textCase", "underline"]) {
@@ -314,6 +314,20 @@ test("Voronoi wire mode extracts one smooth watertight cellular shell", () => {
   assert.equal(boundaryEdgeCount(wire), 0);
   assert.equal(connectedComponentCount(wire), 1, "polywire intersections should be fused by the volume remesh");
   wire.dispose();
+});
+
+test("surface vine modifier grows deterministic rounded relief up one watertight mesh", () => {
+  const source = createSourceGeometry({ type: "primitive", shape: "cylinder", radius: 22, height: 64, segments: 24 });
+  const sourceTriangles = (source.index?.count ?? source.getAttribute("position").count) / 3;
+  const modifier = { type: "vine" as const, vines: 3, growth: 0.9, stepLength: 6, radius: 2.1, curlDeg: 24, branching: 0.3, taper: 0.5, seed: 17 };
+  const first = applyModifiers(source.clone(), [modifier]);
+  const second = applyModifiers(source.clone(), [modifier]);
+  assert.ok((first.index?.count ?? 0) / 3 > sourceTriangles, "vine relief should tessellate its host for rounded detail");
+  assert.deepEqual(Array.from(first.getAttribute("position").array), Array.from(second.getAttribute("position").array));
+  assert.notDeepEqual(geometryBounds(first).map((value) => value.toFixed(4)), geometryBounds(source).map((value) => value.toFixed(4)));
+  assert.equal(boundaryEdgeCount(first), 0, "vine relief should keep the host watertight");
+  assert.equal(connectedComponentCount(first), 1, "vine relief should remain part of one host mesh");
+  source.dispose(); first.dispose(); second.dispose();
 });
 
 test("subdivision modifier generates closed Catmull-Clark, Loop, and linear topology", () => {

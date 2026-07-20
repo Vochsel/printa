@@ -115,6 +115,19 @@ const voronoiModifierSchema = z.object({
   ...disabledField,
 }).strict();
 
+const vineModifierSchema = z.object({
+  type: z.literal("vine"),
+  vines: z.number().int().min(1).max(12).default(4).describe("Number of main tendrils starting near the base"),
+  growth: finite.min(0.05).max(1).default(0.9).describe("Fraction of the host height the vines attempt to climb"),
+  stepLength: finite.min(1).max(30).default(7).describe("Distance between successive surface-growth points"),
+  radius: finite.min(0.4).max(12).default(2).describe("Rounded vine relief radius in document units"),
+  curlDeg: finite.min(-80).max(80).default(28).describe("Sideways heading away from the steepest uphill surface direction"),
+  branching: finite.min(0).max(1).default(0.22).describe("Chance and density of secondary tendrils"),
+  taper: finite.min(0).max(0.9).default(0.45).describe("How strongly tendrils narrow toward their tips"),
+  seed: z.number().int().default(1),
+  ...disabledField,
+}).strict();
+
 const arrayModifierSchema = z.object({
   type: z.literal("array"),
   count: z.number().int().min(2).max(32).default(6),
@@ -180,6 +193,7 @@ export const modifierSchema = z.discriminatedUnion("type", [
   bendModifierSchema,
   noiseModifierSchema,
   voronoiModifierSchema,
+  vineModifierSchema,
   arrayModifierSchema,
   stepModifierSchema,
   subdivideModifierSchema,

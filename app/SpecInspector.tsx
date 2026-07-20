@@ -68,6 +68,7 @@ const MODIFIER_META: Record<ModifierSpec["type"], { label: string; hint: string 
   bend: { label: "Bend", hint: "Lean the shape over" },
   noise: { label: "Roughen", hint: "Organic bumpy texture" },
   voronoi: { label: "Voronoi cells", hint: "Cell texture, ridges, or a smooth remeshed wire shell" },
+  vine: { label: "Surface vines", hint: "Grow branching, rounded tendrils up the selected mesh" },
   array: { label: "Transform array", hint: "Layer copies with incremental move, rotation, and scale" },
   step: { label: "Contour steps", hint: "Stack copies with a constant inset like layered lampshades" },
   subdivide: { label: "Subdivision surface", hint: "Add real topology with Catmull-Clark, Loop, or linear refinement" },
@@ -115,6 +116,13 @@ const MODIFIER_FIELDS: Record<string, { label: string; step?: number; min?: numb
   "subdivide.levels": { label: "Subdivision levels", min: 1, max: 3 },
   "array.count": { label: "Copies", min: 2, max: 32 },
   "array.scale": { label: "Scale per copy", step: 0.01, min: 0.05, max: 4 },
+  "vine.vines": { label: "Tendrils", min: 1, max: 12 },
+  "vine.growth": { label: "Growth", step: 0.05, min: 0.05, max: 1 },
+  "vine.stepLength": { label: "Step length", step: 0.25, min: 1, max: 30, unit: "mm" },
+  "vine.radius": { label: "Vine radius", step: 0.1, min: 0.4, max: 12, unit: "mm" },
+  "vine.curlDeg": { label: "Curl", step: 1, min: -80, max: 80, unit: "°" },
+  "vine.branching": { label: "Branching", step: 0.05, min: 0, max: 1 },
+  "vine.taper": { label: "Tip taper", step: 0.05, min: 0, max: 0.9 },
 };
 
 const fontPreviewCache = new Map<string, Promise<void>>();
@@ -217,6 +225,7 @@ function modifierDefaults(type: ModifierSpec["type"]): ModifierSpec {
   if (type === "bend") return { type, angleDeg: 20, directionDeg: 0 };
   if (type === "noise") return { type, amplitude: 1, scale: 12, seed: 1 };
   if (type === "voronoi") return { type, amplitude: 1.5, scale: 14, seed: 1, mode: "cells", contrast: 1.4 };
+  if (type === "vine") return { type, vines: 4, growth: 0.9, stepLength: 7, radius: 2, curlDeg: 28, branching: 0.22, taper: 0.45, seed: 1 };
   if (type === "array") return { type, count: 6, translate: [0, 0, 4], rotate: [0, 0, 8], scale: 1 };
   if (type === "step") return { type, levels: 8, axis: "z", distance: 3, inset: 1.2, twistDeg: 0 };
   if (type === "subdivide") return { type, scheme: "catmull-clark", levels: 1, boundary: "sharp" };
@@ -698,23 +707,23 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
                 );
               })}
             </Grid2>
-            {selectedModifier.type !== "smooth" && selectedModifier.type !== "drape" && selectedModifier.type !== "melt" && selectedModifier.type !== "array" && selectedModifier.type !== "step" && selectedModifier.type !== "subdivide" && <div className="mt-2 grid gap-2 border-t border-border pt-2">
+            {selectedModifier.type !== "smooth" && selectedModifier.type !== "drape" && selectedModifier.type !== "melt" && selectedModifier.type !== "array" && selectedModifier.type !== "step" && selectedModifier.type !== "subdivide" && selectedModifier.type !== "vine" && <div className="mt-2 grid gap-2 border-t border-border pt-2">
               <ToggleField
                 label="Vary amount over shape"
                 detail="Normalized keyframes along a local axis"
                 value={Boolean(selectedModifier.modulation)}
                 onChange={(enabled) => mutateNode((node) => {
-                  const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" | "subdivide" }>;
+                  const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" | "subdivide" | "vine" }>;
                   if (enabled) modifier.modulation = { axis: "z", points: [[0, 0], [0.2, 1], [0.8, 1], [1, 0]], interpolation: "smoothstep" };
                   else delete modifier.modulation;
                 })}
               />
               {selectedModifier.modulation && <>
                 <Grid2>
-                  <SelectField label="Modulation axis" value={selectedModifier.modulation.axis} options={["x", "y", "z"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" | "subdivide" }>; if (modifier.modulation) modifier.modulation.axis = value as "x" | "y" | "z"; })} />
-                  <SelectField label="Interpolation" value={selectedModifier.modulation.interpolation} options={["linear", "smoothstep"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" | "subdivide" }>; if (modifier.modulation) modifier.modulation.interpolation = value as "linear" | "smoothstep"; })} />
+                  <SelectField label="Modulation axis" value={selectedModifier.modulation.axis} options={["x", "y", "z"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" | "subdivide" | "vine" }>; if (modifier.modulation) modifier.modulation.axis = value as "x" | "y" | "z"; })} />
+                  <SelectField label="Interpolation" value={selectedModifier.modulation.interpolation} options={["linear", "smoothstep"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" | "subdivide" | "vine" }>; if (modifier.modulation) modifier.modulation.interpolation = value as "linear" | "smoothstep"; })} />
                 </Grid2>
-                <PointListField label="Amount curve · normalized" columns={["Position 0–1", "Multiplier"]} value={selectedModifier.modulation.points} onChange={(points) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" | "subdivide" }>; if (modifier.modulation) modifier.modulation.points = points; })} />
+                <PointListField label="Amount curve · normalized" columns={["Position 0–1", "Multiplier"]} value={selectedModifier.modulation.points} onChange={(points) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" | "subdivide" | "vine" }>; if (modifier.modulation) modifier.modulation.points = points; })} />
               </>}
             </div>}
           </>

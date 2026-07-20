@@ -208,10 +208,14 @@ Modifiers run from first to last.
 - `axialWave`: radial `amplitude`, heightwise `cycles`, and `phaseDeg`.
 - `bend`: `angleDeg` and XY `directionDeg`.
 - `noise`: deterministic radial `amplitude`, feature `scale`, and integer `seed`.
+- `voronoi`: cellular `amplitude`, feature `scale`, integer `seed`, `mode: cells | ridges | wire`, and `contrast`. Wire mode replaces the input with a smooth, remeshed cellular shell.
+- `vine`: seeded rounded tendrils that grow upward over the host surface. Controls are main `vines`, normalized height `growth`, `stepLength`, relief `radius`, signed `curlDeg`, `branching`, tip `taper`, and integer `seed`. It tessellates and displaces the existing mesh so the result remains one watertight shell.
 - `subdivide`: real topology refinement with `scheme: catmull-clark | loop | linear`, `levels: 1..3`, and `boundary: sharp | smooth`. Put it before displacement modifiers to give them more vertices, or after them to round the result.
+- `array`: `count` incrementally transformed copies using `translate`, `rotate`, and per-copy `scale`.
+- `step`: `levels` of contour copies along `axis`, with constant `distance`, `inset`, and `twistDeg`.
 - `smooth`: Laplacian `iterations` and `strength`. Apply sparingly because it changes dimensions.
 
-Vertex-deformation modifiers may include the same optional modulation envelope; topology and expansion modifiers such as `subdivide`, `array`, and `step` do not:
+Vertex-deformation modifiers may include the same optional modulation envelope; topology, growth, and expansion modifiers such as `subdivide`, `vine`, `array`, and `step` do not:
 
 ```yaml
 modulation:

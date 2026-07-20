@@ -1260,11 +1260,208 @@ function voronoiWireGeometry(input: BufferGeometry, modifier: Extract<ModifierSp
   });
 }
 
+function vineGeometry(input: BufferGeometry, modifier: Extract<ModifierSpec, { type: "vine" }>) {
+  type VineTip = {
+    point: Vector3;
+    normal: Vector3;
+    direction: Vector3;
+    radius: number;
+    remaining: number;
+    total: number;
+    lineage: number;
+    handedness: number;
+  };
+
+  // A vine narrower than its host triangles cannot read as a rounded relief.
+  // Uniform shared-edge tessellation preserves the host's watertight topology.
+  const featureSize = Math.max(modifier.radius * 4.5, modifier.stepLength * 0.8);
+  const surface = tessellateForVoronoi(input, featureSize);
+  const position = surface.getAttribute("position") as BufferAttribute;
+  const normal = surface.getAttribute("normal") as BufferAttribute;
+  const index = surface.index;
+  if (!index) {
+    surface.dispose();
+    throw new Error("Vine growth requires indexed surface topology.");
+  }
+  surface.computeBoundingBox();
+  const box = surface.boundingBox!;
+  const center = box.getCenter(new Vector3());
+  const size = box.getSize(new Vector3());
+  const height = Math.max(size.z, 1e-4);
+  const radial = new Float64Array(position.count);
+  let maxRadial = 0;
+  for (let vertex = 0; vertex < position.count; vertex += 1) {
+    radial[vertex] = Math.hypot(position.getX(vertex) - center.x, position.getY(vertex) - center.y);
+    maxRadial = Math.max(maxRadial, radial[vertex]);
+  }
+  let candidates = Array.from({ length: position.count }, (_, vertex) => vertex).filter((vertex) => (
+    position.getZ(vertex) <= box.min.z + height * 0.18
+    && radial[vertex] >= maxRadial * 0.2
+  ));
+  if (!candidates.length) {
+    candidates = Array.from({ length: position.count }, (_, vertex) => vertex)
+      .sort((a, b) => position.getZ(a) - position.getZ(b))
+      .slice(0, Math.max(modifier.vines * 4, 12));
+  }
+
+  const bvh = new MeshBVH(surface);
+  const hit: { point: Vector3; distance: number; faceIndex: number } = { point: new Vector3(), distance: 0, faceIndex: 0 };
+  const projectPoint = (probe: Vector3, targetPoint: Vector3, targetNormal: Vector3) => {
+    const result = bvh.closestPointToPoint(probe, hit);
+    if (!result) return false;
+    targetPoint.copy(result.point);
+    const face = Math.max(0, Math.min(Math.floor(index.count / 3) - 1, result.faceIndex));
+    const a = index.getX(face * 3); const b = index.getX(face * 3 + 1); const c = index.getX(face * 3 + 2);
+    targetNormal.set(
+      normal.getX(a) + normal.getX(b) + normal.getX(c),
+      normal.getY(a) + normal.getY(b) + normal.getY(c),
+      normal.getZ(a) + normal.getZ(b) + normal.getZ(c),
+    ).normalize();
+    return true;
+  };
+  const uphillAt = (point: Vector3, surfaceNormal: Vector3) => {
+    const uphill = new Vector3(0, 0, 1).addScaledVector(surfaceNormal, -surfaceNormal.z);
+    if (uphill.lengthSq() < 1e-6) {
+      uphill.set(point.x - center.x, point.y - center.y, 0);
+      if (uphill.lengthSq() < 1e-6) uphill.set(1, 0, 0);
+    }
+    return uphill.normalize();
+  };
+
+  const usedStarts = new Set<number>();
+  const tips: VineTip[] = [];
+  const curl = modifier.curlDeg * DEG;
+  const climbPerStep = modifier.stepLength * Math.max(0.22, Math.cos(Math.abs(curl)));
+  const mainSteps = Math.max(2, Math.min(48, Math.ceil(height * modifier.growth / climbPerStep)));
+  for (let vine = 0; vine < modifier.vines; vine += 1) {
+    const targetAngle = Math.PI * 2 * (vine / modifier.vines + (seededUnit(modifier.seed, vine, 0, 0, 307) - 0.5) * 0.2 / modifier.vines);
+    let best = candidates[0];
+    let bestScore = Infinity;
+    for (const candidate of candidates) {
+      if (usedStarts.has(candidate) && usedStarts.size < candidates.length) continue;
+      const angle = Math.atan2(position.getY(candidate) - center.y, position.getX(candidate) - center.x);
+      const angular = Math.abs(Math.atan2(Math.sin(angle - targetAngle), Math.cos(angle - targetAngle)));
+      const heightPenalty = (position.getZ(candidate) - box.min.z) / height * 0.35;
+      const radialReward = maxRadial > 1e-6 ? radial[candidate] / maxRadial * 0.12 : 0;
+      const score = angular + heightPenalty - radialReward;
+      if (score < bestScore) { best = candidate; bestScore = score; }
+    }
+    usedStarts.add(best);
+    const point = new Vector3().fromBufferAttribute(position, best);
+    const surfaceNormal = new Vector3().fromBufferAttribute(normal, best).normalize();
+    const uphill = uphillAt(point, surfaceNormal);
+    const sideways = new Vector3().crossVectors(surfaceNormal, uphill).normalize();
+    const handedness = seededUnit(modifier.seed, vine, 0, 0, 311) < 0.5 ? -1 : 1;
+    const direction = uphill.clone().multiplyScalar(Math.cos(curl))
+      .addScaledVector(sideways, Math.sin(curl) * handedness)
+      .normalize();
+    tips.push({ point, normal: surfaceNormal, direction, radius: modifier.radius, remaining: mainSteps, total: mainSteps, lineage: vine + 1, handedness });
+  }
+
+  const segments: CapsuleSegment[] = [];
+  const maxSegments = 160;
+  const maxBranches = Math.round(modifier.vines * modifier.branching * 4.5);
+  let branches = 0;
+  const targetZ = box.min.z + height * modifier.growth;
+  for (let tipIndex = 0; tipIndex < tips.length && segments.length < maxSegments; tipIndex += 1) {
+    const tip = tips[tipIndex];
+    let point = tip.point.clone();
+    let surfaceNormal = tip.normal.clone();
+    let direction = tip.direction.clone();
+    for (let advance = 0; advance < tip.remaining && segments.length < maxSegments; advance += 1) {
+      if (point.z >= targetZ && advance > 0) break;
+      const uphill = uphillAt(point, surfaceNormal);
+      const sideways = new Vector3().crossVectors(surfaceNormal, uphill).normalize();
+      const wander = (seededUnit(modifier.seed, tip.lineage, advance, 0, 317) - 0.5) * 0.48;
+      const desired = uphill.clone().multiplyScalar(Math.cos(curl))
+        .addScaledVector(sideways, Math.sin(curl) * tip.handedness + wander)
+        .addScaledVector(direction, 0.38)
+        .addScaledVector(surfaceNormal, -surfaceNormal.dot(direction) * 0.38)
+        .normalize();
+      const probe = point.clone().addScaledVector(desired, modifier.stepLength).addScaledVector(surfaceNormal, modifier.radius * 0.3);
+      const nextPoint = new Vector3();
+      const nextNormal = new Vector3();
+      if (!projectPoint(probe, nextPoint, nextNormal)) break;
+      if (nextPoint.distanceToSquared(point) < modifier.stepLength ** 2 * 0.025) break;
+      const progress = advance / Math.max(1, tip.total);
+      const nextProgress = (advance + 1) / Math.max(1, tip.total);
+      const startRadius = Math.max(modifier.radius * 0.28, tip.radius * (1 - modifier.taper * progress));
+      const endRadius = Math.max(modifier.radius * 0.28, tip.radius * (1 - modifier.taper * nextProgress));
+      segments.push({ start: point.clone(), end: nextPoint.clone(), startRadius, endRadius });
+
+      if (
+        branches < maxBranches
+        && advance >= 2
+        && tip.remaining - advance >= 4
+        && seededUnit(modifier.seed, tip.lineage, advance, 0, 331) < modifier.branching * 0.3
+      ) {
+        const branchHandedness = -tip.handedness;
+        const branchAngle = curl + branchHandedness * (32 + seededUnit(modifier.seed, tip.lineage, advance, 0, 337) * 24) * DEG;
+        const branchDirection = uphill.clone().multiplyScalar(Math.cos(branchAngle))
+          .addScaledVector(sideways, Math.sin(branchAngle))
+          .normalize();
+        const remaining = Math.max(3, Math.floor((tip.remaining - advance) * (0.48 + seededUnit(modifier.seed, tip.lineage, advance, 0, 347) * 0.2)));
+        tips.push({
+          point: nextPoint.clone(), normal: nextNormal.clone(), direction: branchDirection,
+          radius: endRadius * 0.76, remaining, total: remaining,
+          lineage: tip.lineage * 17 + advance + 1, handedness: branchHandedness,
+        });
+        branches += 1;
+      }
+
+      direction = nextPoint.clone().sub(point);
+      direction.addScaledVector(nextNormal, -nextNormal.dot(direction)).normalize();
+      point = nextPoint;
+      surfaceNormal = nextNormal;
+    }
+  }
+
+  if (!segments.length) return surface;
+  const px = new Vector3();
+  for (let vertex = 0; vertex < position.count; vertex += 1) {
+    px.fromBufferAttribute(position, vertex);
+    let relief = 0;
+    for (const segment of segments) {
+      const dx = segment.end.x - segment.start.x;
+      const dy = segment.end.y - segment.start.y;
+      const dz = segment.end.z - segment.start.z;
+      const length2 = Math.max(dx * dx + dy * dy + dz * dz, 1e-9);
+      const t = Math.max(0, Math.min(1, ((px.x - segment.start.x) * dx + (px.y - segment.start.y) * dy + (px.z - segment.start.z) * dz) / length2));
+      const qx = segment.start.x + dx * t;
+      const qy = segment.start.y + dy * t;
+      const qz = segment.start.z + dz * t;
+      const localRadius = segment.startRadius + (segment.endRadius - segment.startRadius) * t;
+      const distance2 = (px.x - qx) ** 2 + (px.y - qy) ** 2 + (px.z - qz) ** 2;
+      if (distance2 < localRadius * localRadius) relief = Math.max(relief, Math.sqrt(localRadius * localRadius - distance2));
+    }
+    if (relief <= 0) continue;
+    position.setXYZ(
+      vertex,
+      px.x + normal.getX(vertex) * relief,
+      px.y + normal.getY(vertex) * relief,
+      px.z + normal.getZ(vertex) * relief,
+    );
+  }
+  position.needsUpdate = true;
+  surface.deleteAttribute("normal");
+  surface.computeVertexNormals();
+  surface.computeBoundingBox();
+  surface.computeBoundingSphere();
+  return surface;
+}
+
 export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[], sceneCollider?: SceneCollider | null) {
   let geometry = input;
   let bounds = boundsFor(geometry);
   for (const modifier of modifiers) {
     if (modifier.disabled) continue;
+    if (modifier.type === "vine") {
+      const previous = geometry;
+      geometry = vineGeometry(geometry, modifier);
+      if (previous !== geometry) previous.dispose();
+      bounds = boundsFor(geometry);
+      continue;
+    }
     if (modifier.type === "subdivide") {
       const triangles = Math.floor((geometry.index?.count ?? geometry.getAttribute("position").count) / 3);
       const expanded = subdivisionTriangleCount(triangles, modifier.scheme, modifier.levels);

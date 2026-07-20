@@ -162,6 +162,21 @@ const addedCases = {
     ...defaults,
     metadata: { benchmark: true, coverage: "voronoi-cells" },
   },
+  "surface-vine-growth": {
+    version: "1.0",
+    name: "Surface vine growth",
+    description: "Exercises seeded branching tendrils projected up a tessellated watertight host surface.",
+    units: "mm",
+    root: {
+      kind: "shape",
+      id: "vine-column",
+      source: { type: "primitive", shape: "cylinder", radius: 27, height: 84, segments: 32 },
+      modifiers: [{ type: "vine", vines: 3, growth: 0.88, stepLength: 7, radius: 2.2, curlDeg: 26, branching: 0.24, taper: 0.5, seed: 29 }],
+      material: "pla-matte",
+    },
+    ...defaults,
+    metadata: { benchmark: true, coverage: "vine,surface-growth,branching" },
+  },
   "extrude-hole-curves": {
     version: "1.0",
     name: "Extrude hole curves",
@@ -355,7 +370,7 @@ export const BENCHMARK_SPECS = { ...DEMO_MODELS, ...addedCases } as const;
 export const REQUIRED_BENCHMARK_COVERAGE = {
   sources: ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic"],
   primitives: ["box", "cylinder", "cone", "sphere", "torus"],
-  modifiers: ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "subdivide", "array", "step", "smooth", "drape", "melt"],
+  modifiers: ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "vine", "subdivide", "array", "step", "smooth", "drape", "melt"],
   graph: ["shape", "assembly", "repeat"],
   curves: ["move", "line", "quadratic", "bezier", "close"],
 } as const;

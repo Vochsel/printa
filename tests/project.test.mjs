@@ -5,7 +5,7 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("ships the homepage, advanced editors, MCP widgets, skills, icons, and generation routes", async () => {
-  const [page, home, editor, playground, studio, inspector, widget, modelWidget, modelSpec, demos, modelStlRoute, publicStlRoute, skill, skillRoute, stlRoute, mcpRoute, fontRoute, icon] = await Promise.all([
+  const [page, home, editor, playground, studio, inspector, widget, modelWidget, modelSpec, proceduralGeometry, demos, modelStlRoute, publicStlRoute, skill, skillRoute, stlRoute, mcpRoute, fontRoute, icon] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/HomePage.tsx", root), "utf8"),
     readFile(new URL("app/editor/page.tsx", root), "utf8"),
@@ -15,6 +15,7 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
     readFile(new URL("lib/mcp-widget.ts", root), "utf8"),
     readFile(new URL("lib/mcp-model-widget.ts", root), "utf8"),
     readFile(new URL("lib/model-spec.ts", root), "utf8"),
+    readFile(new URL("lib/procedural-geometry.ts", root), "utf8"),
     readFile(new URL("lib/demo-models.ts", root), "utf8"),
     readFile(new URL("app/api/model/stl/route.ts", root), "utf8"),
     readFile(new URL("app/make/model.stl/route.ts", root), "utf8"),
@@ -121,6 +122,8 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(modelSpec, /extrudeSegments/);
   assert.match(modelSpec, /modifierModulationSchema/);
   assert.match(modelSpec, /subdivideModifierSchema/);
+  assert.match(modelSpec, /vineModifierSchema/);
+  assert.match(proceduralGeometry, /vineGeometry/);
   assert.match(modelSpec, /display: z\.object/);
   assert.match(demos, /type-specimen/);
   assert.match(demos, /contour-spiral-vase/);
