@@ -347,8 +347,18 @@ export async function POST(request: Request) {
   return handleMcpRequest(request);
 }
 
-export async function GET(request: Request) {
-  return handleMcpRequest(request);
+// This server is stateless (JSON responses, no session) so it has no
+// server-initiated SSE stream to offer on GET. Routing GET through the
+// transport leaves an SSE connection open forever, which makes MCP clients
+// (e.g. ChatGPT connectors) hang during the handshake instead of falling back
+// to POST-only. Answer GET with 405 immediately per the Streamable HTTP spec.
+export function GET() {
+  return withCors(
+    new Response(
+      JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "Method Not Allowed: this MCP endpoint uses JSON responses over POST." }, id: null }),
+      { status: 405, headers: { "Content-Type": "application/json", Allow: "POST, DELETE, OPTIONS" } },
+    ),
+  );
 }
 
 export async function DELETE(request: Request) {
