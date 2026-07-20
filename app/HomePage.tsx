@@ -26,6 +26,11 @@ import {
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -84,15 +89,45 @@ function textDoc({ text, font, depth, size }: { text: string; font: string; dept
 // ModelStage — one reusable WebGL viewport. Recompiles when `document` changes.
 // ---------------------------------------------------------------------------
 
-function ModelStage({ document, color = "#ff4d8b", autoRotate = true, className }: { document: unknown; color?: string; autoRotate?: boolean; className?: string }) {
+// A fake 3D-printer build plate + grid the model sits on, sized to the model.
+function buildBed(size: number) {
+  const group = new THREE.Group();
+  const plate = new THREE.Mesh(
+    new THREE.PlaneGeometry(size, size),
+    new THREE.MeshStandardMaterial({ color: "#f1ede3", roughness: 0.97, metalness: 0 }),
+  );
+  plate.position.z = -0.15;
+  plate.receiveShadow = true;
+  group.add(plate);
+  const divisions = Math.max(6, Math.round(size / 10));
+  const grid = new THREE.GridHelper(size, divisions, "#c4bdac", "#e1dbcd");
+  grid.rotation.x = Math.PI / 2;
+  group.add(grid);
+  return group;
+}
+
+function disposeBed(bed: THREE.Group) {
+  bed.traverse((child) => {
+    if (child instanceof THREE.Mesh) { child.geometry.dispose(); (child.material as THREE.Material).dispose(); }
+    if (child instanceof THREE.GridHelper) { child.geometry.dispose(); (child.material as THREE.Material).dispose(); }
+  });
+}
+
+type Stage = {
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+  controls: OrbitControls;
+  composer: EffectComposer;
+  gtao: GTAOPass;
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> | null;
+  bed: THREE.Group | null;
+  loader: AbortController | null;
+  markDirty: () => void;
+};
+
+function ModelStage({ document, color = "#ff4d8b", className }: { document: unknown; color?: string; className?: string }) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const store = useRef<{
-    scene: THREE.Scene;
-    camera: THREE.PerspectiveCamera;
-    controls: OrbitControls;
-    mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> | null;
-    loader: AbortController | null;
-  } | null>(null);
+  const store = useRef<Stage | null>(null);
   const [loading, setLoading] = useState(true);
   const specKey = useMemo(() => JSON.stringify(document), [document]);
 
@@ -101,18 +136,16 @@ function ModelStage({ document, color = "#ff4d8b", autoRotate = true, className 
     if (!mount) return;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 2000);
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 4000);
     camera.up.set(0, 0, 1);
-    camera.position.set(24, -78, 64);
+    camera.position.set(90, -150, 115);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
-    // setSize(..., false) only resizes the drawing buffer, so the canvas must be
-    // pinned to its container via CSS or it lays out at buffer-pixel size and
-    // overflows / blows up the section height.
+    renderer.toneMappingExposure = 1.04;
     renderer.domElement.style.display = "block";
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
@@ -120,48 +153,69 @@ function ModelStage({ document, color = "#ff4d8b", autoRotate = true, className 
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
+    controls.dampingFactor = 0.09;
     controls.enablePan = false;
-    controls.autoRotate = autoRotate;
-    controls.autoRotateSpeed = 1.1;
-    controls.minDistance = 20;
-    controls.maxDistance = 900;
-    controls.maxPolarAngle = Math.PI * 0.54;
+    controls.minDistance = 40;
+    controls.maxDistance = 1400;
+    controls.maxPolarAngle = Math.PI * 0.5;
+    controls.target.set(0, 0, 20);
 
-    scene.add(new THREE.HemisphereLight("#ffffff", "#c9c9d4", 2.5));
-    const keyLight = new THREE.DirectionalLight("#ffffff", 3.1);
-    keyLight.position.set(-40, -70, 90);
+    scene.add(new THREE.HemisphereLight("#ffffff", "#cbc5b8", 2.2));
+    const keyLight = new THREE.DirectionalLight("#ffffff", 2.6);
+    keyLight.position.set(-60, -90, 130);
     scene.add(keyLight);
-    const rim = new THREE.DirectionalLight("#b8a4ed", 1.4);
-    rim.position.set(60, 40, 40);
+    const rim = new THREE.DirectionalLight("#b8a4ed", 1.1);
+    rim.position.set(80, 60, 50);
     scene.add(rim);
 
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const gtao = new GTAOPass(scene, camera, 1, 1);
+    gtao.output = GTAOPass.OUTPUT.Default;
+    gtao.blendIntensity = 0.9;
+    gtao.updateGtaoMaterial({ radius: 6, distanceExponent: 1, thickness: 1, scale: 1.1, samples: 16, screenSpaceRadius: false });
+    composer.addPass(gtao);
+    composer.addPass(new OutputPass());
+
+    let dirty = true;
+    const markDirty = () => { dirty = true; };
+    controls.addEventListener("change", markDirty);
+
     let frame = 0;
-    const animate = () => { frame = requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); };
+    const animate = () => {
+      frame = requestAnimationFrame(animate);
+      const moved = controls.update();
+      if (dirty || moved) { composer.render(); dirty = false; }
+    };
     const resize = () => {
       const { width, height } = mount.getBoundingClientRect();
       renderer.setSize(width, height, false);
+      composer.setSize(width, height);
+      gtao.setSize(width, height);
       camera.aspect = width / Math.max(height, 1);
       camera.updateProjectionMatrix();
+      dirty = true;
     };
     const observer = new ResizeObserver(resize);
     observer.observe(mount);
     resize();
     animate();
-    store.current = { scene, camera, controls, mesh: null, loader: null };
+    store.current = { scene, camera, controls, composer, gtao, mesh: null, bed: null, loader: null, markDirty };
 
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      controls.removeEventListener("change", markDirty);
       controls.dispose();
       store.current?.loader?.abort();
       if (store.current?.mesh) { scene.remove(store.current.mesh); store.current.mesh.geometry.dispose(); store.current.mesh.material.dispose(); }
+      if (store.current?.bed) { scene.remove(store.current.bed); disposeBed(store.current.bed); }
+      composer.dispose();
       renderer.dispose();
       renderer.domElement.remove();
       scene.clear();
       store.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -173,14 +227,35 @@ function ModelStage({ document, color = "#ff4d8b", autoRotate = true, className 
       const controller = new AbortController();
       active.loader = controller;
       loadGeometry(document, controller.signal)
-        .then((geometry) => {
-          if (controller.signal.aborted) { geometry.dispose(); return; }
+        .then((raw) => {
+          if (controller.signal.aborted) { raw.dispose(); return; }
+          // Sit the model on the bed: centre X/Y, drop its base to z = 0.
+          raw.computeBoundingBox();
+          const bb = raw.boundingBox!;
+          raw.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -bb.min.z);
+          // Creased normals keep curves smooth but show real facets (hexagons etc).
+          const geometry = toCreasedNormals(raw, THREE.MathUtils.degToRad(35));
+          raw.dispose();
+          geometry.computeBoundingBox();
+          geometry.computeBoundingSphere();
+          const box = geometry.boundingBox!;
+          const spanXY = Math.max(box.max.x - box.min.x, box.max.y - box.min.y);
+          const heightZ = box.max.z - box.min.z;
+
           if (active.mesh) { active.scene.remove(active.mesh); active.mesh.geometry.dispose(); active.mesh.material.dispose(); }
-          const material = new THREE.MeshStandardMaterial({ color, roughness: 0.42, metalness: 0.02, emissive: color, emissiveIntensity: 0.05 });
+          if (active.bed) { active.scene.remove(active.bed); disposeBed(active.bed); }
+          const bed = buildBed(Math.max(70, Math.ceil((spanXY * 2.1) / 10) * 10));
+          active.scene.add(bed);
+          active.bed = bed;
+
+          const material = new THREE.MeshStandardMaterial({ color, roughness: 0.46, metalness: 0.02 });
           const mesh = new THREE.Mesh(geometry, material);
           active.scene.add(mesh);
           active.mesh = mesh;
-          frameGeometry(active.camera, active.controls, geometry.boundingSphere ?? new THREE.Sphere(new THREE.Vector3(), 40));
+
+          active.gtao.updateGtaoMaterial({ radius: THREE.MathUtils.clamp(spanXY * 0.12, 2.5, 22) });
+          frameGeometry(active.camera, active.controls, new THREE.Sphere(new THREE.Vector3(0, 0, heightZ / 2), geometry.boundingSphere!.radius));
+          active.markDirty();
           setLoading(false);
         })
         .catch((error) => { if ((error as Error).name !== "AbortError") setLoading(false); });
@@ -194,7 +269,7 @@ function ModelStage({ document, color = "#ff4d8b", autoRotate = true, className 
       <div ref={mountRef} className="h-full w-full overflow-hidden" aria-label="3D model preview" />
       {loading && (
         <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-background/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground backdrop-blur">
-          <Loader2 size={12} className="animate-spin" /> compiling
+          <Loader2 size={12} className="animate-spin" /> generating geometry
         </div>
       )}
       <span className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-1 rounded-full bg-background/80 px-2 py-1 text-[10px] font-medium text-muted-foreground backdrop-blur">
@@ -379,22 +454,36 @@ const STORY: StoryStep[] = [
   },
 ];
 
+// Each step plays out as three beats so the user message, the "generating"
+// spinner, and the assistant reply never appear at the same instant.
+type Beat = { step: number; phase: "user" | "gen" | "reply" };
+const BEATS: Beat[] = STORY.flatMap((_, step) => [
+  { step, phase: "user" as const },
+  { step, phase: "gen" as const },
+  { step, phase: "reply" as const },
+]);
+const DWELL: Record<Beat["phase"], number> = { user: 1300, gen: 1500, reply: 1900 };
+
 function StoryChat() {
-  const [visible, setVisible] = useState(STORY.length);
+  const [beatIndex, setBeatIndex] = useState(BEATS.length - 1);
 
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let index = STORY.length;
+    let index = -1;
+    let timer = 0;
     const tick = () => {
-      index = index >= STORY.length ? 0 : index + 1;
-      setVisible(index);
+      index = (index + 1) % BEATS.length;
+      setBeatIndex(index);
+      timer = window.setTimeout(tick, DWELL[BEATS[index].phase]);
     };
-    const timer = window.setInterval(tick, 2200);
-    return () => window.clearInterval(timer);
+    timer = window.setTimeout(tick, 500);
+    return () => window.clearTimeout(timer);
   }, []);
 
-  const activeDoc = STORY[Math.max(0, Math.min(STORY.length, visible) - 1)]?.document ?? STORY[0].document;
-  const shown = STORY.slice(0, Math.max(1, visible));
+  const beat = BEATS[beatIndex];
+  // On "user" the model still shows the previous state; it starts regenerating
+  // on "gen" (viewport spinner) and is ready by "reply".
+  const activeDoc = beat.phase === "user" ? STORY[Math.max(0, beat.step - 1)].document : STORY[beat.step].document;
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
@@ -403,19 +492,29 @@ function StoryChat() {
           <Image src="/printa-logo.png" alt="" width={18} height={18} />
           <span className="font-mono text-[11px] text-muted-foreground">printa · chat</span>
         </div>
-        <div className="flex flex-col gap-2.5 p-3.5">
-          {shown.map((step, i) => (
-            <div key={i} className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <span className="rounded-full border border-border bg-secondary px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">0{i + 1} · {step.step}</span>
+        <div className="flex min-h-[220px] flex-col gap-2.5 p-3.5">
+          {STORY.slice(0, beat.step + 1).map((step, i) => {
+            const isCurrent = i === beat.step;
+            const showReply = !isCurrent || beat.phase === "reply";
+            const showGen = isCurrent && beat.phase === "gen";
+            return (
+              <div key={i} className="flex flex-col gap-2">
+                <span className="w-fit rounded-full border border-border bg-secondary px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">0{i + 1} · {step.step}</span>
+                <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-foreground px-3 py-2 text-sm text-background">{step.user}</div>
+                {showGen && (
+                  <div className="flex w-fit items-center gap-2 rounded-2xl rounded-bl-sm bg-secondary px-3 py-2 text-sm text-muted-foreground">
+                    <Loader2 size={14} className="animate-spin" /> generating geometry…
+                  </div>
+                )}
+                {showReply && (
+                  <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-secondary px-3 py-2 text-sm">
+                    <span className="mb-1 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground"><Braces size={11} /> {step.tool} · {step.args} <Check size={11} className="text-emerald-500" /></span>
+                    {step.reply}
+                  </div>
+                )}
               </div>
-              <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-foreground px-3 py-2 text-sm text-background">{step.user}</div>
-              <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-secondary px-3 py-2 text-sm">
-                <span className="mb-1 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground"><Braces size={11} /> {step.tool} · {step.args} <Check size={11} className="text-emerald-500" /></span>
-                {step.reply}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
       <div className="overflow-hidden rounded-2xl border border-border bg-card">
@@ -431,30 +530,70 @@ function StoryChat() {
 
 type Example = { id: string; name: string; blurb: string; color: string; document: unknown };
 
+// A circle as four cubic-bezier arcs (kappa ≈ 0.5523), used for the keychain hole.
+function circlePath(cx: number, cy: number, r: number) {
+  const k = 0.5523 * r;
+  return [
+    { op: "move", to: [cx + r, cy] },
+    { op: "bezier", control1: [cx + r, cy + k], control2: [cx + k, cy + r], to: [cx, cy + r] },
+    { op: "bezier", control1: [cx - k, cy + r], control2: [cx - r, cy + k], to: [cx - r, cy] },
+    { op: "bezier", control1: [cx - r, cy - k], control2: [cx - k, cy - r], to: [cx, cy - r] },
+    { op: "bezier", control1: [cx + k, cy - r], control2: [cx + r, cy - k], to: [cx + r, cy] },
+    { op: "close" },
+  ];
+}
+
+function roundedRectPath(w: number, h: number, r: number) {
+  const x = w / 2, y = h / 2;
+  return [
+    { op: "move", to: [-x + r, -y] },
+    { op: "line", to: [x - r, -y] },
+    { op: "quadratic", control: [x, -y], to: [x, -y + r] },
+    { op: "line", to: [x, y - r] },
+    { op: "quadratic", control: [x, y], to: [x - r, y] },
+    { op: "line", to: [-x + r, y] },
+    { op: "quadratic", control: [-x, y], to: [-x, y - r] },
+    { op: "line", to: [-x, -y + r] },
+    { op: "quadratic", control: [-x, -y], to: [-x + r, -y] },
+    { op: "close" },
+  ];
+}
+
+const KEYCHAIN = {
+  version: "1.0", name: "Name keychain", units: "mm",
+  root: {
+    kind: "assembly", id: "keychain", operation: "merge",
+    children: [
+      { kind: "shape", id: "plate", source: { type: "extrude", depth: 4, bevel: 0.8, bevelSegments: 3, curveSegments: 18, path: { commands: roundedRectPath(68, 26, 8), holes: [circlePath(-27, 0, 3.6)] } }, material: "pla-silk" },
+      { kind: "shape", id: "label", source: { type: "text", text: "LUCK", font: "Poppins", size: 13, depth: 3, bevel: 0.35, bevelSide: "top" }, transform: { translate: [5, 0, 4], rotate: [0, 0, 0], scale: 1 } },
+    ],
+  },
+};
+
 const EXAMPLES: Example[] = [
   {
     id: "vase", name: "Rippled vase", blurb: "A revolved profile with fluted radial waves.", color: "#7b63ce",
     document: { version: "1.0", name: "Rippled vase", units: "mm", root: { kind: "shape", id: "v", source: { type: "revolve", profile: [[26, 0], [34, 40], [30, 90], [24, 130]], wall: 2.2, bottomCap: true, interpolation: "catmull-rom" }, modifiers: [{ type: "radialWave", amplitude: 2.4, count: 12, axialTurns: 0.5 }] } },
   },
   {
-    id: "planter", name: "Twisted planter", blurb: "A box twisted along its height, then tapered.", color: "#ff4d8b",
-    document: { version: "1.0", name: "Twisted planter", units: "mm", root: { kind: "shape", id: "b", source: { type: "primitive", shape: "box", width: 60, depth: 60, height: 90, segments: 4 }, modifiers: [{ type: "twist", angleDeg: 120, start: 0, end: 1 }, { type: "taper", from: 1, to: 0.7 }] } },
+    id: "keychain", name: "Name keychain", blurb: "An extruded plate with a keyring hole and raised text.", color: "#e58fb4",
+    document: KEYCHAIN,
   },
   {
-    id: "hexpot", name: "Hex pot", blurb: "A 6-sided prism — one cylinder, low segments.", color: "#e8934a",
-    document: { version: "1.0", name: "Hex pot", units: "mm", root: { kind: "shape", id: "h", source: { type: "primitive", shape: "cylinder", radius: 30, height: 70, segments: 6 }, modifiers: [{ type: "taper", from: 1, to: 0.82 }] } },
-  },
-  {
-    id: "tag", name: "Name keychain", blurb: "Extruded text — any Google font.", color: "#33a45d",
-    document: textDoc({ text: "LUCK", font: "Bebas Neue", depth: 6, size: 34 }),
-  },
-  {
-    id: "bowl", name: "Fluted bowl", blurb: "A shallow revolved bowl with soft flutes.", color: "#4aa3c9",
-    document: { version: "1.0", name: "Fluted bowl", units: "mm", root: { kind: "shape", id: "w", source: { type: "revolve", profile: [[10, 0], [46, 8], [52, 34], [50, 40]], wall: 2.4, bottomCap: true, interpolation: "catmull-rom" }, modifiers: [{ type: "radialWave", amplitude: 1.6, count: 20, axialTurns: 0 }] } },
+    id: "prism", name: "Prism vase", blurb: "A square column with a smooth helical twist and taper.", color: "#4aa3c9",
+    document: { version: "1.0", name: "Prism vase", units: "mm", root: { kind: "shape", id: "p", source: { type: "primitive", shape: "box", width: 46, depth: 46, height: 128, segments: 10 }, modifiers: [{ type: "twist", angleDeg: 150, start: 0, end: 1 }, { type: "taper", from: 1, to: 0.62 }] } },
   },
   {
     id: "spiral", name: "Spiral vessel", blurb: "A revolved vase twisted into a spiral.", color: "#c05fe0",
     document: { version: "1.0", name: "Spiral vessel", units: "mm", root: { kind: "shape", id: "s", source: { type: "revolve", profile: [[22, 0], [30, 50], [26, 110], [20, 150]], wall: 2, bottomCap: true, interpolation: "catmull-rom" }, modifiers: [{ type: "radialWave", amplitude: 3, count: 6, axialTurns: 1.5 }, { type: "twist", angleDeg: 60, start: 0, end: 1 }] } },
+  },
+  {
+    id: "lantern", name: "Twisted lantern", blurb: "A fluted column twisted along its full height.", color: "#ff4d8b",
+    document: { version: "1.0", name: "Twisted lantern", units: "mm", root: { kind: "shape", id: "l", source: { type: "primitive", shape: "cylinder", radius: 26, height: 120, segments: 5 }, modifiers: [{ type: "radialWave", amplitude: 3, count: 5, axialTurns: 0 }, { type: "twist", angleDeg: 150, start: 0, end: 1 }, { type: "taper", from: 1, to: 0.72 }] } },
+  },
+  {
+    id: "bowl", name: "Fluted bowl", blurb: "A shallow revolved bowl with soft flutes.", color: "#e8934a",
+    document: { version: "1.0", name: "Fluted bowl", units: "mm", root: { kind: "shape", id: "w", source: { type: "revolve", profile: [[10, 0], [46, 8], [52, 34], [50, 40]], wall: 2.4, bottomCap: true, interpolation: "catmull-rom" }, modifiers: [{ type: "radialWave", amplitude: 1.6, count: 20, axialTurns: 0 }] } },
   },
 ];
 
