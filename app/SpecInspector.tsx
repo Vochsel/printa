@@ -165,7 +165,7 @@ function SpecFontPicker({ value, fonts, onChange }: { value: string; fonts: Font
 }
 
 function sourceDefaults(type: SourceSpec["type"]): SourceSpec {
-  if (type === "text") return { type, text: "Printa", font: "Roboto", size: 36, depth: 4, bevel: 0.6, bevelSegments: 3, curveSegments: 10, extrudeSegments: 1, bevelSide: "both", smoothNormals: true, textCase: "original", weight: "regular", italic: false, underline: false };
+  if (type === "text") return { type, text: "Printa", font: "Roboto", size: 36, depth: 4, bevel: 0.6, bevelSegments: 3, curveSegments: 10, extrudeSegments: 1, bevelSide: "top", smoothNormals: true, textCase: "original", weight: "regular", italic: false, underline: false };
   if (type === "primitive") return { type, shape: "cylinder", radius: 20, height: 60, segments: 64 };
   if (type === "revolve") return { type, profile: [[24, 0], [32, 30], [29, 70], [24, 110]], segments: 128, profileSegments: 96, radiusOffset: 0, wall: 2, bottomCap: true, bottomThickness: 2.4, topCap: false, topThickness: 2.4, interpolation: "catmull-rom", axis: "z" };
   if (type === "extrude") return { type, depth: 8, bevel: 0.8, bevelSegments: 3, curveSegments: 12, direction: [0, 0, 1], path: { commands: [{ op: "move", to: [-25, -25] }, { op: "line", to: [25, -25] }, { op: "line", to: [25, 25] }, { op: "line", to: [-25, 25] }, { op: "close" }], holes: [] } };
