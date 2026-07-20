@@ -5,6 +5,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { LoaderCircle, Rotate3D } from "lucide-react";
 import { printMaterialPreset } from "@/lib/material-presets";
 import { cn } from "@/lib/utils";
@@ -77,13 +81,23 @@ export function ModelPreview({
     floor.position.z = -0.3;
     scene.add(floor);
 
+    // Ambient occlusion for soft crevice darkening.
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const gtao = new GTAOPass(scene, camera, 1, 1);
+    gtao.output = GTAOPass.OUTPUT.Default;
+    gtao.blendIntensity = 0.85;
+    gtao.updateGtaoMaterial({ radius: 8, distanceExponent: 1, thickness: 1, scale: 1.1, samples: 16, screenSpaceRadius: false });
+    composer.addPass(gtao);
+    composer.addPass(new OutputPass());
+
     let model: THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial> | null = null;
     let animationFrame = 0;
     let remainingFrames = 0;
     let hovering = false;
     const render = () => {
       controls.update();
-      renderer.render(scene, camera);
+      composer.render();
       if (controls.autoRotate || hovering || remainingFrames > 0) {
         remainingFrames = Math.max(0, remainingFrames - 1);
         animationFrame = requestAnimationFrame(render);
@@ -123,6 +137,7 @@ export function ModelPreview({
       cam.near = radius * 0.4; cam.far = radius * 7;
       cam.updateProjectionMatrix();
       key.shadow.normalBias = Math.max(0.02, radius * 0.0015);
+      gtao.updateGtaoMaterial({ radius: THREE.MathUtils.clamp(radius * 0.22, 2, 40) });
       floor.scale.setScalar(Math.max(1, (radius * 1.8) / 240));
       controls.update();
       invalidate(2);
@@ -135,7 +150,7 @@ export function ModelPreview({
         model.material.dispose();
       }
       const preset = printMaterialPreset(materialId);
-      const smooth = toCreasedNormals(geometry, THREE.MathUtils.degToRad(32));
+      const smooth = toCreasedNormals(geometry, THREE.MathUtils.degToRad(50));
       const mesh = new THREE.Mesh(smooth, new THREE.MeshPhysicalMaterial({
         color: preset.color, roughness: preset.roughness, metalness: preset.metalness,
         clearcoat: preset.clearcoat, transmission: preset.transmission,
@@ -152,6 +167,8 @@ export function ModelPreview({
       const bounds = mount.getBoundingClientRect();
       if (!bounds.width || !bounds.height) return;
       renderer.setSize(bounds.width, bounds.height, false);
+      composer.setSize(bounds.width, bounds.height);
+      gtao.setSize(bounds.width, bounds.height);
       camera.aspect = bounds.width / bounds.height;
       camera.updateProjectionMatrix();
       invalidate(2);
@@ -171,6 +188,7 @@ export function ModelPreview({
       model?.material.dispose();
       floor.geometry.dispose();
       (floor.material as THREE.Material).dispose();
+      composer.dispose();
       renderer.dispose();
       renderer.domElement.remove();
       scene.clear();

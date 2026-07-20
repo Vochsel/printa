@@ -9,7 +9,6 @@ import {
   ArrowUp,
   Download,
   ImagePlus,
-  Layers3,
   LoaderCircle,
   Pencil,
   Sparkles,
@@ -18,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BrandLink } from "@/components/brand-link";
 import { ModelPreview } from "@/components/model-preview";
 import { cn } from "@/lib/utils";
 import { initSfx, sfx } from "@/lib/sfx";
@@ -133,10 +133,7 @@ export function ChatExperience() {
   return (
     <main className="flex h-dvh min-h-0 flex-col bg-background text-foreground">
       <header className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border px-3 sm:px-4">
-        <Link className="flex items-center gap-2 font-heading text-[13px] font-bold tracking-[0.14em]" href="/">
-          <span className="grid size-6 place-items-center rounded-[5px] bg-foreground text-background"><Layers3 size={13} /></span>
-          PRINTA
-        </Link>
+        <BrandLink />
         <span className="rounded-full bg-[var(--accent-tool-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-tool)]">Chat</span>
         <Link href="/editor" className="ml-auto text-xs font-medium text-muted-foreground hover:text-foreground">Open editor →</Link>
       </header>

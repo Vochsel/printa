@@ -138,6 +138,10 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(studio, /toCreasedNormals\(base, THREE\.MathUtils\.degToRad\(50\)\)/);
   assert.match(inspector, /Disable modifier/);
   assert.match(inspector, /EyeOff/);
+  // Ambient occlusion in every editor viewport + shared brand logo
+  assert.match(studio, /GTAOPass/);
+  assert.match(studio, /BrandLink/);
+  assert.match(modelWidget, /GTAOPass/);
   assert.match(modelSpec, /disabledField/);
   assert.match(modelSpec, /disabled: z\.boolean\(\)\.optional/);
   assert.match(modelSpec, /interiorStrutsSchema/);
@@ -199,6 +203,7 @@ test("ships the /chat beginner page with inline 3D model previews", async () => 
   assert.match(chatExperience, /h-dvh/);
   assert.match(preview, /STLLoader/);
   assert.match(preview, /toCreasedNormals/);
+  assert.match(preview, /GTAOPass/);
   assert.match(chatRoute, /previewUrl/);
   assert.match(chatRoute, /stlUrl/);
   assert.match(home, /href="\/chat"/);

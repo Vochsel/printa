@@ -145,6 +145,10 @@ export function createModelWidgetHtml(origin: string) {
     import {OrbitControls} from "three/addons/controls/OrbitControls.js";
     import {STLLoader} from "three/addons/loaders/STLLoader.js";
     import {toCreasedNormals} from "three/addons/utils/BufferGeometryUtils.js";
+    import {EffectComposer} from "three/addons/postprocessing/EffectComposer.js";
+    import {RenderPass} from "three/addons/postprocessing/RenderPass.js";
+    import {GTAOPass} from "three/addons/postprocessing/GTAOPass.js";
+    import {OutputPass} from "three/addons/postprocessing/OutputPass.js";
     import {App} from "https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@1.7.4/+esm";
     import {play,setEnabled,bind} from "https://cdn.jsdelivr.net/npm/cuelume@0.1.2/+esm";
 
@@ -184,6 +188,13 @@ export function createModelWidgetHtml(origin: string) {
     floor.position.z=-.3;floor.receiveShadow=true;scene.add(floor);
     const grid=new THREE.GridHelper(420,42,"#363631","#272724");
     grid.rotation.x=Math.PI/2;grid.position.z=.05;scene.add(grid);
+    /* Ambient occlusion for soft crevice darkening. */
+    const composer=new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene,camera));
+    const gtao=new GTAOPass(scene,camera,1,1);
+    gtao.output=GTAOPass.OUTPUT.Default;gtao.blendIntensity=.85;
+    gtao.updateGtaoMaterial({radius:8,distanceExponent:1,thickness:1,scale:1.1,samples:16,screenSpaceRadius:false});
+    composer.addPass(gtao);composer.addPass(new OutputPass());
 
     let mesh=null,baseGeometry=null,dimensions=null,token=0,resultTimer=0,appReady=false,lastUrl="";
     let shadingMode=store.get("printa:shading")==="flat"?"flat":"smooth";
@@ -201,6 +212,7 @@ export function createModelWidgetHtml(origin: string) {
       cam.near=radius*.4;cam.far=radius*7;
       cam.updateProjectionMatrix();
       key.shadow.normalBias=Math.max(.02,radius*.0015);
+      gtao.updateGtaoMaterial({radius:THREE.MathUtils.clamp(radius*.22,2,40)});
       const groundScale=Math.max(1,(radius*1.8)/240);
       floor.scale.setScalar(groundScale);
       grid.scale.setScalar(groundScale);
@@ -209,7 +221,7 @@ export function createModelWidgetHtml(origin: string) {
     }
     function applyShading(){
       if(!mesh||!baseGeometry)return;
-      const next=shadingMode==="smooth"?toCreasedNormals(baseGeometry,THREE.MathUtils.degToRad(32)):baseGeometry;
+      const next=shadingMode==="smooth"?toCreasedNormals(baseGeometry,THREE.MathUtils.degToRad(50)):baseGeometry;
       if(mesh.geometry!==baseGeometry&&mesh.geometry!==next)mesh.geometry.dispose();
       mesh.geometry=next;
     }
@@ -353,10 +365,10 @@ export function createModelWidgetHtml(origin: string) {
     if(legacyOutput)void show(legacyOutput,true);else if(legacyInput)acceptInput(legacyInput);
     app.connect().then(()=>{appReady=true}).catch(error=>{if(!legacyOutput&&!legacyInput)showError("Could not connect to the MCP host: "+errorText(error))});
 
-    function resize(){const box=el("canvas").getBoundingClientRect();renderer.setSize(box.width,box.height,false);camera.aspect=box.width/Math.max(box.height,1);camera.updateProjectionMatrix()}
+    function resize(){const box=el("canvas").getBoundingClientRect();renderer.setSize(box.width,box.height,false);composer.setSize(box.width,box.height);gtao.setSize(box.width,box.height);camera.aspect=box.width/Math.max(box.height,1);camera.updateProjectionMatrix()}
     new ResizeObserver(resize).observe(el("canvas"));
     resize();
-    (function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera)})();
+    (function loop(){requestAnimationFrame(loop);controls.update();composer.render()})();
   </script>
 </body>
 </html>`;

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Box,
@@ -26,6 +25,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { bind } from "cuelume";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,6 +53,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToggleField } from "@/components/editor/fields";
 import { ChatPanel } from "@/components/editor/ChatPanel";
+import { BrandLink } from "@/components/brand-link";
 import { DEMO_MODEL_CARDS, type DemoModelId } from "@/lib/demo-models";
 import { printMaterialPreset, type PrintMaterialPreset } from "@/lib/material-presets";
 import type { ModelDocument } from "@/lib/model-spec";
@@ -304,6 +308,8 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
   const baseGeometryRef = useRef<THREE.BufferGeometry | null>(null);
   const dimensionsRef = useRef<THREE.Group | null>(null);
   const invalidateRef = useRef<(frames?: number) => void>(() => undefined);
+  const composerRef = useRef<EffectComposer | null>(null);
+  const gtaoRef = useRef<GTAOPass | null>(null);
   const hasFramedRef = useRef(false);
   const displayRef = useRef(display);
   const unitsRef = useRef(units);
@@ -348,6 +354,8 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
     shadowCamera.far = radius * 7;
     shadowCamera.updateProjectionMatrix();
     key.shadow.normalBias = Math.max(0.02, radius * 0.0015);
+    // Scale the AO sampling radius to the model so crevices read at any size.
+    gtaoRef.current?.updateGtaoMaterial({ radius: THREE.MathUtils.clamp(radius * 0.22, 2, 40) });
     const groundScale = Math.max(1, (radius * 1.8) / 240);
     floorRef.current?.scale.setScalar(groundScale);
     gridRef.current?.scale.setScalar(groundScale);
@@ -450,6 +458,19 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
     scene.add(buildPlate);
     buildPlateRef.current = buildPlate;
 
+    // Ambient occlusion (GTAO) postprocessing for the realtime render — adds
+    // soft contact darkening in crevices (flutes, concavities, base seam).
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const gtao = new GTAOPass(scene, camera, 1, 1);
+    gtao.output = GTAOPass.OUTPUT.Default;
+    gtao.blendIntensity = 0.85;
+    gtao.updateGtaoMaterial({ radius: 8, distanceExponent: 1, thickness: 1, scale: 1.1, samples: 16, screenSpaceRadius: false });
+    composer.addPass(gtao);
+    composer.addPass(new OutputPass());
+    composerRef.current = composer;
+    gtaoRef.current = gtao;
+
     let animationFrame = 0;
     let interacting = false;
     let remainingFrames = 0;
@@ -476,7 +497,7 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
         animationFrame = requestAnimationFrame(render);
         return;
       }
-      renderer.render(scene, camera);
+      composer.render();
       if (interacting || remainingFrames > 0) {
         remainingFrames = Math.max(0, remainingFrames - 1);
         animationFrame = requestAnimationFrame(render);
@@ -557,6 +578,8 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
     const resize = () => {
       const bounds = mount.getBoundingClientRect();
       renderer.setSize(bounds.width, bounds.height, false);
+      composer.setSize(bounds.width, bounds.height);
+      gtao.setSize(bounds.width, bounds.height);
       camera.aspect = bounds.width / Math.max(bounds.height, 1);
       camera.updateProjectionMatrix();
       if (pathTracedRef.current) updatePathCamera();
@@ -584,6 +607,7 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
       disposeObject(buildPlateRef.current);
       floor.geometry.dispose();
       (floor.material as THREE.Material).dispose();
+      composer.dispose();
       renderer.dispose();
       renderer.domElement.remove();
       scene.clear();
@@ -966,10 +990,7 @@ export function ProceduralStudio() {
       <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
         {/* Top bar */}
         <header className="z-20 flex h-12 shrink-0 items-center gap-2.5 border-b border-border bg-background px-3">
-          <Link className="flex items-center gap-2 font-heading text-[13px] font-bold tracking-[0.14em]" href="/" aria-label="Printa home">
-            <span className="grid size-6 place-items-center rounded-[5px] bg-foreground text-background"><Layers3 size={13} /></span>
-            PRINTA
-          </Link>
+          <BrandLink />
           <span className="mx-0.5 hidden h-4 w-px bg-border sm:block" />
           <span className="hidden truncate text-[13px] font-medium text-foreground sm:block">
             {result?.document.name ?? "Building form…"}
