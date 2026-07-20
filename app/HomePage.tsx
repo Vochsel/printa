@@ -111,6 +111,12 @@ function ModelStage({ document, color = "#ff4d8b", autoRotate = true, className 
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
+    // setSize(..., false) only resizes the drawing buffer, so the canvas must be
+    // pinned to its container via CSS or it lays out at buffer-pixel size and
+    // overflows / blows up the section height.
+    renderer.domElement.style.display = "block";
+    renderer.domElement.style.width = "100%";
+    renderer.domElement.style.height = "100%";
     mount.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -185,8 +191,8 @@ function ModelStage({ document, color = "#ff4d8b", autoRotate = true, className 
   }, [specKey, color]);
 
   return (
-    <div className={cn("relative", className)}>
-      <div ref={mountRef} className="h-full w-full" aria-label="3D model preview" />
+    <div className={cn("relative overflow-hidden", className)}>
+      <div ref={mountRef} className="h-full w-full overflow-hidden" aria-label="3D model preview" />
       {loading && (
         <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-background/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground backdrop-blur">
           <Loader2 size={12} className="animate-spin" /> compiling
@@ -416,7 +422,7 @@ function StoryChat() {
         </div>
       </div>
       <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <ModelStage document={activeDoc} color="#ff4d8b" className="h-64 w-full sm:h-full sm:min-h-[300px]" />
+        <ModelStage document={activeDoc} color="#ff4d8b" className="h-64 w-full sm:h-[420px]" />
       </div>
     </div>
   );
