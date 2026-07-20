@@ -330,6 +330,11 @@ async function main() {
   const incrementalText = JSON.parse(JSON.stringify(BENCHMARK_SPECS["exact-opentype-text"])) as { root: { source: { text: string } } };
   incrementalText.root.source.text += "s";
   samples.push(await build("exact-opentype-text", incrementalText, "preview", "incremental"));
+  const incrementalLayers = JSON.parse(JSON.stringify(BENCHMARK_SPECS["layered-contour-lamp"])) as { root: { modifiers: Array<{ type: string; rotate?: [number, number, number] }> } };
+  const arrayModifier = incrementalLayers.root.modifiers.find((modifier) => modifier.type === "array");
+  if (!arrayModifier?.rotate) throw new Error("Layered contour benchmark is missing its array modifier.");
+  arrayModifier.rotate[2] += 1;
+  samples.push(await build("layered-contour-lamp", incrementalLayers, "preview", "incremental"));
 
   printTable(samples);
   const warm = samples.filter((sample) => sample.pass === "warm");

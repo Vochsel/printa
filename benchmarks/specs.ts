@@ -319,9 +319,9 @@ const addedCases = {
 export const BENCHMARK_SPECS = { ...DEMO_MODELS, ...addedCases } as const;
 
 export const REQUIRED_BENCHMARK_COVERAGE = {
-  sources: ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth"],
+  sources: ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic"],
   primitives: ["box", "cylinder", "cone", "sphere", "torus"],
-  modifiers: ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "smooth", "drape", "melt"],
+  modifiers: ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "array", "step", "smooth", "drape", "melt"],
   graph: ["shape", "assembly", "repeat"],
   curves: ["move", "line", "quadratic", "bezier", "close"],
 } as const;

@@ -154,10 +154,10 @@ root:
 
 test("publishes a machine-readable schema with every source family", () => {
   const schema = JSON.stringify(modelSpecJsonSchema());
-  for (const source of ["primitive", "extrude", "revolve", "text", "water", "cloth"]) {
+  for (const source of ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic"]) {
     assert.match(schema, new RegExp(`\\b${source}\\b`));
   }
-  for (const modifier of ["twist", "taper", "radialWave", "bend", "noise", "smooth"]) {
+  for (const modifier of ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "array", "step", "smooth", "drape", "melt"]) {
     assert.match(schema, new RegExp(modifier));
   }
   for (const textField of ["bevelSegments", "curveSegments", "extrudeSegments", "bevelSide", "smoothNormals", "textCase", "underline"]) {
@@ -205,9 +205,9 @@ test("rejects graphs that expand beyond the safe node limit", () => {
 
 test("water and cloth solvers are deterministic", () => {
   for (const id of ["water-ripple-tile", "cloth-drape-study"] as const) {
-    const source = DEMO_MODELS[id].root;
+    const source = parseModelDocument(DEMO_MODELS[id]).root;
     assert.equal(source.kind, "shape");
-    if (source.kind !== "shape") continue;
+    if (source.kind !== "shape" || source.source.type === "text") continue;
     const first = createSourceGeometry(source.source);
     const second = createSourceGeometry(source.source);
     assert.deepEqual(Array.from(first.getAttribute("position").array), Array.from(second.getAttribute("position").array));
@@ -215,6 +215,64 @@ test("water and cloth solvers are deterministic", () => {
     first.dispose();
     second.dispose();
   }
+});
+
+test("cellular lattices and organic growth are deterministic, bounded closed solids", () => {
+  const cases = [
+    {
+      name: "cellular",
+      source: {
+        type: "cellular" as const, width: 52, depth: 48, height: 64, cellSize: 17,
+        strutDiameter: 2.2, jitter: 0.6, neighbors: 3, seed: 21, radialSegments: 8,
+      },
+      limits: [52, 48, 64],
+    },
+    {
+      name: "organic",
+      source: {
+        type: "organic" as const, width: 58, depth: 54, height: 82, trunkDiameter: 6.5,
+        levels: 4, branching: 2, angleDeg: 35, twistDeg: 137.5, taper: 0.72, seed: 13, radialSegments: 8,
+      },
+      limits: [58, 54, 82],
+    },
+  ];
+  for (const item of cases) {
+    const first = createSourceGeometry(item.source);
+    const second = createSourceGeometry(item.source);
+    assert.deepEqual(Array.from(first.getAttribute("position").array), Array.from(second.getAttribute("position").array), `${item.name} positions should be seeded`);
+    assert.deepEqual(Array.from(first.index?.array ?? []), Array.from(second.index?.array ?? []), `${item.name} topology should be seeded`);
+    assert.equal(boundaryEdgeCount(first), 0, `${item.name} should contain only closed shells`);
+    assert.ok(Math.floor((first.index?.count ?? first.getAttribute("position").count) / 3) > 100);
+    const bounds = geometryBounds(first);
+    assert.ok(bounds.every((value, index) => value <= item.limits[index] + 1e-4), `${item.name} should remain inside requested bounds`);
+    assert.ok(Math.abs(bounds[2] - item.limits[2]) < 1e-4, `${item.name} should use the requested height`);
+    first.dispose();
+    second.dispose();
+  }
+});
+
+test("Voronoi, array, and contour-step modifiers deterministically expand printable topology", () => {
+  const source = createSourceGeometry({ type: "primitive", shape: "box", width: 28, depth: 22, height: 10, segments: 8 });
+  const sourceTriangles = Math.floor((source.index?.count ?? source.getAttribute("position").count) / 3);
+
+  const voronoiSpec = { type: "voronoi" as const, amplitude: 1.1, scale: 7, seed: 9, mode: "ridges" as const, contrast: 1.6 };
+  const voronoi = applyModifiers(source.clone(), [voronoiSpec]);
+  const voronoiAgain = applyModifiers(source.clone(), [voronoiSpec]);
+  assert.ok((voronoi.index?.count ?? 0) / 3 > sourceTriangles, "Voronoi should tessellate sparse source meshes before displacement");
+  assert.deepEqual(Array.from(voronoi.getAttribute("position").array), Array.from(voronoiAgain.getAttribute("position").array));
+  assert.notDeepEqual(geometryBounds(voronoi).map((value) => value.toFixed(4)), geometryBounds(source).map((value) => value.toFixed(4)));
+  assert.equal(boundaryEdgeCount(voronoi), 0);
+
+  const arrayed = applyModifiers(source.clone(), [{ type: "array", count: 4, translate: [1, 0, 4], rotate: [0, 0, 11], scale: 0.96 }]);
+  assert.equal((arrayed.index?.count ?? 0) / 3, sourceTriangles * 4);
+  assert.equal(boundaryEdgeCount(arrayed), 0);
+
+  const stepped = applyModifiers(source.clone(), [{ type: "step", levels: 5, axis: "z", distance: 3, inset: 1.2, twistDeg: 4 }]);
+  assert.equal((stepped.index?.count ?? 0) / 3, sourceTriangles * 5);
+  assert.ok(geometryBounds(stepped)[2] > geometryBounds(source)[2]);
+  assert.equal(boundaryEdgeCount(stepped), 0);
+
+  source.dispose(); voronoi.dispose(); voronoiAgain.dispose(); arrayed.dispose(); stepped.dispose();
 });
 
 test("ordered modifiers materially deform geometry", () => {

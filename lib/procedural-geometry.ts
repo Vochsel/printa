@@ -17,12 +17,22 @@ import {
 } from "three";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { MeshBVH } from "three-mesh-bvh";
+import { weldGeometryPositions } from "@/lib/geometry-weld";
 import type { InteriorStrutsSpec, ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
 import { simulateFluid, simulateFluidParticles, MAX_PARTICLES, type SceneCollider } from "@/lib/fluid-sim";
 
 export type SourceBuildOptions = { interiorStruts?: InteriorStrutsSpec; sceneCollider?: SceneCollider | null };
 
 const DEG = Math.PI / 180;
+const MAX_MODIFIER_TRIANGLES = 1_200_000;
+
+function assertModifierExpansion(input: BufferGeometry, copies: number, label: string) {
+  const triangles = Math.floor((input.index?.count ?? input.getAttribute("position").count) / 3);
+  const expanded = triangles * copies;
+  if (expanded > MAX_MODIFIER_TRIANGLES) {
+    throw new Error(`${label} modifier would create ${expanded.toLocaleString("en-US")} triangles; the safe limit is ${MAX_MODIFIER_TRIANGLES.toLocaleString("en-US")}.`);
+  }
+}
 
 function pathFromCommands(commands: Extract<SourceSpec, { type: "extrude" }> ["path"]["commands"]) {
   const path = new Shape();
@@ -81,9 +91,9 @@ function sampleProfile(source: Extract<SourceSpec, { type: "revolve" }>) {
   return curve.getPoints(source.profileSegments).map((point) => [Math.max(source.wall + 0.1, point.x), point.z] as [number, number]);
 }
 
-function strutBetween(start: Vector3, end: Vector3, diameter: number, radialSegments: number) {
+function strutBetween(start: Vector3, end: Vector3, diameter: number, radialSegments: number, overlap = 0) {
   const direction = end.clone().sub(start);
-  const length = direction.length();
+  const length = direction.length() + overlap * 2;
   if (length < 1e-4) return null;
   const geometry = new CylinderGeometry(diameter / 2, diameter / 2, length, radialSegments, 1, false);
   geometry.applyQuaternion(new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), direction.normalize()));
@@ -287,6 +297,174 @@ function createPrimitiveGeometry(source: Extract<SourceSpec, { type: "primitive"
   geometry.translate(-(bounds.min.x + bounds.max.x) / 2, -(bounds.min.y + bounds.max.y) / 2, -bounds.min.z);
   geometry.scale(width / measuredWidth, depth / measuredDepth, height / measuredHeight);
   geometry.computeBoundingBox();
+  return geometry;
+}
+
+function seededUnit(seed: number, x: number, y = 0, z = 0, salt = 0) {
+  let value = Math.imul((seed ^ salt) | 0, 0x45d9f3b);
+  value ^= Math.imul((x + 0x9e3779b9) | 0, 0x27d4eb2d);
+  value ^= Math.imul((y + 0x85ebca6b) | 0, 0x165667b1);
+  value ^= Math.imul((z + 0xc2b2ae35) | 0, 0x1b873593);
+  value ^= value >>> 16;
+  return (value >>> 0) / 4_294_967_296;
+}
+
+function mergeClosedNetwork(parts: BufferGeometry[]) {
+  if (!parts.length) throw new Error("Procedural network did not produce any printable parts.");
+  const geometry = mergeModelGeometries(parts);
+  parts.forEach((part) => { if (part !== geometry) part.dispose(); });
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function addNetworkJoint(parts: BufferGeometry[], point: Vector3, diameter: number, radialSegments: number) {
+  const joint = new SphereGeometry(diameter / 2, radialSegments, Math.max(4, Math.floor(radialSegments / 2)));
+  joint.translate(point.x, point.y, point.z);
+  parts.push(joint);
+}
+
+function createCellularGeometry(source: Extract<SourceSpec, { type: "cellular" }>) {
+  // Keep nearest-neighbour discovery and output topology bounded even when a
+  // document asks for tiny cells in a large volume. The effective lattice is
+  // still stratified across the requested bounds and never weakens strut size.
+  let cellSize = source.cellSize;
+  let nx = Math.max(2, Math.floor(source.width / cellSize) + 1);
+  let ny = Math.max(2, Math.floor(source.depth / cellSize) + 1);
+  let nz = Math.max(2, Math.floor(source.height / cellSize) + 1);
+  while (nx * ny * nz > 96) {
+    cellSize *= 1.12;
+    nx = Math.max(2, Math.floor(source.width / cellSize) + 1);
+    ny = Math.max(2, Math.floor(source.depth / cellSize) + 1);
+    nz = Math.max(2, Math.floor(source.height / cellSize) + 1);
+  }
+
+  // Nodes are deliberately wider than struts: that creates a real overlap at
+  // each connection without leaving coincident cylinder/sphere equators in the
+  // exported STL, which many slicers interpret as non-manifold duplicate edges.
+  const jointDiameter = source.strutDiameter * 1.25;
+  if (jointDiameter > Math.min(source.width, source.depth, source.height)) {
+    throw new Error("Cellular strut diameter is too large for the requested lattice bounds.");
+  }
+  const radius = jointDiameter / 2;
+  const points: Vector3[] = [];
+  for (let iz = 0; iz < nz; iz += 1) {
+    for (let iy = 0; iy < ny; iy += 1) {
+      for (let ix = 0; ix < nx; ix += 1) {
+        const baseX = (ix / Math.max(1, nx - 1) - 0.5) * (source.width - jointDiameter);
+        const baseY = (iy / Math.max(1, ny - 1) - 0.5) * (source.depth - jointDiameter);
+        const baseZ = radius + iz / Math.max(1, nz - 1) * Math.max(0, source.height - jointDiameter);
+        const boundaryX = ix === 0 || ix === nx - 1;
+        const boundaryY = iy === 0 || iy === ny - 1;
+        const boundaryZ = iz === 0 || iz === nz - 1;
+        const jitter = Math.min(source.width / nx, source.depth / ny, source.height / nz) * source.jitter * 0.42;
+        points.push(new Vector3(
+          baseX + (boundaryX ? 0 : (seededUnit(source.seed, ix, iy, iz, 11) - 0.5) * jitter),
+          baseY + (boundaryY ? 0 : (seededUnit(source.seed, ix, iy, iz, 23) - 0.5) * jitter),
+          baseZ + (boundaryZ ? 0 : (seededUnit(source.seed, ix, iy, iz, 37) - 0.5) * jitter),
+        ));
+      }
+    }
+  }
+
+  const edges = new Set<string>();
+  for (let index = 0; index < points.length; index += 1) {
+    const nearest: Array<{ index: number; distance: number }> = [];
+    for (let candidate = 0; candidate < points.length; candidate += 1) {
+      if (candidate === index) continue;
+      nearest.push({ index: candidate, distance: points[index].distanceToSquared(points[candidate]) });
+    }
+    nearest.sort((a, b) => a.distance - b.distance || a.index - b.index);
+    for (const neighbor of nearest.slice(0, source.neighbors)) {
+      const low = Math.min(index, neighbor.index);
+      const high = Math.max(index, neighbor.index);
+      edges.add(`${low}:${high}`);
+    }
+  }
+
+  const parts: BufferGeometry[] = [];
+  for (const edge of edges) {
+    const [start, end] = edge.split(":").map(Number);
+    const strut = strutBetween(points[start], points[end], source.strutDiameter, source.radialSegments, source.strutDiameter * 0.35);
+    if (strut) parts.push(strut);
+  }
+  for (const point of points) addNetworkJoint(parts, point, jointDiameter, source.radialSegments);
+  const geometry = mergeClosedNetwork(parts);
+  geometry.computeBoundingBox();
+  const bounds = geometry.boundingBox!;
+  const measured = bounds.getSize(new Vector3());
+  geometry.translate(-(bounds.min.x + bounds.max.x) / 2, -(bounds.min.y + bounds.max.y) / 2, -bounds.min.z);
+  geometry.scale(source.width / measured.x, source.depth / measured.y, source.height / measured.z);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function createOrganicGeometry(source: Extract<SourceSpec, { type: "organic" }>) {
+  type Tip = { point: Vector3; direction: Vector3; diameter: number };
+  const parts: BufferGeometry[] = [];
+  const jointKeys = new Set<string>();
+  const addJoint = (point: Vector3, diameter: number) => {
+    const key = `${Math.round(point.x * 1e4)}:${Math.round(point.y * 1e4)}:${Math.round(point.z * 1e4)}`;
+    if (jointKeys.has(key)) return;
+    jointKeys.add(key);
+    addNetworkJoint(parts, point, diameter, source.radialSegments);
+  };
+  const addBranch = (start: Vector3, end: Vector3, diameter: number) => {
+    const branch = strutBetween(start, end, diameter, source.radialSegments, diameter * 0.2);
+    if (!branch) return;
+    parts.push(branch);
+    addJoint(start, diameter);
+    addJoint(end, diameter * source.taper);
+  };
+
+  const base = new Vector3(0, 0, source.trunkDiameter / 2);
+  const trunkEnd = new Vector3(0, 0, Math.max(source.trunkDiameter, source.height / (source.levels + 1)));
+  addBranch(base, trunkEnd, source.trunkDiameter);
+  let tips: Tip[] = [{ point: trunkEnd, direction: new Vector3(0, 0, 1), diameter: source.trunkDiameter * source.taper }];
+  const nominalLength = source.height / (source.levels + 1);
+  const maxSegments = 240;
+  let segmentCount = 1;
+
+  for (let level = 0; level < source.levels && tips.length && segmentCount < maxSegments; level += 1) {
+    const next: Tip[] = [];
+    for (let tipIndex = 0; tipIndex < tips.length && segmentCount < maxSegments; tipIndex += 1) {
+      const tip = tips[tipIndex];
+      for (let branchIndex = 0; branchIndex < source.branching && segmentCount < maxSegments; branchIndex += 1) {
+        const phase = source.twistDeg * DEG * (level + branchIndex / Math.max(1, source.branching));
+        const randomPhase = (seededUnit(source.seed, level, tipIndex, branchIndex, 53) - 0.5) * Math.PI * 0.7;
+        const randomTilt = 0.78 + seededUnit(source.seed, level, tipIndex, branchIndex, 71) * 0.44;
+        const tilt = source.angleDeg * DEG * randomTilt;
+        const radial = new Vector3(Math.cos(phase + randomPhase), Math.sin(phase + randomPhase), 0);
+        const direction = tip.direction.clone().multiplyScalar(0.58)
+          .addScaledVector(radial, Math.sin(tilt))
+          .addScaledVector(new Vector3(0, 0, 1), Math.cos(tilt) * 0.62)
+          .normalize();
+        if (direction.z < 0.12) direction.z = 0.12;
+        direction.normalize();
+        const length = nominalLength * (0.82 + seededUnit(source.seed, level, tipIndex, branchIndex, 89) * 0.3) * source.taper ** (level * 0.22);
+        const end = tip.point.clone().addScaledVector(direction, length);
+        addBranch(tip.point, end, tip.diameter);
+        next.push({ point: end, direction, diameter: Math.max(source.trunkDiameter * 0.18, tip.diameter * source.taper) });
+        segmentCount += 1;
+      }
+    }
+    tips = next;
+  }
+
+  const geometry = mergeClosedNetwork(parts);
+  geometry.computeBoundingBox();
+  const bounds = geometry.boundingBox!;
+  const measured = bounds.getSize(new Vector3());
+  const scaleX = measured.x > 1e-6 ? Math.min(1, source.width / measured.x) : 1;
+  const scaleY = measured.y > 1e-6 ? Math.min(1, source.depth / measured.y) : 1;
+  const scaleZ = measured.z > 1e-6 ? source.height / measured.z : 1;
+  geometry.translate(-(bounds.min.x + bounds.max.x) / 2, -(bounds.min.y + bounds.max.y) / 2, -bounds.min.z);
+  geometry.scale(scaleX, scaleY, scaleZ);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
   return geometry;
 }
 
@@ -494,7 +672,9 @@ export function createSourceGeometryParts(source: Exclude<SourceSpec, { type: "t
   if (source.type === "revolve") return createRevolveGeometryParts(source, options?.interiorStruts);
   if (source.type === "water") return [createWaterGeometry(source)];
   if (source.type === "fluid") return [createFluidGeometry(source, options?.sceneCollider)];
-  return [createClothGeometry(source, options?.sceneCollider)];
+  if (source.type === "cloth") return [createClothGeometry(source, options?.sceneCollider)];
+  if (source.type === "cellular") return [createCellularGeometry(source)];
+  return [createOrganicGeometry(source)];
 }
 
 export function createSourceGeometry(source: Exclude<SourceSpec, { type: "text" }>, options?: SourceBuildOptions) {
@@ -583,12 +763,7 @@ function laplacianSmooth(input: BufferGeometry, iterations: number, strength: nu
 // keeps a box's corners split because their per-face normals differ, which makes
 // the mesh read as "open" and defeats the closed-solid checks below.
 function weldByPosition(input: BufferGeometry): BufferGeometry {
-  const soup = input.index ? input.toNonIndexed() : input;
-  const posOnly = new BufferGeometry();
-  posOnly.setAttribute("position", (soup.getAttribute("position") as BufferAttribute).clone());
-  const welded = mergeVertices(posOnly);
-  if (soup !== input) soup.dispose();
-  return welded;
+  return weldGeometryPositions(input, 1e-4);
 }
 
 // Signed volume of a closed triangle mesh (divergence theorem). Positive for
@@ -855,6 +1030,117 @@ function meltGeometry(
   }, sceneCollider);
 }
 
+function arrayGeometry(input: BufferGeometry, modifier: Extract<ModifierSpec, { type: "array" }>) {
+  assertModifierExpansion(input, modifier.count, "Array");
+  const copies: BufferGeometry[] = [];
+  const step: TransformSpec = { translate: modifier.translate, rotate: modifier.rotate, scale: modifier.scale };
+  for (let index = 0; index < modifier.count; index += 1) {
+    const copy = input.clone();
+    applyTransform(copy, repeatedTransform(step, index));
+    copies.push(copy);
+  }
+  const geometry = mergeModelGeometries(copies);
+  copies.forEach((copy) => { if (copy !== geometry) copy.dispose(); });
+  return geometry;
+}
+
+function stepGeometry(input: BufferGeometry, modifier: Extract<ModifierSpec, { type: "step" }>) {
+  assertModifierExpansion(input, modifier.levels, "Step");
+  input.computeBoundingBox();
+  const bounds = input.boundingBox!;
+  const center = bounds.getCenter(new Vector3());
+  const size = bounds.getSize(new Vector3());
+  const copies: BufferGeometry[] = [];
+  const toOrigin = new Matrix4().makeTranslation(-center.x, -center.y, -center.z);
+
+  for (let level = 0; level < modifier.levels; level += 1) {
+    const planarScale = (span: number) => Math.max(0.05, (span - modifier.inset * 2 * level) / Math.max(span, 1e-6));
+    const scale = new Vector3(1, 1, 1);
+    const translation = center.clone();
+    const rotation = new Euler();
+    if (modifier.axis === "x") {
+      scale.y = planarScale(size.y);
+      scale.z = planarScale(size.z);
+      translation.x += modifier.distance * level;
+      rotation.x = modifier.twistDeg * DEG * level;
+    } else if (modifier.axis === "y") {
+      scale.x = planarScale(size.x);
+      scale.z = planarScale(size.z);
+      translation.y += modifier.distance * level;
+      rotation.y = modifier.twistDeg * DEG * level;
+    } else {
+      scale.x = planarScale(size.x);
+      scale.y = planarScale(size.y);
+      translation.z += modifier.distance * level;
+      rotation.z = modifier.twistDeg * DEG * level;
+    }
+    const matrix = new Matrix4().compose(translation, new Quaternion().setFromEuler(rotation), scale).multiply(toOrigin);
+    const copy = input.clone();
+    copy.applyMatrix4(matrix);
+    copies.push(copy);
+  }
+  const geometry = mergeModelGeometries(copies);
+  copies.forEach((copy) => { if (copy !== geometry) copy.dispose(); });
+  return geometry;
+}
+
+function voronoiSignal(x: number, y: number, z: number, modifier: Extract<ModifierSpec, { type: "voronoi" }>) {
+  const px = x / modifier.scale;
+  const py = y / modifier.scale;
+  const pz = z / modifier.scale;
+  const cellX = Math.floor(px);
+  const cellY = Math.floor(py);
+  const cellZ = Math.floor(pz);
+  let nearest = Infinity;
+  let second = Infinity;
+  for (let dz = -1; dz <= 1; dz += 1) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const ix = cellX + dx;
+        const iy = cellY + dy;
+        const iz = cellZ + dz;
+        const fx = ix + seededUnit(modifier.seed, ix, iy, iz, 101);
+        const fy = iy + seededUnit(modifier.seed, ix, iy, iz, 131);
+        const fz = iz + seededUnit(modifier.seed, ix, iy, iz, 167);
+        const distance = (px - fx) ** 2 + (py - fy) ** 2 + (pz - fz) ** 2;
+        if (distance < nearest) {
+          second = nearest;
+          nearest = distance;
+        } else if (distance < second) second = distance;
+      }
+    }
+  }
+  const raw = modifier.mode === "ridges"
+    ? 1 - Math.min(1, Math.max(0, (Math.sqrt(second) - Math.sqrt(nearest)) * 3.2)) * 2
+    : (0.58 - Math.sqrt(nearest)) * 2.3;
+  return Math.tanh(raw * modifier.contrast) / Math.tanh(modifier.contrast);
+}
+
+function tessellateForVoronoi(input: BufferGeometry, featureSize: number) {
+  const welded = weldByPosition(input);
+  const position = welded.getAttribute("position") as BufferAttribute;
+  const sourceIndex = welded.index;
+  let positions = Array.from({ length: position.count }, (_, index) => new Vector3(
+    position.getX(index), position.getY(index), position.getZ(index),
+  ));
+  let faces = sourceIndex
+    ? Array.from(sourceIndex.array as ArrayLike<number>)
+    : Array.from({ length: position.count }, (_, index) => index);
+  welded.dispose();
+  ({ positions, faces } = tessellate(positions, faces, Math.max(0.4, featureSize * 0.45), 50_000));
+  const array = new Float32Array(positions.length * 3);
+  for (let index = 0; index < positions.length; index += 1) {
+    array[index * 3] = positions[index].x;
+    array[index * 3 + 1] = positions[index].y;
+    array[index * 3 + 2] = positions[index].z;
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(array, 3));
+  geometry.setIndex(faces);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[], sceneCollider?: SceneCollider | null) {
   let geometry = input;
   let bounds = boundsFor(geometry);
@@ -879,6 +1165,38 @@ export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[],
       const previous = geometry;
       geometry = meltGeometry(geometry, modifier, sceneCollider);
       if (previous !== geometry) previous.dispose();
+      bounds = boundsFor(geometry);
+      continue;
+    }
+    if (modifier.type === "array" || modifier.type === "step") {
+      const previous = geometry;
+      geometry = modifier.type === "array" ? arrayGeometry(geometry, modifier) : stepGeometry(geometry, modifier);
+      if (previous !== geometry) previous.dispose();
+      bounds = boundsFor(geometry);
+      continue;
+    }
+    if (modifier.type === "voronoi") {
+      const previous = geometry;
+      geometry = tessellateForVoronoi(geometry, modifier.scale);
+      if (previous !== geometry) previous.dispose();
+      bounds = boundsFor(geometry);
+      const position = geometry.getAttribute("position") as BufferAttribute;
+      const normal = geometry.getAttribute("normal") as BufferAttribute;
+      for (let index = 0; index < position.count; index += 1) {
+        const x = position.getX(index);
+        const y = position.getY(index);
+        const z = position.getZ(index);
+        const amount = modifier.amplitude
+          * modulationAmount(modifier, { x, y, z }, bounds)
+          * voronoiSignal(x, y, z, modifier);
+        position.setXYZ(
+          index,
+          x + normal.getX(index) * amount,
+          y + normal.getY(index) * amount,
+          z + normal.getZ(index) * amount,
+        );
+      }
+      position.needsUpdate = true;
       bounds = boundsFor(geometry);
       continue;
     }

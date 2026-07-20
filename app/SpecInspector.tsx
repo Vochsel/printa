@@ -51,6 +51,8 @@ const SOURCE_TYPES: { value: SourceSpec["type"]; label: string; hint: string }[]
   { value: "primitive", label: "Basic shape", hint: "Box, cylinder, cone, sphere, torus" },
   { value: "extrude", label: "Extruded outline", hint: "A 2D path pulled into 3D" },
   { value: "revolve", label: "Spun profile", hint: "Vases, bowls, anything round" },
+  { value: "cellular", label: "Cellular lattice", hint: "Lightweight seeded Voronoi-style struts" },
+  { value: "organic", label: "Organic growth", hint: "Branching coral-like printable structures" },
   { value: "fluid", label: "Fluid (SPH)", hint: "Pour liquid that pools over the scene" },
   { value: "water", label: "Water ripple", hint: "Simulated ripple surface" },
   { value: "cloth", label: "Cloth drape", hint: "Drape fabric over the scene" },
@@ -63,6 +65,9 @@ const MODIFIER_META: Record<ModifierSpec["type"], { label: string; hint: string 
   axialWave: { label: "Ripples", hint: "Waves running up the height" },
   bend: { label: "Bend", hint: "Lean the shape over" },
   noise: { label: "Roughen", hint: "Organic bumpy texture" },
+  voronoi: { label: "Voronoi cells", hint: "Cellular panels or raised boundary ridges" },
+  array: { label: "Transform array", hint: "Layer copies with incremental move, rotation, and scale" },
+  step: { label: "Contour steps", hint: "Stack copies with a constant inset like layered lampshades" },
   smooth: { label: "Smooth", hint: "Soften sharp detail" },
   drape: { label: "Drape (cloth)", hint: "Slump the shape like fabric over the scene · runs on Simulate" },
   melt: { label: "Melt (fluid)", hint: "Melt the shape into a puddle · runs on Simulate" },
@@ -77,7 +82,7 @@ const MODIFIER_FIELDS: Record<string, { label: string; step?: number; min?: numb
   to: { label: "Top scale", step: 0.05, min: 0.05 },
   easing: { label: "Easing", options: ["linear", "smoothstep"] },
   amplitude: { label: "Depth", step: 0.5, unit: "mm" },
-  count: { label: "Wave count", min: 1 },
+  count: { label: "Count", min: 1 },
   cycles: { label: "Wave count", step: 0.5, min: 0.5 },
   phaseDeg: { label: "Rotate", unit: "°" },
   axialTurns: { label: "Spiral turns", step: 0.25 },
@@ -93,6 +98,17 @@ const MODIFIER_FIELDS: Record<string, { label: string; step?: number; min?: numb
   viscosity: { label: "Viscosity", step: 0.05, min: 0, max: 1 },
   particleSize: { label: "Droplet size", step: 0.05, min: 0.05, max: 20, unit: "mm" },
   surfaceResolution: { label: "Surface detail", min: 24, max: 140 },
+  mode: { label: "Cell style", options: ["cells", "ridges"] },
+  contrast: { label: "Contrast", step: 0.1, min: 0.1, max: 6 },
+  translate: { label: "Move per copy" },
+  rotate: { label: "Rotate per copy" },
+  levels: { label: "Layers", min: 2, max: 32 },
+  axis: { label: "Stack axis", options: ["x", "y", "z"] },
+  distance: { label: "Layer spacing", step: 0.25, unit: "mm" },
+  inset: { label: "Inset per layer", step: 0.25, unit: "mm" },
+  twistDeg: { label: "Twist per layer", step: 1, unit: "°" },
+  "array.count": { label: "Copies", min: 2, max: 32 },
+  "array.scale": { label: "Scale per copy", step: 0.01, min: 0.05, max: 4 },
 };
 
 const fontPreviewCache = new Map<string, Promise<void>>();
@@ -182,6 +198,8 @@ function sourceDefaults(type: SourceSpec["type"]): SourceSpec {
   if (type === "extrude") return { type, depth: 8, bevel: 0.8, bevelSegments: 3, curveSegments: 12, direction: [0, 0, 1], path: { commands: [{ op: "move", to: [-25, -25] }, { op: "line", to: [25, -25] }, { op: "line", to: [25, 25] }, { op: "line", to: [-25, 25] }, { op: "close" }], holes: [] } };
   if (type === "water") return { type, width: 100, depth: 80, base: 3, resolution: 56, steps: 50, damping: 0.985, drops: [{ x: 0, y: 0, radius: 8, amplitude: 5 }], bake: 0 };
   if (type === "fluid") return { type, width: 70, depth: 70, amount: 55, spawnHeight: 70, particleSize: 6, viscosity: 0.18, gravity: 9.8, steps: 220, surfaceResolution: 64, bake: 0 };
+  if (type === "cellular") return { type, width: 64, depth: 64, height: 72, cellSize: 18, strutDiameter: 2.2, jitter: 0.62, neighbors: 3, seed: 1, radialSegments: 8 };
+  if (type === "organic") return { type, width: 70, depth: 70, height: 100, trunkDiameter: 7, levels: 4, branching: 2, angleDeg: 34, twistDeg: 137.5, taper: 0.72, seed: 1, radialSegments: 9 };
   return { type: "cloth", width: 100, depth: 100, thickness: 1.2, resolution: 28, steps: 100, startHeight: 35, gravity: 0.18, constraintIterations: 4, pins: "corners", bake: 0 };
 }
 
@@ -192,6 +210,9 @@ function modifierDefaults(type: ModifierSpec["type"]): ModifierSpec {
   if (type === "axialWave") return { type, amplitude: 2, cycles: 3, phaseDeg: 0 };
   if (type === "bend") return { type, angleDeg: 20, directionDeg: 0 };
   if (type === "noise") return { type, amplitude: 1, scale: 12, seed: 1 };
+  if (type === "voronoi") return { type, amplitude: 1.5, scale: 14, seed: 1, mode: "cells", contrast: 1.4 };
+  if (type === "array") return { type, count: 6, translate: [0, 0, 4], rotate: [0, 0, 8], scale: 1 };
+  if (type === "step") return { type, levels: 8, axis: "z", distance: 3, inset: 1.2, twistDeg: 0 };
   if (type === "drape") return { type, gravity: 0.3, frames: 160, stiffness: 0.9, inflate: 0.7, pins: "none", bake: 0 };
   if (type === "melt") return { type, gravity: 9.8, frames: 200, viscosity: 0.25, particleSize: 5, surfaceResolution: 64, bake: 0 };
   return { type: "smooth", iterations: 1, strength: 0.35 };
@@ -342,6 +363,46 @@ function SourceEditor({ source, fonts, update }: { source: SourceSpec; fonts: Fo
           <JsonField label="Outline path" value={source.path} onChange={(value) => set("path", value)} />
           <JsonField label="Direction [x, y, z]" rows={2} value={source.direction} onChange={(value) => set("direction", value)} />
         </AdvancedData>
+      </>}
+      {source.type === "cellular" && <>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">A seeded, stratified cell network connects nearest sites into a lightweight printable lattice.</p>
+        <Grid3>
+          <NumberField label="Width" value={source.width} min={4} unit="mm" onChange={(value) => set("width", value)} />
+          <NumberField label="Depth" value={source.depth} min={4} unit="mm" onChange={(value) => set("depth", value)} />
+          <NumberField label="Height" value={source.height} min={4} unit="mm" onChange={(value) => set("height", value)} />
+        </Grid3>
+        <Grid3>
+          <NumberField label="Cell size" value={source.cellSize} min={4} max={100} step={0.5} unit="mm" onChange={(value) => set("cellSize", value)} />
+          <NumberField label="Strut" value={source.strutDiameter} min={0.4} max={12} step={0.1} unit="mm" onChange={(value) => set("strutDiameter", value)} />
+          <NumberField label="Jitter" value={source.jitter} min={0} max={0.95} step={0.05} onChange={(value) => set("jitter", value)} />
+        </Grid3>
+        <Grid3>
+          <NumberField label="Connections" value={source.neighbors} min={2} max={6} onChange={(value) => set("neighbors", value)} />
+          <NumberField label="Seed" value={source.seed} onChange={(value) => set("seed", value)} />
+          <NumberField label="Roundness" value={source.radialSegments} min={6} max={24} onChange={(value) => set("radialSegments", value)} />
+        </Grid3>
+      </>}
+      {source.type === "organic" && <>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">Grow a deterministic trunk into tapered, twisting branches for coral and root-like structures.</p>
+        <Grid3>
+          <NumberField label="Max width" value={source.width} min={4} unit="mm" onChange={(value) => set("width", value)} />
+          <NumberField label="Max depth" value={source.depth} min={4} unit="mm" onChange={(value) => set("depth", value)} />
+          <NumberField label="Height" value={source.height} min={4} unit="mm" onChange={(value) => set("height", value)} />
+        </Grid3>
+        <Grid3>
+          <NumberField label="Trunk" value={source.trunkDiameter} min={0.8} max={24} step={0.1} unit="mm" onChange={(value) => set("trunkDiameter", value)} />
+          <NumberField label="Growth levels" value={source.levels} min={1} max={6} onChange={(value) => set("levels", value)} />
+          <NumberField label="Branches" value={source.branching} min={1} max={4} onChange={(value) => set("branching", value)} />
+        </Grid3>
+        <Grid3>
+          <NumberField label="Branch angle" value={source.angleDeg} min={5} max={80} unit="°" onChange={(value) => set("angleDeg", value)} />
+          <NumberField label="Spiral" value={source.twistDeg} step={1} unit="°" onChange={(value) => set("twistDeg", value)} />
+          <NumberField label="Taper" value={source.taper} min={0.35} max={0.95} step={0.01} onChange={(value) => set("taper", value)} />
+        </Grid3>
+        <Grid2>
+          <NumberField label="Seed" value={source.seed} onChange={(value) => set("seed", value)} />
+          <NumberField label="Roundness" value={source.radialSegments} min={6} max={24} onChange={(value) => set("radialSegments", value)} />
+        </Grid2>
       </>}
       {source.type === "water" && <>
         <Grid3>
@@ -564,32 +625,34 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
             <p className="mb-2 text-[10px] text-muted-foreground">{selectedModifier.disabled ? "Muted — not applied to the model right now." : `${MODIFIER_META[selectedModifier.type].hint}. Modifiers apply top to bottom.`}</p>
             <Grid2>
               {Object.entries(selectedModifier).filter(([key]) => key !== "type" && key !== "modulation" && key !== "disabled" && key !== "bake").map(([key, value]) => {
-                const meta = MODIFIER_FIELDS[key] ?? { label: key };
+                const meta = MODIFIER_FIELDS[`${selectedModifier.type}.${key}`] ?? MODIFIER_FIELDS[key] ?? { label: key };
                 const write = (next: unknown) => mutateNode((node) => { (node.modifiers[modifierIndex] as unknown as Record<string, unknown>)[key] = next; });
-                return typeof value === "number" ? (
+                return Array.isArray(value) && value.length === 3 ? (
+                  <VectorField key={key} label={meta.label} value={value as [number, number, number]} onChange={write} />
+                ) : typeof value === "number" ? (
                   <NumberField key={key} label={meta.label} value={value} step={meta.step ?? 1} min={meta.min} max={meta.max} unit={meta.unit} onChange={(next) => write(next ?? 0)} />
                 ) : (
                   <SelectField key={key} label={meta.label} value={String(value)} options={meta.options ?? [String(value)]} onChange={write} />
                 );
               })}
             </Grid2>
-            {selectedModifier.type !== "smooth" && selectedModifier.type !== "drape" && selectedModifier.type !== "melt" && <div className="mt-2 grid gap-2 border-t border-border pt-2">
+            {selectedModifier.type !== "smooth" && selectedModifier.type !== "drape" && selectedModifier.type !== "melt" && selectedModifier.type !== "array" && selectedModifier.type !== "step" && <div className="mt-2 grid gap-2 border-t border-border pt-2">
               <ToggleField
                 label="Vary amount over shape"
                 detail="Normalized keyframes along a local axis"
                 value={Boolean(selectedModifier.modulation)}
                 onChange={(enabled) => mutateNode((node) => {
-                  const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" }>;
+                  const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" }>;
                   if (enabled) modifier.modulation = { axis: "z", points: [[0, 0], [0.2, 1], [0.8, 1], [1, 0]], interpolation: "smoothstep" };
                   else delete modifier.modulation;
                 })}
               />
               {selectedModifier.modulation && <>
                 <Grid2>
-                  <SelectField label="Modulation axis" value={selectedModifier.modulation.axis} options={["x", "y", "z"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" }>; if (modifier.modulation) modifier.modulation.axis = value as "x" | "y" | "z"; })} />
-                  <SelectField label="Interpolation" value={selectedModifier.modulation.interpolation} options={["linear", "smoothstep"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" }>; if (modifier.modulation) modifier.modulation.interpolation = value as "linear" | "smoothstep"; })} />
+                  <SelectField label="Modulation axis" value={selectedModifier.modulation.axis} options={["x", "y", "z"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" }>; if (modifier.modulation) modifier.modulation.axis = value as "x" | "y" | "z"; })} />
+                  <SelectField label="Interpolation" value={selectedModifier.modulation.interpolation} options={["linear", "smoothstep"]} onChange={(value) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" }>; if (modifier.modulation) modifier.modulation.interpolation = value as "linear" | "smoothstep"; })} />
                 </Grid2>
-                <PointListField label="Amount curve · normalized" columns={["Position 0–1", "Multiplier"]} value={selectedModifier.modulation.points} onChange={(points) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" }>; if (modifier.modulation) modifier.modulation.points = points; })} />
+                <PointListField label="Amount curve · normalized" columns={["Position 0–1", "Multiplier"]} value={selectedModifier.modulation.points} onChange={(points) => mutateNode((node) => { const modifier = node.modifiers[modifierIndex] as Exclude<ModifierSpec, { type: "smooth" | "drape" | "melt" | "array" | "step" }>; if (modifier.modulation) modifier.modulation.points = points; })} />
               </>}
             </div>}
           </>

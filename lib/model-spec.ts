@@ -104,6 +104,36 @@ const noiseModifierSchema = z.object({
   ...disabledField,
 }).strict();
 
+const voronoiModifierSchema = z.object({
+  type: z.literal("voronoi"),
+  amplitude: finite.min(-40).max(40).default(1.5).describe("Signed cellular displacement depth in document units"),
+  scale: finite.min(1).max(200).default(14).describe("Average cellular feature size in document units"),
+  seed: z.number().int().default(1),
+  mode: z.enum(["cells", "ridges"]).default("cells").describe("Raise cell centers or the boundaries between cells"),
+  contrast: finite.min(0.1).max(6).default(1.4),
+  ...modulationField,
+  ...disabledField,
+}).strict();
+
+const arrayModifierSchema = z.object({
+  type: z.literal("array"),
+  count: z.number().int().min(2).max(32).default(6),
+  translate: vec3.default([0, 0, 4]).describe("Translation added for each copy"),
+  rotate: vec3.default([0, 0, 8]).describe("Euler rotation in degrees added for each copy"),
+  scale: finite.min(0.05).max(4).default(1).describe("Multiplicative scale applied per copy"),
+  ...disabledField,
+}).strict();
+
+const stepModifierSchema = z.object({
+  type: z.literal("step"),
+  levels: z.number().int().min(2).max(32).default(8),
+  axis: z.enum(["x", "y", "z"]).default("z"),
+  distance: finite.min(-200).max(200).default(3).describe("Constant spacing between contour layers"),
+  inset: finite.min(-100).max(100).default(1.2).describe("Constant planar inset per contour layer"),
+  twistDeg: finite.min(-360).max(360).default(0).describe("Rotation around the stacking axis per layer"),
+  ...disabledField,
+}).strict();
+
 const smoothModifierSchema = z.object({
   type: z.literal("smooth"),
   iterations: z.number().int().min(1).max(8).default(1),
@@ -141,6 +171,9 @@ export const modifierSchema = z.discriminatedUnion("type", [
   axialWaveModifierSchema,
   bendModifierSchema,
   noiseModifierSchema,
+  voronoiModifierSchema,
+  arrayModifierSchema,
+  stepModifierSchema,
   smoothModifierSchema,
   drapeModifierSchema,
   meltModifierSchema,
@@ -271,6 +304,34 @@ const clothSourceSchema = z.object({
   ...bakeField,
 }).strict();
 
+const cellularSourceSchema = z.object({
+  type: z.literal("cellular"),
+  width: positive.default(64),
+  depth: positive.default(64),
+  height: positive.default(72),
+  cellSize: finite.min(4).max(100).default(18).describe("Average spacing between Voronoi lattice sites"),
+  strutDiameter: finite.min(0.4).max(12).default(2.2),
+  jitter: finite.min(0).max(0.95).default(0.62).describe("Random offset of each stratified lattice site"),
+  neighbors: z.number().int().min(2).max(6).default(3).describe("Nearest sites connected to each cell"),
+  seed: z.number().int().default(1),
+  radialSegments: z.number().int().min(6).max(24).default(8),
+}).strict();
+
+const organicSourceSchema = z.object({
+  type: z.literal("organic"),
+  width: positive.default(70),
+  depth: positive.default(70),
+  height: positive.default(100),
+  trunkDiameter: finite.min(0.8).max(24).default(7),
+  levels: z.number().int().min(1).max(6).default(4),
+  branching: z.number().int().min(1).max(4).default(2),
+  angleDeg: finite.min(5).max(80).default(34),
+  twistDeg: finite.min(-360).max(360).default(137.5),
+  taper: finite.min(0.35).max(0.95).default(0.72),
+  seed: z.number().int().default(1),
+  radialSegments: z.number().int().min(6).max(24).default(9),
+}).strict();
+
 export const sourceSchema = z.discriminatedUnion("type", [
   primitiveSourceSchema,
   extrudeSourceSchema,
@@ -279,6 +340,8 @@ export const sourceSchema = z.discriminatedUnion("type", [
   waterSourceSchema,
   fluidSourceSchema,
   clothSourceSchema,
+  cellularSourceSchema,
+  organicSourceSchema,
 ]);
 
 export type TransformSpec = z.infer<typeof transformSchema>;
