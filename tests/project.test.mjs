@@ -27,13 +27,15 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   ]);
 
   assert.match(page, /<HomePage\s*\/>/);
-  assert.match(home, /LayerVisualizer/);
-  assert.match(home, /const PRINT_WORDS = \[/);
-  assert.match(home, /text: "PRINTA"/);
-  assert.match(home, /text: "HELLO"/);
-  assert.match(home, /STUDY_PALETTE/);
-  assert.match(home, /loadTextGeometry/);
-  assert.match(home, /setStudyIndex/);
+  // Landing: interactive hero playground + live-compiled showcase + pricing.
+  assert.match(home, /function TextPlayground/);
+  assert.match(home, /function ModelStage/);
+  assert.match(home, /function FontPicker/);
+  assert.match(home, /function Showcase/);
+  assert.match(home, /Download STL/);
+  assert.match(home, /\/api\/model\/stl\?spec=/);
+  assert.match(home, /Go Pro — \$10\/mo/);
+  assert.match(home, /Cloth & water sim/);
   assert.match(home, /href="\/editor"/);
   assert.match(editor, /<ProceduralStudio\s*\/>/);
   assert.match(playground, /Download STL/);
@@ -218,6 +220,22 @@ test("ships the /chat beginner page with inline 3D model previews", async () => 
   assert.match(chatRoute, /previewUrl/);
   assert.match(chatRoute, /stlUrl/);
   assert.match(home, /href="\/chat"/);
+});
+
+test("/chat is gated behind an env-var early-access password", async () => {
+  const [access, layout, route, gate] = await Promise.all([
+    readFile(new URL("lib/chat-access.ts", root), "utf8"),
+    readFile(new URL("app/chat/layout.tsx", root), "utf8"),
+    readFile(new URL("app/api/chat-access/route.ts", root), "utf8"),
+    readFile(new URL("components/chat/ChatGate.tsx", root), "utf8"),
+  ]);
+  assert.match(access, /CHAT_SIGNUP_PASSWORD/);
+  assert.match(access, /CHAT_ACCESS_COOKIE/);
+  assert.match(layout, /hasChatAccess/);
+  assert.match(layout, /ChatGate/);
+  assert.match(route, /cookies\(\)/);
+  assert.match(route, /httpOnly: true/);
+  assert.match(gate, /\/api\/chat-access/);
 });
 
 test("simulations: SPH fluid + scene collision are wired into the geometry pipeline", async () => {

@@ -1,53 +1,38 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
-  Box,
+  Boxes,
   Braces,
   Check,
+  ChevronDown,
   Download,
-  Layers3,
+  FileBox,
+  FolderKanban,
+  Grid3x3,
+  History,
   Loader2,
+  Lock,
   MessageSquareText,
   MousePointer2,
-  Pause,
-  Play,
-  Rotate3D,
+  Search,
   Sparkles,
+  Sprout,
+  Tag,
+  Waves,
 } from "lucide-react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import { cn } from "@/lib/utils";
 
-const LAYER_HEIGHT_MM = 0.28;
-
-// Claymation-warm brand tones tying the print to the palette.
-const STUDY_PALETTE = [
-  { base: "#ff4d8b", line: "#e23f7c", hi: "#ffd7e6" }, // pink
-  { base: "#b8a4ed", line: "#a690e4", hi: "#ece5ff" }, // lavender
-  { base: "#ffb084", line: "#f59d6d", hi: "#ffe7d6" }, // peach
-];
-
-// ---- Shared: build a model from the platform's own schema, print it server-side ----
-
-type TextParams = { text: string; size: number; depth: number; bevel: number; font: string };
-
-function textDocument({ text, size, depth, bevel, font }: TextParams) {
-  return {
-    version: "1.0",
-    name: text,
-    units: "mm",
-    root: {
-      kind: "shape",
-      id: "text",
-      source: { type: "text", text, font, size, depth, bevel },
-      modifiers: [],
-    },
-  };
-}
+// ---------------------------------------------------------------------------
+// Shared: everything on this page is built from the platform's real schema and
+// compiled by the same /api/model/stl pipeline the editor and MCP tools use.
+// ---------------------------------------------------------------------------
 
 function encodeSpec(document: unknown) {
   const bytes = new TextEncoder().encode(JSON.stringify(document));
@@ -56,22 +41,25 @@ function encodeSpec(document: unknown) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-// One geometry, built by the real /api/model/stl pipeline (same schema the MCP tools use).
-async function loadTextGeometry(params: TextParams, signal: AbortSignal) {
-  const response = await fetch(`/api/model/stl?spec=${encodeSpec(textDocument(params))}`, { signal });
+const previewUrl = (document: unknown) => `/api/model/stl?spec=${encodeSpec(document)}&preview=true`;
+const downloadUrl = (document: unknown) => `/api/model/stl?spec=${encodeSpec(document)}`;
+const editorUrl = (document: unknown) => `/editor?spec=${encodeSpec(document)}`;
+
+async function loadGeometry(document: unknown, signal: AbortSignal) {
+  const response = await fetch(previewUrl(document), { signal });
   if (!response.ok) throw new Error(`model ${response.status}`);
   const geometry = new STLLoader().parse(await response.arrayBuffer());
   geometry.computeBoundingBox();
   geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
   return geometry;
 }
 
-// Point the camera at a geometry, keeping the current viewing direction.
 function frameGeometry(camera: THREE.PerspectiveCamera, controls: OrbitControls, sphere: THREE.Sphere) {
   const fov = THREE.MathUtils.degToRad(camera.fov);
-  const distance = (sphere.radius / Math.sin(fov / 2)) * 1.12;
+  const distance = (sphere.radius / Math.sin(fov / 2)) * 1.15;
   const direction = camera.position.clone().sub(controls.target);
-  if (direction.lengthSq() < 1e-4) direction.set(0.45, -0.75, 0.95);
+  if (direction.lengthSq() < 1e-4) direction.set(0.4, -0.85, 0.7);
   direction.normalize();
   controls.target.copy(sphere.center);
   camera.position.copy(sphere.center).addScaledVector(direction, distance);
@@ -79,301 +67,44 @@ function frameGeometry(camera: THREE.PerspectiveCamera, controls: OrbitControls,
   controls.update();
 }
 
-// ---- Hero: extruded words, printed layer by layer ----
-
-const PRINT_WORDS = [
-  { text: "PRINTA", palette: 0 },
-  { text: "HELLO", palette: 1 },
-  { text: "MAKER", palette: 2 },
-] as const;
-const PRINT_FONT = "Poppins";
-const PRINT_SIZE = 30;
-const PRINT_DEPTH = 24;
-
-type PrintStudy = {
-  text: string;
-  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
-  head: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
-  plane: THREE.Plane;
-  heightZ: number;
-  totalLayers: number;
-};
-
-function Brand({ footer = false }: { footer?: boolean }) {
-  return (
-    <Link className={`home-brand${footer ? " home-brand-footer" : ""}`} href="/" aria-label="Printa home">
-      <Image src="/printa-logo.png" alt="" width={32} height={32} priority={!footer} />
-      <span>Printa</span>
-      {!footer && <em>alpha</em>}
-    </Link>
-  );
+function textDoc({ text, font, depth, size }: { text: string; font: string; depth: number; size: number }) {
+  return {
+    version: "1.0",
+    name: text || "Text",
+    units: "mm",
+    root: {
+      kind: "shape",
+      id: "text",
+      source: { type: "text", text: text || "PRINTA", font, size, depth, bevel: Math.min(depth * 0.14, 1.4), bevelSide: "top" },
+      modifiers: [],
+    },
+  };
 }
 
-function LayerVisualizer() {
+// ---------------------------------------------------------------------------
+// ModelStage — one reusable WebGL viewport. Recompiles when `document` changes.
+// ---------------------------------------------------------------------------
+
+function ModelStage({ document, color = "#ff4d8b", autoRotate = true, className }: { document: unknown; color?: string; autoRotate?: boolean; className?: string }) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const studiesRef = useRef<PrintStudy[]>([]);
-  const studyIndexRef = useRef(0);
-  const holdRef = useRef(0);
-  const [studyIndex, setStudyIndex] = useState(0);
-  const [layer, setLayer] = useState(0);
-  const [totalLayers, setTotalLayers] = useState(80);
-  const [playing, setPlaying] = useState(true);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    const mount = mountRef.current;
-    if (!mount) return;
-    const controller = new AbortController();
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 800);
-    camera.up.set(0, 0, 1);
-    camera.position.set(42, -70, 96);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.shadowMap.enabled = true;
-    renderer.localClippingEnabled = true;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.06;
-    mount.appendChild(renderer.domElement);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.065;
-    controls.enablePan = false;
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.6;
-    controls.minDistance = 40;
-    controls.maxDistance = 320;
-    controls.maxPolarAngle = Math.PI * 0.49;
-    controls.target.set(0, 0, 12);
-
-    const bed = new THREE.Mesh(
-      new THREE.CylinderGeometry(78, 78, 1.4, 96),
-      new THREE.MeshStandardMaterial({ color: "#e7ddc6", roughness: 0.94, metalness: 0 }),
-    );
-    bed.rotation.x = Math.PI / 2;
-    bed.position.z = -0.9;
-    bed.receiveShadow = true;
-    scene.add(bed);
-
-    scene.add(new THREE.HemisphereLight("#fff7ea", "#d8ccb2", 2.4));
-    const key = new THREE.DirectionalLight("#fff2d6", 3.6);
-    key.position.set(-60, -80, 120);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    scene.add(key);
-    const rim = new THREE.DirectionalLight("#b8a4ed", 1.6);
-    rim.position.set(80, 60, 60);
-    scene.add(rim);
-
-    let animationFrame = 0;
-    const animate = () => {
-      animationFrame = requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    };
-
-    const resize = () => {
-      const { width, height } = mount.getBoundingClientRect();
-      renderer.setSize(width, height, false);
-      camera.aspect = width / Math.max(height, 1);
-      camera.updateProjectionMatrix();
-    };
-    const resizeObserver = new ResizeObserver(resize);
-    resizeObserver.observe(mount);
-    resize();
-    animate();
-
-    (async () => {
-      const results = await Promise.allSettled(
-        PRINT_WORDS.map((word) =>
-          loadTextGeometry({ text: word.text, size: PRINT_SIZE, depth: PRINT_DEPTH, bevel: 1.2, font: PRINT_FONT }, controller.signal),
-        ),
-      );
-      if (controller.signal.aborted) {
-        results.forEach((result) => result.status === "fulfilled" && result.value.dispose());
-        return;
-      }
-      const studies: PrintStudy[] = [];
-      let maxRadius = 1;
-      let centerZ = 12;
-      results.forEach((result, index) => {
-        if (result.status !== "fulfilled") return;
-        const geometry = result.value;
-        const palette = STUDY_PALETTE[PRINT_WORDS[index].palette];
-        const plane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
-        const material = new THREE.MeshStandardMaterial({
-          color: palette.base,
-          roughness: 0.5,
-          metalness: 0,
-          emissive: palette.base,
-          emissiveIntensity: 0.08,
-          side: THREE.DoubleSide,
-          clippingPlanes: [plane],
-          clipShadows: true,
-        });
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.visible = index === 0;
-        const bounds = geometry.boundingBox!;
-        const heightZ = bounds.max.z - bounds.min.z;
-        geometry.computeBoundingSphere();
-        maxRadius = Math.max(maxRadius, geometry.boundingSphere!.radius);
-        centerZ = heightZ / 2;
-        const head = new THREE.Mesh(
-          new THREE.PlaneGeometry((bounds.max.x - bounds.min.x) * 1.08, (bounds.max.y - bounds.min.y) * 1.15),
-          new THREE.MeshBasicMaterial({ color: palette.hi, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }),
-        );
-        head.position.set((bounds.max.x + bounds.min.x) / 2, (bounds.max.y + bounds.min.y) / 2, 0);
-        head.visible = false;
-        scene.add(mesh);
-        scene.add(head);
-        studies.push({ text: PRINT_WORDS[index].text, mesh, head, plane, heightZ, totalLayers: Math.max(1, Math.round(heightZ / LAYER_HEIGHT_MM)) });
-      });
-      if (!studies.length) return;
-      studiesRef.current = studies;
-      frameGeometry(camera, controls, new THREE.Sphere(new THREE.Vector3(0, 0, centerZ), maxRadius));
-      setTotalLayers(studies[0].totalLayers);
-      setReady(true);
-    })();
-
-    return () => {
-      controller.abort();
-      cancelAnimationFrame(animationFrame);
-      resizeObserver.disconnect();
-      controls.dispose();
-      studiesRef.current.forEach((study) => {
-        scene.remove(study.mesh);
-        scene.remove(study.head);
-        study.mesh.geometry.dispose();
-        study.mesh.material.dispose();
-        study.head.geometry.dispose();
-        study.head.material.dispose();
-      });
-      studiesRef.current = [];
-      bed.geometry.dispose();
-      (bed.material as THREE.Material).dispose();
-      renderer.dispose();
-      renderer.domElement.remove();
-      scene.clear();
-    };
-  }, []);
-
-  useEffect(() => {
-    studyIndexRef.current = studyIndex;
-    const studies = studiesRef.current;
-    const current = studies[studyIndex];
-    if (!current) return;
-    studies.forEach((study, index) => {
-      study.mesh.visible = index === studyIndex;
-      if (index !== studyIndex) study.head.visible = false;
-    });
-    const printedTo = Math.min((layer + 1) * LAYER_HEIGHT_MM, current.heightZ);
-    current.plane.constant = printedTo;
-    current.head.position.z = printedTo;
-    current.head.visible = layer < current.totalLayers - 1;
-  }, [layer, studyIndex, ready]);
-
-  useEffect(() => {
-    if (!playing || !ready) return;
-    const timer = window.setInterval(() => {
-      setLayer((current) => {
-        const study = studiesRef.current[studyIndexRef.current];
-        const total = study?.totalLayers ?? 1;
-        if (current < total - 1) return current + 1;
-        if (holdRef.current < 12) {
-          holdRef.current += 1;
-          return current;
-        }
-        holdRef.current = 0;
-        const next = (studyIndexRef.current + 1) % studiesRef.current.length;
-        const nextTotal = studiesRef.current[next]?.totalLayers ?? total;
-        setStudyIndex(next);
-        setTotalLayers(nextTotal);
-        return 0;
-      });
-    }, 46);
-    return () => window.clearInterval(timer);
-  }, [playing, ready]);
-
-  const currentWord = PRINT_WORDS[studyIndex]?.text ?? "";
-
-  return (
-    <div className="layer-card">
-      <div className="layer-card-head">
-        <div>
-          <span className="home-kicker"><Layers3 size={13} /> Live print</span>
-          <strong>&ldquo;{currentWord}&rdquo;</strong>
-        </div>
-        <div className="layer-live-group">
-          <span className="layer-study-count">0{studyIndex + 1} / 0{PRINT_WORDS.length}</span>
-          <span className="layer-live"><i /> {playing ? "Printing" : "Paused"}</span>
-        </div>
-      </div>
-      <div className="layer-canvas-wrap">
-        <div ref={mountRef} className="layer-canvas" aria-label="3D print of extruded text, built layer by layer" />
-        <span className="orbit-hint"><MousePointer2 size={13} /> Drag to orbit</span>
-        {!ready && (
-          <div className="layer-loading"><Loader2 size={15} className="spin" /> Warming up the bed…</div>
-        )}
-        <div className="layer-readout">
-          <small>Layer</small>
-          <strong>{String(layer + 1).padStart(2, "0")}</strong>
-          <span>/ {totalLayers}</span>
-        </div>
-      </div>
-      <div className="layer-controls">
-        <button type="button" onClick={() => setPlaying((current) => !current)} aria-label={playing ? "Pause" : "Play"}>
-          {playing ? <Pause size={15} /> : <Play size={15} />}
-        </button>
-        <input
-          type="range"
-          min={0}
-          max={Math.max(1, totalLayers - 1)}
-          value={layer}
-          style={{ "--layer-progress": `${(layer / Math.max(1, totalLayers - 1)) * 100}%` } as React.CSSProperties}
-          onChange={(event) => {
-            setPlaying(false);
-            holdRef.current = 0;
-            setLayer(Number(event.target.value));
-          }}
-          aria-label="Visible print layer"
-        />
-        <span>{((layer + 1) * LAYER_HEIGHT_MM).toFixed(1)} mm</span>
-      </div>
-      <div className="layer-stats">
-        <span><small>Layer height</small><strong>{LAYER_HEIGHT_MM} mm</strong></span>
-        <span><small>Material</small><strong>PLA</strong></span>
-        <span><small>Supports</small><strong>None</strong></span>
-      </div>
-    </div>
-  );
-}
-
-// ---- MCP: SYDNEY, built from the schema and orbited, updating as the chat edits it ----
-
-function SydneyModel({ model }: { model: McpModel | null }) {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const refs = useRef<{
+  const store = useRef<{
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
     controls: OrbitControls;
     mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> | null;
     loader: AbortController | null;
   } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const specKey = useMemo(() => JSON.stringify(document), [document]);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 800);
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 2000);
     camera.up.set(0, 0, 1);
-    camera.position.set(18, -58, 56);
+    camera.position.set(24, -78, 64);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -386,332 +117,578 @@ function SydneyModel({ model }: { model: McpModel | null }) {
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.enablePan = false;
-    controls.enableZoom = false;
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 1.5;
-    controls.maxPolarAngle = Math.PI * 0.52;
-    controls.target.set(0, 0, 6);
+    controls.autoRotate = autoRotate;
+    controls.autoRotateSpeed = 1.1;
+    controls.minDistance = 20;
+    controls.maxDistance = 900;
+    controls.maxPolarAngle = Math.PI * 0.54;
 
-    scene.add(new THREE.HemisphereLight("#fff7ea", "#d8ccb2", 2.6));
-    const key = new THREE.DirectionalLight("#fff2d6", 3.4);
-    key.position.set(-30, -60, 80);
-    scene.add(key);
-    const rim = new THREE.DirectionalLight("#b8a4ed", 1.5);
-    rim.position.set(40, 40, 40);
+    scene.add(new THREE.HemisphereLight("#ffffff", "#c9c9d4", 2.5));
+    const keyLight = new THREE.DirectionalLight("#ffffff", 3.1);
+    keyLight.position.set(-40, -70, 90);
+    scene.add(keyLight);
+    const rim = new THREE.DirectionalLight("#b8a4ed", 1.4);
+    rim.position.set(60, 40, 40);
     scene.add(rim);
 
-    let animationFrame = 0;
-    const animate = () => {
-      animationFrame = requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    };
+    let frame = 0;
+    const animate = () => { frame = requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); };
     const resize = () => {
       const { width, height } = mount.getBoundingClientRect();
       renderer.setSize(width, height, false);
       camera.aspect = width / Math.max(height, 1);
       camera.updateProjectionMatrix();
     };
-    const resizeObserver = new ResizeObserver(resize);
-    resizeObserver.observe(mount);
+    const observer = new ResizeObserver(resize);
+    observer.observe(mount);
     resize();
     animate();
-
-    refs.current = { scene, camera, controls, mesh: null, loader: null };
+    store.current = { scene, camera, controls, mesh: null, loader: null };
 
     return () => {
-      cancelAnimationFrame(animationFrame);
-      resizeObserver.disconnect();
+      cancelAnimationFrame(frame);
+      observer.disconnect();
       controls.dispose();
-      refs.current?.loader?.abort();
-      if (refs.current?.mesh) {
-        scene.remove(refs.current.mesh);
-        refs.current.mesh.geometry.dispose();
-        refs.current.mesh.material.dispose();
-      }
+      store.current?.loader?.abort();
+      if (store.current?.mesh) { scene.remove(store.current.mesh); store.current.mesh.geometry.dispose(); store.current.mesh.material.dispose(); }
       renderer.dispose();
       renderer.domElement.remove();
       scene.clear();
-      refs.current = null;
+      store.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    const store = refs.current;
-    if (!store || !model) return;
-    store.loader?.abort();
-    const controller = new AbortController();
-    store.loader = controller;
-    loadTextGeometry(
-      {
-        text: model.text,
-        size: model.height,
-        depth: model.depth,
-        bevel: model.bevel ? Math.min(model.depth * 0.18, 2) : 0,
-        font: model.font,
-      },
-      controller.signal,
-    )
-      .then((geometry) => {
-        if (controller.signal.aborted) { geometry.dispose(); return; }
-        if (store.mesh) {
-          store.scene.remove(store.mesh);
-          store.mesh.geometry.dispose();
-          store.mesh.material.dispose();
-        }
-        const material = new THREE.MeshStandardMaterial({ color: "#ff4d8b", roughness: 0.5, metalness: 0, emissive: "#ff4d8b", emissiveIntensity: 0.08 });
-        const mesh = new THREE.Mesh(geometry, material);
-        store.scene.add(mesh);
-        store.mesh = mesh;
-        geometry.computeBoundingSphere();
-        frameGeometry(store.camera, store.controls, geometry.boundingSphere ?? new THREE.Sphere(new THREE.Vector3(), 40));
-      })
-      .catch(() => { /* keep the previous model on a failed edit */ });
-  }, [model]);
-
-  return <div className="mcp-canvas" ref={mountRef} aria-label="3D preview of the SYDNEY model" />;
-}
-
-type McpModel = { text: string; height: number; depth: number; font: string; bevel: boolean };
-type McpStep =
-  | { role: "user"; text: string }
-  | { role: "tool"; name: string; args: string; result: string; model: McpModel; changed: (keyof McpModel)[] };
-
-const CONVERSATION: McpStep[] = [
-  { role: "user", text: "Make a sign that says SYDNEY, about 4 cm tall." },
-  {
-    role: "tool",
-    name: "create_extruded_text",
-    args: "SYDNEY · 42 mm · Space Grotesk",
-    result: "Made it",
-    model: { text: "SYDNEY", height: 42, depth: 6, font: "Space Grotesk", bevel: false },
-    changed: ["text", "height", "font"],
-  },
-  { role: "user", text: "Make it taller and round the edges." },
-  {
-    role: "tool",
-    name: "update_extruded_text",
-    args: "taller · soft edges",
-    result: "Updated",
-    model: { text: "SYDNEY", height: 60, depth: 6, font: "Space Grotesk", bevel: true },
-    changed: ["height", "bevel"],
-  },
-  { role: "user", text: "Try a softer font." },
-  {
-    role: "tool",
-    name: "update_extruded_text",
-    args: "font → Poppins",
-    result: "Updated",
-    model: { text: "SYDNEY", height: 60, depth: 6, font: "Poppins", bevel: true },
-    changed: ["font"],
-  },
-];
-
-type Frame = { count: number; running: boolean; dwell: number };
-
-const FRAMES: Frame[] = (() => {
-  const frames: Frame[] = [];
-  CONVERSATION.forEach((step, index) => {
-    if (step.role === "user") {
-      frames.push({ count: index + 1, running: false, dwell: 1600 });
-    } else {
-      frames.push({ count: index + 1, running: true, dwell: 1150 });
-      frames.push({ count: index + 1, running: false, dwell: 2100 });
-    }
-  });
-  frames.push({ count: CONVERSATION.length, running: false, dwell: 3200 });
-  frames.push({ count: 0, running: false, dwell: 500 });
-  return frames;
-})();
-
-function McpConversation() {
-  const [frameIndex, setFrameIndex] = useState(FRAMES.length - 2);
-
-  useEffect(() => {
-    // Initial state already renders the finished thread — honour reduced motion by leaving it there.
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let timer = 0;
-    const tick = (index: number) => {
-      setFrameIndex(index);
-      timer = window.setTimeout(() => tick((index + 1) % FRAMES.length), FRAMES[index].dwell);
-    };
-    tick(0);
+    const active = store.current;
+    if (!active) return;
+    setLoading(true);
+    const timer = window.setTimeout(() => {
+      active.loader?.abort();
+      const controller = new AbortController();
+      active.loader = controller;
+      loadGeometry(document, controller.signal)
+        .then((geometry) => {
+          if (controller.signal.aborted) { geometry.dispose(); return; }
+          if (active.mesh) { active.scene.remove(active.mesh); active.mesh.geometry.dispose(); active.mesh.material.dispose(); }
+          const material = new THREE.MeshStandardMaterial({ color, roughness: 0.42, metalness: 0.02, emissive: color, emissiveIntensity: 0.05 });
+          const mesh = new THREE.Mesh(geometry, material);
+          active.scene.add(mesh);
+          active.mesh = mesh;
+          frameGeometry(active.camera, active.controls, geometry.boundingSphere ?? new THREE.Sphere(new THREE.Vector3(), 40));
+          setLoading(false);
+        })
+        .catch((error) => { if ((error as Error).name !== "AbortError") setLoading(false); });
+    }, 220);
     return () => window.clearTimeout(timer);
-  }, []);
-
-  const frame = FRAMES[frameIndex];
-  const visible = CONVERSATION.slice(0, frame.count);
-
-  let model: McpModel | null = null;
-  let changed: (keyof McpModel)[] = [];
-  visible.forEach((step, index) => {
-    if (step.role !== "tool") return;
-    const isLast = index === visible.length - 1;
-    if (isLast && frame.running) return; // the model updates only once the tool call finishes
-    model = step.model;
-    changed = step.changed;
-  });
-
-  const active = model as McpModel | null;
-  const spec: { key: keyof McpModel; label: string; value: string }[] = active
-    ? [
-        { key: "height", label: "Height", value: `${active.height} mm` },
-        { key: "depth", label: "Depth", value: `${active.depth} mm` },
-        { key: "font", label: "Font", value: active.font },
-        { key: "bevel", label: "Edges", value: active.bevel ? "Soft" : "Sharp" },
-      ]
-    : [
-        { key: "height", label: "Height", value: "—" },
-        { key: "depth", label: "Depth", value: "—" },
-        { key: "font", label: "Font", value: "—" },
-        { key: "bevel", label: "Edges", value: "—" },
-      ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specKey, color]);
 
   return (
-    <div className="mcp-window" aria-label="Animated MCP conversation">
-      <div className="mcp-bar"><i /><i /><i /><span>Printa · MCP</span><em>live</em></div>
-      <div className="mcp-thread">
-        {visible.map((step, index) => {
-          if (step.role === "user") {
-            return <div key={index} className="mcp-msg mcp-user">{step.text}</div>;
-          }
-          const running = index === visible.length - 1 && frame.running;
-          return (
-            <div key={index} className="mcp-msg mcp-tool">
-              <div className="mcp-tool-head">
-                <span className="mcp-tool-badge"><Box size={13} /> {step.name}</span>
-                {running ? (
-                  <span className="mcp-running"><i /> running</span>
-                ) : (
-                  <span className="mcp-done"><Check size={13} /> {step.result}</span>
-                )}
-              </div>
-              <div className="mcp-tool-args">{step.args}</div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mcp-stage">
-        <div className="mcp-model">
-          <SydneyModel model={active} />
-          <span className="mcp-orbit-hint"><MousePointer2 size={12} /> drag</span>
-          {!active && <div className="mcp-building"><Loader2 size={14} className="spin" /> building…</div>}
+    <div className={cn("relative", className)}>
+      <div ref={mountRef} className="h-full w-full" aria-label="3D model preview" />
+      {loading && (
+        <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-background/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground backdrop-blur">
+          <Loader2 size={12} className="animate-spin" /> compiling
         </div>
-        <div className="mcp-spec">
-          {spec.map((item) => (
-            <span key={item.key} className={active && changed.includes(item.key) ? "is-changed" : undefined}>
-              {item.value}
-              <small>{item.label}</small>
-            </span>
-          ))}
+      )}
+      <span className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-1 rounded-full bg-background/80 px-2 py-1 text-[10px] font-medium text-muted-foreground backdrop-blur">
+        <MousePointer2 size={11} /> drag to orbit
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FontPicker — searchable Google Fonts combobox for the hero playground.
+// ---------------------------------------------------------------------------
+
+const POPULAR_FONTS = ["Poppins", "Space Grotesk", "Bebas Neue", "Pacifico", "Playfair Display", "Lobster"];
+
+function FontPicker({ value, onChange }: { value: string; onChange: (font: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [fonts, setFonts] = useState<string[]>(POPULAR_FONTS);
+
+  useEffect(() => {
+    if (!open || fonts.length > POPULAR_FONTS.length) return;
+    const controller = new AbortController();
+    fetch("/api/fonts", { signal: controller.signal })
+      .then((res) => res.json())
+      .then((data: { fonts?: { family: string }[] }) => {
+        if (data.fonts?.length) setFonts(data.fonts.map((f) => f.family));
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [open, fonts.length]);
+
+  const matches = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const list = needle ? fonts.filter((f) => f.toLowerCase().includes(needle)) : fonts;
+    return list.slice(0, 80);
+  }, [fonts, query]);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        <span className="truncate">{value}</span>
+        <ChevronDown size={14} className={cn("shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+          <label className="flex h-9 items-center gap-2 border-b border-border px-2.5 text-muted-foreground">
+            <Search size={13} />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search fonts…"
+              className="w-full bg-transparent text-xs outline-none"
+            />
+          </label>
+          <div className="max-h-56 overflow-y-auto p-1">
+            {matches.map((font) => (
+              <button
+                key={font}
+                type="button"
+                onClick={() => { onChange(font); setOpen(false); setQuery(""); }}
+                className={cn("flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs hover:bg-secondary", font === value && "bg-secondary font-medium")}
+              >
+                {font}
+                {font === value && <Check size={13} className="text-[var(--accent-tool)]" />}
+              </button>
+            ))}
+            {!matches.length && <p className="px-2.5 py-3 text-center text-xs text-muted-foreground">No fonts match.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hero playground — editable text, font, extrusion → live model + real STL.
+// ---------------------------------------------------------------------------
+
+function TextPlayground() {
+  const [text, setText] = useState("PRINTA");
+  const [font, setFont] = useState("Poppins");
+  const [depth, setDepth] = useState(14);
+  const document = useMemo(() => textDoc({ text, font, depth, size: 32 }), [text, font, depth]);
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+      <div className="flex items-center justify-between border-b border-border px-3.5 py-2.5">
+        <span className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+          <span className="size-1.5 rounded-full bg-[#ff4d8b]" /> live playground
+        </span>
+        <span className="font-mono text-[11px] text-muted-foreground">source · text</span>
+      </div>
+      <ModelStage document={document} color="#ff4d8b" className="h-64 w-full bg-[radial-gradient(circle_at_50%_0%,#faf7ff,transparent_70%)] sm:h-72" />
+      <div className="grid gap-3 border-t border-border p-3.5">
+        <div className="grid gap-1.5">
+          <label htmlFor="pg-text" className="text-[11px] font-medium text-muted-foreground">Your text</label>
+          <input
+            id="pg-text"
+            value={text}
+            maxLength={16}
+            onChange={(e) => setText(e.target.value.toUpperCase())}
+            placeholder="Type something…"
+            className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+          />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-1.5">
+            <label className="text-[11px] font-medium text-muted-foreground">Font</label>
+            <FontPicker value={font} onChange={setFont} />
+          </div>
+          <div className="grid gap-1.5">
+            <label htmlFor="pg-depth" className="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
+              Extrusion <span className="font-mono text-foreground">{depth} mm</span>
+            </label>
+            <input
+              id="pg-depth"
+              type="range"
+              min={3}
+              max={40}
+              value={depth}
+              onChange={(e) => setDepth(Number(e.target.value))}
+              className="h-9 w-full accent-[#ff4d8b]"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <a
+            href={downloadUrl(document)}
+            download={`${(text || "printa").toLowerCase()}.stl`}
+            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <Download size={15} /> Download STL
+          </a>
+          <a
+            href={editorUrl(document)}
+            className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-border px-3 text-sm font-medium transition-colors hover:bg-secondary"
+          >
+            Open in editor <ArrowRight size={14} />
+          </a>
         </div>
       </div>
     </div>
   );
 }
 
-const features = [
+// ---------------------------------------------------------------------------
+// Story chat — three steps of one user's conversation, model updating live.
+// ---------------------------------------------------------------------------
+
+type StoryStep = { step: string; user: string; reply: string; tool: string; args: string; document: unknown };
+
+const STORY: StoryStep[] = [
   {
-    tone: "lavender",
-    icon: MessageSquareText,
-    label: "Ask",
-    title: "Just say it",
-    body: "Type what you want — like “a keychain that says MOM” — and Printa builds the 3D model for you.",
-    fragment: "“a name tag”",
+    step: "Ask",
+    user: "Make a sign that says SYDNEY, about 4 cm tall.",
+    reply: "Here's SYDNEY in Space Grotesk.",
+    tool: "build_model",
+    args: "text · SYDNEY · 42 mm",
+    document: textDoc({ text: "SYDNEY", font: "Space Grotesk", depth: 6, size: 42 }),
   },
   {
-    tone: "teal",
-    icon: Rotate3D,
-    label: "Check",
-    title: "Spin it around",
-    body: "Turn the model right in your browser so you can see it from every side before you print.",
-    fragment: "drag to look",
+    step: "Refine",
+    user: "Taller, and round the edges a bit.",
+    reply: "Bumped it to 60 mm with a soft bevel.",
+    tool: "build_model",
+    args: "height 60 · soft edges",
+    document: textDoc({ text: "SYDNEY", font: "Space Grotesk", depth: 10, size: 60 }),
   },
   {
-    tone: "peach",
-    icon: Download,
-    label: "Print",
-    title: "Get your file",
-    body: "Download a file that works with any 3D printer. Nothing to set up, nothing to tweak.",
-    fragment: "one-click file",
+    step: "Print",
+    user: "Perfect — can I download it?",
+    reply: "Here's your print-ready STL. ✓",
+    tool: "build_model",
+    args: "SYDNEY.stl ready",
+    document: textDoc({ text: "SYDNEY", font: "Space Grotesk", depth: 10, size: 60 }),
   },
-] as const;
+];
+
+function StoryChat() {
+  const [visible, setVisible] = useState(STORY.length);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let index = STORY.length;
+    const tick = () => {
+      index = index >= STORY.length ? 0 : index + 1;
+      setVisible(index);
+    };
+    const timer = window.setInterval(tick, 2200);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const activeDoc = STORY[Math.max(0, Math.min(STORY.length, visible) - 1)]?.document ?? STORY[0].document;
+  const shown = STORY.slice(0, Math.max(1, visible));
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex items-center gap-1.5 border-b border-border px-3.5 py-2.5">
+          <span className="size-2.5 rounded-full bg-[#ff5f57]" />
+          <span className="size-2.5 rounded-full bg-[#febc2e]" />
+          <span className="size-2.5 rounded-full bg-[#28c840]" />
+          <span className="ml-2 font-mono text-[11px] text-muted-foreground">printa · chat</span>
+        </div>
+        <div className="flex flex-col gap-2.5 p-3.5">
+          {shown.map((step, i) => (
+            <div key={i} className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className="rounded-full border border-border bg-secondary px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">0{i + 1} · {step.step}</span>
+              </div>
+              <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-foreground px-3 py-2 text-sm text-background">{step.user}</div>
+              <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-secondary px-3 py-2 text-sm">
+                <span className="mb-1 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground"><Braces size={11} /> {step.tool} · {step.args} <Check size={11} className="text-emerald-500" /></span>
+                {step.reply}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <ModelStage document={activeDoc} color="#ff4d8b" className="h-64 w-full sm:h-full sm:min-h-[300px]" />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Showcase — many real examples, compiled from their actual schema on demand.
+// ---------------------------------------------------------------------------
+
+type Example = { id: string; name: string; blurb: string; color: string; document: unknown };
+
+const EXAMPLES: Example[] = [
+  {
+    id: "vase", name: "Rippled vase", blurb: "A revolved profile with fluted radial waves.", color: "#7b63ce",
+    document: { version: "1.0", name: "Rippled vase", units: "mm", root: { kind: "shape", id: "v", source: { type: "revolve", profile: [[26, 0], [34, 40], [30, 90], [24, 130]], wall: 2.2, bottomCap: true, interpolation: "catmull-rom" }, modifiers: [{ type: "radialWave", amplitude: 2.4, count: 12, axialTurns: 0.5 }] } },
+  },
+  {
+    id: "planter", name: "Twisted planter", blurb: "A box twisted along its height, then tapered.", color: "#ff4d8b",
+    document: { version: "1.0", name: "Twisted planter", units: "mm", root: { kind: "shape", id: "b", source: { type: "primitive", shape: "box", width: 60, depth: 60, height: 90, segments: 4 }, modifiers: [{ type: "twist", angleDeg: 120, start: 0, end: 1 }, { type: "taper", from: 1, to: 0.7 }] } },
+  },
+  {
+    id: "hexpot", name: "Hex pot", blurb: "A 6-sided prism — one cylinder, low segments.", color: "#e8934a",
+    document: { version: "1.0", name: "Hex pot", units: "mm", root: { kind: "shape", id: "h", source: { type: "primitive", shape: "cylinder", radius: 30, height: 70, segments: 6 }, modifiers: [{ type: "taper", from: 1, to: 0.82 }] } },
+  },
+  {
+    id: "tag", name: "Name keychain", blurb: "Extruded text — any Google font.", color: "#33a45d",
+    document: textDoc({ text: "LUCK", font: "Bebas Neue", depth: 6, size: 34 }),
+  },
+  {
+    id: "bowl", name: "Fluted bowl", blurb: "A shallow revolved bowl with soft flutes.", color: "#4aa3c9",
+    document: { version: "1.0", name: "Fluted bowl", units: "mm", root: { kind: "shape", id: "w", source: { type: "revolve", profile: [[10, 0], [46, 8], [52, 34], [50, 40]], wall: 2.4, bottomCap: true, interpolation: "catmull-rom" }, modifiers: [{ type: "radialWave", amplitude: 1.6, count: 20, axialTurns: 0 }] } },
+  },
+  {
+    id: "spiral", name: "Spiral vessel", blurb: "A revolved vase twisted into a spiral.", color: "#c05fe0",
+    document: { version: "1.0", name: "Spiral vessel", units: "mm", root: { kind: "shape", id: "s", source: { type: "revolve", profile: [[22, 0], [30, 50], [26, 110], [20, 150]], wall: 2, bottomCap: true, interpolation: "catmull-rom" }, modifiers: [{ type: "radialWave", amplitude: 3, count: 6, axialTurns: 1.5 }, { type: "twist", angleDeg: 60, start: 0, end: 1 }] } },
+  },
+];
+
+function Showcase() {
+  const [active, setActive] = useState(0);
+  const example = EXAMPLES[active];
+  const json = useMemo(() => JSON.stringify(example.document, null, 2), [example]);
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap gap-2">
+          {EXAMPLES.map((ex, i) => (
+            <button
+              key={ex.id}
+              type="button"
+              onClick={() => setActive(i)}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                i === active ? "border-foreground bg-foreground text-background" : "border-border bg-card hover:bg-secondary",
+              )}
+            >
+              {ex.name}
+            </button>
+          ))}
+        </div>
+        <div className="overflow-hidden rounded-2xl border border-border bg-card">
+          <ModelStage document={example.document} color={example.color} className="h-72 w-full sm:h-80" />
+          <div className="flex flex-wrap items-center gap-2 border-t border-border p-3.5">
+            <div className="mr-auto">
+              <p className="text-sm font-semibold">{example.name}</p>
+              <p className="text-xs text-muted-foreground">{example.blurb}</p>
+            </div>
+            <a href={downloadUrl(example.document)} download={`${example.id}.stl`} className="flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-medium hover:bg-secondary"><Download size={13} /> STL</a>
+            <a href={editorUrl(example.document)} className="flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">Open <ArrowRight size={13} /></a>
+          </div>
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-2xl border border-border bg-[#0e0e12]">
+        <div className="flex items-center justify-between border-b border-white/10 px-3.5 py-2.5">
+          <span className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-white/50"><Braces size={12} /> printa spec — compiled live</span>
+          <span className="font-mono text-[11px] text-white/40">{example.id}.json</span>
+        </div>
+        <pre className="max-h-[26rem] overflow-auto p-4 font-mono text-[11px] leading-relaxed text-[#c9d1e6]"><code>{json}</code></pre>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Static content
+// ---------------------------------------------------------------------------
+
+const STEPS = [
+  { icon: MessageSquareText, label: "Ask", title: "Say what you want", body: "Type it in plain words — “a sign that says SYDNEY”. No modeling, no menus." },
+  { icon: MousePointer2, label: "Refine", title: "Tweak by talking", body: "Taller, rounder, a softer font. Every message updates the real 3D model." },
+  { icon: Download, label: "Print", title: "Download the file", body: "Get a watertight STL that works with any slicer and any 3D printer." },
+];
+
+const PRO_FEATURES = [
+  { icon: FileBox, title: "Every format", body: "Export 3MF, OBJ and STEP — not just STL." },
+  { icon: Waves, title: "Cloth & water sim", body: "Drape fabric and pour fluid that settles over your scene." },
+  { icon: Grid3x3, title: "Voronoi noise", body: "Cellular textures and lightweight lattice infills." },
+  { icon: Sprout, title: "Organic growth", body: "Grow branching, coral-like structures procedurally." },
+  { icon: Boxes, title: "Struts & smart seams", body: "Auto interior bracing and seams placed where they hide." },
+  { icon: FolderKanban, title: "Projects", body: "Save, organise and revisit everything you make." },
+  { icon: History, title: "Chat history", body: "Your whole conversation, kept and searchable." },
+  { icon: Tag, title: "Print-on-demand discounts", body: "Order finished prints at member pricing." },
+];
+
+function SectionHead({ kicker, title, sub }: { kicker: string; title: string; sub?: string }) {
+  return (
+    <div className="mx-auto max-w-2xl text-center">
+      <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#ff4d8b]">{kicker}</span>
+      <h2 className="mt-3 font-heading text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h2>
+      {sub && <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-muted-foreground">{sub}</p>}
+    </div>
+  );
+}
 
 export function HomePage() {
   return (
-    <main className="home-shell">
-      <nav className="home-nav" aria-label="Main navigation">
-        <Brand />
-        <div className="home-nav-links">
-          <Link href="/chat">Chat</Link>
-          <a href="#capabilities">How it works</a>
-          <a href="#workflow">Just ask</a>
-          <a href="/mcp" target="_blank" rel="noreferrer">MCP</a>
+    <main className="min-h-dvh bg-background text-foreground">
+      {/* Nav */}
+      <nav className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6">
+          <Link href="/" className="flex items-center gap-2 font-heading text-[15px] font-semibold tracking-tight" aria-label="Printa home">
+            <Image src="/printa-logo.png" alt="" width={26} height={26} priority />
+            Printa
+            <span className="rounded border border-border px-1 py-0.5 font-mono text-[9px] font-medium text-muted-foreground">alpha</span>
+          </Link>
+          <div className="ml-auto hidden items-center gap-6 text-sm text-muted-foreground md:flex">
+            <a href="#how" className="hover:text-foreground">How it works</a>
+            <a href="#showcase" className="hover:text-foreground">Showcase</a>
+            <a href="#pricing" className="hover:text-foreground">Pricing</a>
+            <Link href="/chat" className="hover:text-foreground">Chat</Link>
+          </div>
+          <Link href="/editor" className="ml-auto flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 md:ml-0">
+            Open editor <ArrowRight size={15} />
+          </Link>
         </div>
-        <Link className="home-nav-cta" href="/editor">Start creating <ArrowRight size={16} /></Link>
       </nav>
 
-      <section className="home-hero">
-        <div className="hero-copy">
-          <span className="hero-pill"><Sparkles size={14} /> Type it. Print it.</span>
-          <h1>Turn words into<br /><em>3D prints.</em></h1>
-          <p>Tell Printa what you want in plain words. It builds the 3D model and gives you a file that&rsquo;s ready to print.</p>
-          <div className="hero-actions">
-            <Link className="home-primary" href="/chat">Chat to create <ArrowRight size={17} /></Link>
-            <Link className="home-secondary" href="/editor"><Play size={14} fill="currentColor" /> Open the editor</Link>
+      {/* Hero */}
+      <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:gap-12 lg:py-20">
+        <div>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+            <Sparkles size={13} className="text-[#ff4d8b]" /> Type it. Print it.
+          </span>
+          <h1 className="mt-5 font-heading text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
+            Turn words into<br /><span className="text-[#ff4d8b]">printable objects.</span>
+          </h1>
+          <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground sm:text-base">
+            Describe an object in plain language and Printa builds a real, watertight 3D model — ready to download and print. Start right here: edit the text, pick a font, grab the STL.
+          </p>
+          <div className="mt-7 flex flex-wrap items-center gap-3">
+            <Link href="/editor" className="flex h-11 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+              Start creating <ArrowRight size={16} />
+            </Link>
+            <Link href="/chat" className="flex h-11 items-center gap-2 rounded-lg border border-border px-5 text-sm font-medium transition-colors hover:bg-secondary">
+              <MessageSquareText size={16} /> Chat to create
+            </Link>
           </div>
-          <div className="hero-proof">
-            <span><Check size={14} /> Ready to print</span>
-            <span><Check size={14} /> Any font</span>
-            <span><Check size={14} /> Free — no sign-up</span>
+          <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Watertight, print-ready</span>
+            <span className="flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Any Google font</span>
+            <span className="flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Free editor, no sign-up</span>
           </div>
         </div>
-        <LayerVisualizer />
+        <TextPlayground />
       </section>
 
-      <section className="home-capabilities" id="capabilities">
-        <div className="section-heading">
-          <span className="home-kicker">How it works</span>
-          <h2>Three steps. That&rsquo;s it.</h2>
-          <p>No software to learn. Just say what you want.</p>
+      {/* How it works — one story */}
+      <section id="how" className="border-t border-border bg-secondary/30 py-16 sm:py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <SectionHead kicker="How it works" title="From a sentence to a solid" sub="Three steps, one conversation. Watch a real thread take an idea to a printable file." />
+          <div className="mt-10 grid gap-4 sm:grid-cols-3">
+            {STEPS.map(({ icon: Icon, label, title, body }, i) => (
+              <article key={label} className="rounded-2xl border border-border bg-card p-5">
+                <div className="flex items-center justify-between">
+                  <span className="grid size-9 place-items-center rounded-lg bg-[var(--accent-tool-soft)] text-[var(--accent-tool)]"><Icon size={18} /></span>
+                  <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">0{i + 1} · {label}</span>
+                </div>
+                <h3 className="mt-4 font-heading text-lg font-semibold tracking-tight">{title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{body}</p>
+              </article>
+            ))}
+          </div>
+          <div className="mt-8">
+            <StoryChat />
+          </div>
         </div>
-        <div className="feature-grid">
-          {features.map(({ tone, icon: Icon, label, title, body, fragment }, index) => (
-            <article key={title} className={`feature-card feature-card--${tone}`}>
-              <div className="feature-top">
-                <span className="feature-icon"><Icon size={20} /></span>
-                <span className="feature-num">0{index + 1} · {label}</span>
+      </section>
+
+      {/* Showcase */}
+      <section id="showcase" className="py-16 sm:py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <SectionHead kicker="Showcase" title="Everything here is really compiled" sub="Pick an example — the model on the left is built from the exact schema on the right, by the same engine that powers the editor." />
+          <div className="mt-10">
+            <Showcase />
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section id="pricing" className="border-t border-border bg-secondary/30 py-16 sm:py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <SectionHead kicker="Pricing" title="Start free. Go further with Pro." sub="The editor, chat and STL export are free. Pro unlocks the heavy machinery." />
+          <div className="mx-auto mt-10 grid max-w-4xl gap-4 md:grid-cols-2">
+            {/* Free */}
+            <div className="flex flex-col rounded-2xl border border-border bg-card p-6">
+              <h3 className="font-heading text-lg font-semibold tracking-tight">Free</h3>
+              <div className="mt-2 flex items-baseline gap-1">
+                <span className="font-heading text-4xl font-semibold tracking-tight">$0</span>
+                <span className="text-sm text-muted-foreground">/ forever</span>
               </div>
-              <h3>{title}</h3>
-              <p>{body}</p>
-              <span className="feature-frag"><i /> {fragment}</span>
-            </article>
-          ))}
+              <p className="mt-2 text-sm text-muted-foreground">Everything you need to make and print.</p>
+              <ul className="mt-5 grid gap-2.5 text-sm">
+                {["Visual editor & procedural modeling", "Text, shapes, revolves & modifiers", "Watertight STL download", "MCP endpoint for ChatGPT"].map((item) => (
+                  <li key={item} className="flex items-start gap-2"><Check size={16} className="mt-0.5 shrink-0 text-emerald-500" /> {item}</li>
+                ))}
+              </ul>
+              <Link href="/editor" className="mt-6 flex h-10 items-center justify-center gap-1.5 rounded-lg border border-border text-sm font-medium transition-colors hover:bg-secondary">
+                Open the editor <ArrowRight size={15} />
+              </Link>
+            </div>
+            {/* Pro */}
+            <div className="relative flex flex-col rounded-2xl border-2 border-foreground bg-card p-6">
+              <span className="absolute -top-3 left-6 rounded-full bg-[#ff4d8b] px-2.5 py-0.5 text-[11px] font-semibold text-white">Pro</span>
+              <h3 className="font-heading text-lg font-semibold tracking-tight">Pro</h3>
+              <div className="mt-2 flex items-baseline gap-1">
+                <span className="font-heading text-4xl font-semibold tracking-tight">$10</span>
+                <span className="text-sm text-muted-foreground">/ month</span>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">For makers who want the full toolbox.</p>
+              <ul className="mt-5 grid gap-2.5 text-sm">
+                {PRO_FEATURES.map(({ icon: Icon, title, body }) => (
+                  <li key={title} className="flex items-start gap-2.5">
+                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-md bg-[var(--accent-tool-soft)] text-[var(--accent-tool)]"><Icon size={12} /></span>
+                    <span><span className="font-medium">{title}</span> <span className="text-muted-foreground">— {body}</span></span>
+                  </li>
+                ))}
+              </ul>
+              <a href="/chat" className="mt-6 flex h-10 items-center justify-center gap-1.5 rounded-lg bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+                Go Pro — $10/mo
+              </a>
+              <p className="mt-2 flex items-center justify-center gap-1 text-center text-[11px] text-muted-foreground"><Lock size={11} /> Billing launches soon — early makers lock in this price.</p>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="workflow-section" id="workflow">
-        <div className="workflow-copy">
-          <span className="home-kicker"><Braces size={13} /> Just talk to it</span>
-          <h2>Change it<br />by asking.</h2>
-          <p>Ask for something, then keep tweaking in plain words — make it taller, round the edges, try another font. Every message updates the real model.</p>
-          <Link href="/editor">Try it now <ArrowRight size={16} /></Link>
+      {/* CTA */}
+      <section className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
+        <Image src="/printa-logo.png" alt="" width={48} height={48} className="mx-auto" />
+        <h2 className="mt-5 font-heading text-3xl font-semibold tracking-tight sm:text-4xl">Make something real.</h2>
+        <p className="mx-auto mt-3 max-w-md text-[15px] text-muted-foreground">From an idea to a printable file in a couple of minutes.</p>
+        <Link href="/editor" className="mt-6 inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+          Start creating <ArrowRight size={16} />
+        </Link>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-border">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-muted-foreground sm:flex-row sm:px-6">
+          <div className="flex items-center gap-2">
+            <Image src="/printa-logo.png" alt="" width={22} height={22} />
+            <span className="font-heading font-semibold text-foreground">Printa</span>
+            <span>· Ideas in. Objects out.</span>
+          </div>
+          <div className="flex items-center gap-5">
+            <Link href="/editor" className="hover:text-foreground">Editor</Link>
+            <Link href="/chat" className="hover:text-foreground">Chat</Link>
+            <a href="/mcp" className="hover:text-foreground">MCP</a>
+            <span>© 2026</span>
+          </div>
         </div>
-        <McpConversation />
-      </section>
-
-      <section className="home-cta">
-        <Image src="/printa-logo.png" alt="" width={56} height={56} />
-        <span className="home-kicker">Ready when you are</span>
-        <h2>Make something real.</h2>
-        <p>Go from an idea to a printable file in a couple of minutes.</p>
-        <Link className="home-primary" href="/editor">Start creating <ArrowRight size={17} /></Link>
-      </section>
-
-      <footer className="home-footer">
-        <Brand footer />
-        <p>Ideas in. Objects out.</p>
-        <div><Link href="/editor">Editor</Link><a href="/mcp">MCP endpoint</a><span>&copy; 2026</span></div>
       </footer>
     </main>
   );
