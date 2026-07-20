@@ -16,6 +16,9 @@ const modifierModulationSchema = z.object({
   interpolation: z.enum(["linear", "smoothstep"]).default("smoothstep"),
 }).strict();
 const modulationField = { modulation: modifierModulationSchema.optional() };
+// `disabled` lets the editor mute a modifier to preview its effect without
+// deleting it; the geometry evaluator skips disabled modifiers.
+const disabledField = { disabled: z.boolean().optional().describe("When true the modifier is kept but not applied") };
 
 export const interiorStrutsSchema = z.object({
   enabled: z.boolean().default(false),
@@ -51,6 +54,7 @@ const twistModifierSchema = z.object({
   start: finite.min(0).max(1).default(0),
   end: finite.min(0).max(1).default(1),
   ...modulationField,
+  ...disabledField,
 }).strict();
 
 const taperModifierSchema = z.object({
@@ -59,6 +63,7 @@ const taperModifierSchema = z.object({
   to: positive,
   easing: z.enum(["linear", "smoothstep"]).default("smoothstep"),
   ...modulationField,
+  ...disabledField,
 }).strict();
 
 const radialWaveModifierSchema = z.object({
@@ -68,6 +73,7 @@ const radialWaveModifierSchema = z.object({
   phaseDeg: finite.default(0),
   axialTurns: finite.default(0),
   ...modulationField,
+  ...disabledField,
 }).strict();
 
 const axialWaveModifierSchema = z.object({
@@ -76,6 +82,7 @@ const axialWaveModifierSchema = z.object({
   cycles: positive,
   phaseDeg: finite.default(0),
   ...modulationField,
+  ...disabledField,
 }).strict();
 
 const bendModifierSchema = z.object({
@@ -83,6 +90,7 @@ const bendModifierSchema = z.object({
   angleDeg: finite.min(-300).max(300),
   directionDeg: finite.default(0),
   ...modulationField,
+  ...disabledField,
 }).strict();
 
 const noiseModifierSchema = z.object({
@@ -91,12 +99,14 @@ const noiseModifierSchema = z.object({
   scale: positive.default(12),
   seed: z.number().int().default(1),
   ...modulationField,
+  ...disabledField,
 }).strict();
 
 const smoothModifierSchema = z.object({
   type: z.literal("smooth"),
   iterations: z.number().int().min(1).max(8).default(1),
   strength: finite.min(0).max(1).default(0.35),
+  ...disabledField,
 }).strict();
 
 export const modifierSchema = z.discriminatedUnion("type", [

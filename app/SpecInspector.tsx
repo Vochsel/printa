@@ -8,6 +8,8 @@ import {
   ChevronUp,
   Copy,
   CornerDownRight,
+  Eye,
+  EyeOff,
   Layers3,
   Plus,
   Printer,
@@ -473,20 +475,40 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
                 </button>
                 {node.modifiers.map((modifier, index) => {
                   const modifierActive = activeSelection.kind === "modifier" && activeSelection.nodeId === node.id && activeSelection.index === index;
+                  const off = modifier.disabled === true;
                   return (
-                    <button
+                    <div
                       key={`${node.id}-${index}`}
-                      type="button"
                       className={cn(
-                        "flex h-6 w-full items-center gap-1.5 rounded-md px-2 text-left text-[11px] transition-colors hover:bg-muted",
+                        "group/mod flex h-6 items-center rounded-md pr-1 text-[11px] transition-colors hover:bg-muted",
                         modifierActive ? "bg-[var(--accent-tool-soft)] font-medium text-[var(--accent-tool)]" : "text-muted-foreground",
                       )}
-                      style={{ paddingLeft: `${26 + depth * 14}px` }}
-                      onClick={() => { sfx("tick"); setSelection({ kind: "modifier", nodeId: node.id, index }); }}
                     >
-                      <CornerDownRight size={10} className="shrink-0 opacity-60" />
-                      {MODIFIER_META[modifier.type].label}
-                    </button>
+                      <button
+                        type="button"
+                        className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
+                        style={{ paddingLeft: `${26 + depth * 14}px` }}
+                        onClick={() => { sfx("tick"); setSelection({ kind: "modifier", nodeId: node.id, index }); }}
+                      >
+                        <CornerDownRight size={10} className="shrink-0 opacity-60" />
+                        <span className={cn("truncate", off && "line-through opacity-50")}>{MODIFIER_META[modifier.type].label}</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={off ? "Enable modifier" : "Disable modifier"}
+                        title={off ? "Enable modifier" : "Disable modifier (preview without it)"}
+                        className={cn(
+                          "grid size-5 shrink-0 place-items-center rounded text-muted-foreground/70 transition-opacity hover:text-foreground",
+                          !off && "opacity-0 group-hover/mod:opacity-100 focus-visible:opacity-100",
+                        )}
+                        onClick={() => {
+                          sfx("toggle");
+                          mutate((draft) => { updateNode(draft.root, node.id, (target) => { const m = target.modifiers[index]; if (m) m.disabled = !off ? true : undefined; }); });
+                        }}
+                      >
+                        {off ? <EyeOff size={11} /> : <Eye size={11} />}
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -501,14 +523,15 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
           <>
             <SectionHead title={`${MODIFIER_META[selectedModifier.type].label} modifier`}>
               <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon-xs" aria-label={selectedModifier.disabled ? "Enable modifier" : "Disable modifier"} title={selectedModifier.disabled ? "Enable modifier" : "Disable modifier (preview without it)"} className={cn(selectedModifier.disabled && "text-[var(--accent-tool)]")} onClick={() => { sfx("toggle"); mutateNode((node) => { const m = node.modifiers[modifierIndex]; if (m) m.disabled = m.disabled ? undefined : true; }); }}>{selectedModifier.disabled ? <EyeOff /> : <Eye />}</Button>
                 <Button variant="ghost" size="icon-xs" aria-label="Move modifier up" disabled={modifierIndex === 0} onClick={() => { sfx("tick"); mutateNode((node) => { const [item] = node.modifiers.splice(modifierIndex, 1); node.modifiers.splice(modifierIndex - 1, 0, item); setSelection({ kind: "modifier", nodeId: node.id, index: modifierIndex - 1 }); }); }}><ChevronUp /></Button>
                 <Button variant="ghost" size="icon-xs" aria-label="Move modifier down" disabled={modifierIndex >= selectedNode.modifiers.length - 1} onClick={() => { sfx("tick"); mutateNode((node) => { const [item] = node.modifiers.splice(modifierIndex, 1); node.modifiers.splice(modifierIndex + 1, 0, item); setSelection({ kind: "modifier", nodeId: node.id, index: modifierIndex + 1 }); }); }}><ChevronDown /></Button>
                 <Button variant="ghost" size="icon-xs" aria-label="Remove modifier" className="text-destructive" onClick={() => { sfx("whisper"); mutateNode((node) => { node.modifiers.splice(modifierIndex, 1); setSelection({ kind: "node", nodeId: node.id }); }); }}><Trash2 /></Button>
               </div>
             </SectionHead>
-            <p className="mb-2 text-[10px] text-muted-foreground">{MODIFIER_META[selectedModifier.type].hint}. Modifiers apply top to bottom.</p>
+            <p className="mb-2 text-[10px] text-muted-foreground">{selectedModifier.disabled ? "Muted — not applied to the model right now." : `${MODIFIER_META[selectedModifier.type].hint}. Modifiers apply top to bottom.`}</p>
             <Grid2>
-              {Object.entries(selectedModifier).filter(([key]) => key !== "type" && key !== "modulation").map(([key, value]) => {
+              {Object.entries(selectedModifier).filter(([key]) => key !== "type" && key !== "modulation" && key !== "disabled").map(([key, value]) => {
                 const meta = MODIFIER_FIELDS[key] ?? { label: key };
                 const write = (next: unknown) => mutateNode((node) => { (node.modifiers[modifierIndex] as unknown as Record<string, unknown>)[key] = next; });
                 return typeof value === "number" ? (

@@ -219,7 +219,66 @@ function createPreviewMaterial(materialPreset: PrintMaterialPreset) {
   });
 }
 
-function ModelViewport({ source, materialPreset, display, units, buildVolume, shading, slice, onReady }: {
+const PATH_TRACE_SAMPLE_CAP = 128;
+
+// A dedicated scene for the progressive GPU path tracer — the current mesh
+// (with its shading + material) over a soft floor lit for a beauty render.
+function createPathTraceScene(model: THREE.Mesh) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color("#11110f");
+  // A plain standard material renders reliably in the path tracer; the physical
+  // material's clearcoat/transmission features render black in this build.
+  const source = model.material as THREE.MeshPhysicalMaterial;
+  const tracedMaterial = new THREE.MeshStandardMaterial({
+    color: source.color.clone(),
+    roughness: Math.max(0.15, source.roughness),
+    metalness: source.metalness,
+    side: THREE.FrontSide,
+  });
+  const traced = new THREE.Mesh(model.geometry, tracedMaterial);
+  traced.castShadow = true;
+  traced.receiveShadow = true;
+  scene.add(traced);
+  const box = new THREE.Box3().setFromObject(model);
+  const span = Math.max(180, box.max.x - box.min.x, box.max.y - box.min.y);
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(span * 2.6, span * 2.6),
+    new THREE.MeshStandardMaterial({ color: "#171714", roughness: 0.85, metalness: 0.04 }),
+  );
+  floor.position.z = (box.min.z ?? 0) - 0.05;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  const center = box.getCenter(new THREE.Vector3());
+  const key = new THREE.DirectionalLight("#fff1d5", 5.5);
+  key.position.set(center.x - span, center.y - span * 1.2, center.z + span * 1.6);
+  key.target.position.copy(center);
+  scene.add(key, key.target);
+  const fill = new THREE.DirectionalLight("#c9d4ff", 3.2);
+  fill.position.set(center.x + span, center.y + span * 0.8, center.z + span);
+  fill.target.position.copy(center);
+  scene.add(fill, fill.target);
+  // Camera-side fill so the front of the model isn't left in shadow.
+  const front = new THREE.DirectionalLight("#ffffff", 2.4);
+  front.position.set(center.x, center.y - span * 1.6, center.z + span * 0.6);
+  front.target.position.copy(center);
+  scene.add(front, front.target);
+  return scene;
+}
+
+function disposePathTraceScene(scene: THREE.Scene | null) {
+  scene?.environment?.dispose();
+  scene?.traverse((child) => {
+    const item = child as THREE.Mesh;
+    if (item.isMesh) {
+      // The traced model shares the live geometry; only dispose the clones we made.
+      if (item.geometry instanceof THREE.PlaneGeometry) item.geometry.dispose();
+      const material = item.material as THREE.Material | THREE.Material[] | undefined;
+      (Array.isArray(material) ? material : material ? [material] : []).forEach((mat) => mat.dispose());
+    }
+  });
+}
+
+function ModelViewport({ source, materialPreset, display, units, buildVolume, shading, slice, pathTraced, onSamples, onReady }: {
   source: PreviewSource;
   materialPreset: PrintMaterialPreset;
   display: ModelDocument["display"];
@@ -227,6 +286,8 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
   buildVolume: [number, number, number];
   shading: ShadingMode;
   slice: number;
+  pathTraced: boolean;
+  onSamples?: (samples: number) => void;
   onReady?: () => void;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -251,6 +312,13 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
   const shadingRef = useRef(shading);
   const sliceRef = useRef(slice);
   const slicePlaneRef = useRef(new THREE.Plane(new THREE.Vector3(0, 0, -1), 0));
+  const pathTracedRef = useRef(pathTraced);
+  const pathTracerRef = useRef<{ dispose: () => void; setScene: (s: THREE.Scene, c: THREE.Camera) => void; updateCamera: () => void; renderSample: () => void; samples: number } | null>(null);
+  const pathSceneRef = useRef<THREE.Scene | null>(null);
+  const pathTokenRef = useRef(0);
+  const restartPathTraceRef = useRef<() => void>(() => undefined);
+  const onSamplesRef = useRef(onSamples);
+  useEffect(() => { onSamplesRef.current = onSamples; }, [onSamples]);
 
   useEffect(() => {
     displayRef.current = display;
@@ -294,7 +362,9 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
     const model = modelRef.current;
     const base = baseGeometryRef.current;
     if (!model || !base) return;
-    const next = mode === "smooth" ? toCreasedNormals(base, THREE.MathUtils.degToRad(32)) : base;
+    // 50° smooths tessellated curves (e.g. an 8-sided cylinder's 45° facets)
+    // while keeping genuine hard edges (90° caps, box corners) crisp.
+    const next = mode === "smooth" ? toCreasedNormals(base, THREE.MathUtils.degToRad(50)) : base;
     if (model.geometry !== base && model.geometry !== next) model.geometry.dispose();
     if (model.geometry !== next) {
       model.geometry = next;
@@ -383,8 +453,29 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
     let animationFrame = 0;
     let interacting = false;
     let remainingFrames = 0;
+    let reportedSamples = -1;
+    const disposePathTracer = () => {
+      pathTracerRef.current?.dispose();
+      pathTracerRef.current = null;
+      disposePathTraceScene(pathSceneRef.current);
+      pathSceneRef.current = null;
+    };
     const render = () => {
       controls.update();
+      const tracer = pathTracerRef.current;
+      if (pathTracedRef.current && tracer) {
+        try {
+          if (tracer.samples < PATH_TRACE_SAMPLE_CAP) tracer.renderSample();
+          const samples = Math.floor(tracer.samples);
+          if (samples !== reportedSamples) { reportedSamples = samples; onSamplesRef.current?.(samples); }
+        } catch {
+          disposePathTracer();
+          onSamplesRef.current?.(-1);
+          renderer.render(scene, camera);
+        }
+        animationFrame = requestAnimationFrame(render);
+        return;
+      }
       renderer.render(scene, camera);
       if (interacting || remainingFrames > 0) {
         remainingFrames = Math.max(0, remainingFrames - 1);
@@ -396,9 +487,51 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
       if (!animationFrame) animationFrame = requestAnimationFrame(render);
     };
     invalidateRef.current = invalidate;
+
+    const updatePathCamera = () => { pathTracerRef.current?.updateCamera(); reportedSamples = -1; onSamplesRef.current?.(0); };
+    const restartPathTrace = () => {
+      const token = ++pathTokenRef.current;
+      disposePathTracer();
+      reportedSamples = -1;
+      onSamplesRef.current?.(0);
+      if (!pathTracedRef.current || !modelRef.current) return;
+      void import("three-gpu-pathtracer").then(({ GradientEquirectTexture, WebGLPathTracer }) => {
+        if (token !== pathTokenRef.current || !pathTracedRef.current || !modelRef.current) return;
+        const pathScene = createPathTraceScene(modelRef.current);
+        // A bright, nearly-uniform studio environment. The gradient is Y-up
+        // while the scene is Z-up, so keeping the two colors close avoids the
+        // model's camera-facing side falling into the dark end of the gradient.
+        const environment = new GradientEquirectTexture(64);
+        environment.topColor.set("#fff6e8");
+        environment.bottomColor.set("#c4ccdb");
+        environment.exponent = 0.5;
+        environment.update();
+        pathScene.environment = environment;
+        pathScene.environmentIntensity = 1.6;
+        const tracer = new WebGLPathTracer(renderer);
+        tracer.tiles.set(3, 3);
+        tracer.bounces = 4;
+        tracer.filterGlossyFactor = 0.25;
+        tracer.renderDelay = 0;
+        tracer.fadeDuration = 200;
+        tracer.minSamples = 1;
+        tracer.renderScale = Math.min(0.85, 1 / renderer.getPixelRatio());
+        tracer.dynamicLowRes = false;
+        tracer.rasterizeScene = true;
+        tracer.rasterizeSceneCallback = () => renderer.render(scene, camera);
+        tracer.setScene(pathScene, camera);
+        pathSceneRef.current = pathScene;
+        pathTracerRef.current = tracer as unknown as typeof pathTracerRef.current;
+        invalidate(1);
+      }).catch(() => {
+        if (token === pathTokenRef.current) { disposePathTracer(); onSamplesRef.current?.(-1); }
+      });
+    };
+    restartPathTraceRef.current = restartPathTrace;
+
     const startInteraction = () => { interacting = true; invalidate(2); };
     const endInteraction = () => { interacting = false; invalidate(24); };
-    const change = () => invalidate(2);
+    const change = () => { invalidate(2); if (pathTracedRef.current) updatePathCamera(); };
     controls.addEventListener("start", startInteraction);
     controls.addEventListener("end", endInteraction);
     controls.addEventListener("change", change);
@@ -426,6 +559,7 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
       renderer.setSize(bounds.width, bounds.height, false);
       camera.aspect = bounds.width / Math.max(bounds.height, 1);
       camera.updateProjectionMatrix();
+      if (pathTracedRef.current) updatePathCamera();
       invalidate(2);
     };
     const observer = new ResizeObserver(resize);
@@ -435,6 +569,8 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
     return () => {
       cancelAnimationFrame(animationFrame);
       observer.disconnect();
+      pathTokenRef.current += 1;
+      disposePathTracer();
       controls.removeEventListener("start", startInteraction);
       controls.removeEventListener("end", endInteraction);
       controls.removeEventListener("change", change);
@@ -508,6 +644,7 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
         hasFramedRef.current = true;
         frameRef.current();
       } else invalidateRef.current(4);
+      if (pathTracedRef.current) restartPathTraceRef.current();
       onReady?.();
     }).catch((error) => { if (error?.name !== "AbortError") console.error(error); });
     return () => { active = false; controller.abort(); };
@@ -520,11 +657,13 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
     model.material = createPreviewMaterial(materialPreset);
     previous.dispose();
     applySlice(sliceRef.current);
+    if (pathTracedRef.current) restartPathTraceRef.current();
     invalidateRef.current(3);
   }, [applySlice, materialPreset]);
 
-  useEffect(() => { applyShading(shading); }, [applyShading, shading]);
+  useEffect(() => { applyShading(shading); if (pathTracedRef.current) restartPathTraceRef.current(); }, [applyShading, shading]);
   useEffect(() => { applySlice(slice); }, [applySlice, slice]);
+  useEffect(() => { pathTracedRef.current = pathTraced; restartPathTraceRef.current(); }, [pathTraced]);
 
   useEffect(() => {
     if (floorRef.current) floorRef.current.visible = display.floor;
@@ -585,6 +724,9 @@ export function ProceduralStudio() {
   const [shading, setShading] = useState<ShadingMode>(() =>
     typeof window !== "undefined" && window.localStorage.getItem(SHADING_KEY) === "flat" ? "flat" : "smooth");
   const [slice, setSlice] = useState(1);
+  const [pathTraced, setPathTraced] = useState(false);
+  const [pathSamples, setPathSamples] = useState(0);
+  const handleSamples = useCallback((samples: number) => setPathSamples(samples), []);
   const [soundOn, setSoundOn] = useState(() => typeof window === "undefined" || isSfxEnabled());
   const [sidebarWidth, setSidebarWidth] = useState(340);
   const [loadOpen, setLoadOpen] = useState(false);
@@ -902,6 +1044,8 @@ export function ProceduralStudio() {
                 buildVolume={document.print.buildVolume}
                 shading={shading}
                 slice={slice}
+                pathTraced={pathTraced}
+                onSamples={handleSamples}
                 onReady={handleModelReady}
               />
             )}
@@ -955,6 +1099,38 @@ export function ProceduralStudio() {
                         </button>
                       ))}
                     </div>
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-[10px] font-semibold text-muted-foreground">Render</Label>
+                    <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+                      {([["realtime", "Realtime"], ["pathTraced", "Path traced"]] as const).map(([key, labelText]) => {
+                        const active = (key === "pathTraced") === pathTraced;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            className={cn(
+                              "rounded-md px-2 py-1.5 text-[11px] font-semibold transition-colors",
+                              active ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground",
+                            )}
+                            onClick={() => { sfx("toggle"); setPathTraced(key === "pathTraced"); }}
+                          >
+                            {labelText}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {pathTraced && (
+                      <span className="flex items-center gap-1.5 px-0.5 font-mono text-[10px] text-muted-foreground">
+                        {pathSamples < 0 ? (
+                          <><TriangleAlert size={11} className="text-amber-600" /> Path tracing unavailable on this device</>
+                        ) : pathSamples >= PATH_TRACE_SAMPLE_CAP ? (
+                          <><Check size={11} className="text-emerald-600" /> Render complete · {pathSamples} samples</>
+                        ) : (
+                          <><LoaderCircle size={11} className="animate-spin" /> Refining · {pathSamples}/{PATH_TRACE_SAMPLE_CAP} samples</>
+                        )}
+                      </span>
+                    )}
                   </div>
                   {document && <>
                     <ToggleField label="Floor" value={document.display.floor} onChange={(value) => updateDisplay((display) => { display.floor = value; })} />

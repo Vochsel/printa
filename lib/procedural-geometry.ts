@@ -535,6 +535,7 @@ export function applyModifiers(input: BufferGeometry, modifiers: ModifierSpec[])
   let geometry = input;
   let bounds = boundsFor(geometry);
   for (const modifier of modifiers) {
+    if (modifier.disabled) continue;
     if (modifier.type === "smooth") {
       const previous = geometry;
       const next = laplacianSmooth(geometry, modifier.iterations, modifier.strength);

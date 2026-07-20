@@ -131,6 +131,15 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(studio, /AbortController/);
   assert.match(studio, /preview: true/);
   assert.match(studio, /PreviewSource/);
+  // Viewport render + modifier features
+  assert.match(studio, /Path traced/);
+  assert.match(studio, /three-gpu-pathtracer/);
+  assert.match(studio, /WebGLPathTracer/);
+  assert.match(studio, /toCreasedNormals\(base, THREE\.MathUtils\.degToRad\(50\)\)/);
+  assert.match(inspector, /Disable modifier/);
+  assert.match(inspector, /EyeOff/);
+  assert.match(modelSpec, /disabledField/);
+  assert.match(modelSpec, /disabled: z\.boolean\(\)\.optional/);
   assert.match(modelSpec, /interiorStrutsSchema/);
   assert.match(modelStlRoute, /X-Printa-Interior-Struts/);
   assert.match(skillRoute, /text\/markdown/);
