@@ -606,17 +606,19 @@ function signedMeshVolume(positions: Vector3[], faces: Uint32Array | number[]): 
 // inside-test (odd ray crossings ⇒ inside). This represents the shape's real
 // volume for melting, independent of how densely its surface is tessellated —
 // a low-poly cylinder fills as a solid slug, not a ring of rim vertices. Grows
-// the spacing to stay within the particle budget.
-function fillSolidParticles(indexed: BufferGeometry, targetSpacing: number, budget: number): Vector3[] {
+// the spacing to stay within the particle budget (so a 0.05 mm droplet on a big
+// shape coarsens instead of exploding), and returns the spacing actually used so
+// the SPH kernel can match it. Returns `spacing: 0` when the mesh has no volume.
+function fillSolidParticles(indexed: BufferGeometry, targetSpacing: number, budget: number): { particles: Vector3[]; spacing: number } {
   indexed.computeBoundingBox();
   const bb = indexed.boundingBox;
-  if (!bb) return [];
+  if (!bb) return { particles: [], spacing: 0 };
   const size = new Vector3();
   bb.getSize(size);
   const gridPoints = (s: number) => (Math.floor(size.x / s) + 1) * (Math.floor(size.y / s) + 1) * (Math.floor(size.z / s) + 1);
-  let spacing = Math.max(targetSpacing, 0.5);
+  let spacing = Math.max(targetSpacing, 0.02);
   // Roughly half a bounding box is typically inside, so aim the grid a bit high.
-  while (gridPoints(spacing) > budget * 2 && spacing < targetSpacing * 12) spacing *= 1.12;
+  for (let i = 0; i < 48 && gridPoints(spacing) > budget * 2; i += 1) spacing *= 1.18;
   const bvh = new MeshBVH(indexed);
   const ray = new Ray();
   ray.direction.set(0, 0, 1);
@@ -631,7 +633,7 @@ function fillSolidParticles(indexed: BufferGeometry, targetSpacing: number, budg
           if (particles.length >= budget) break;
         }
       }
-  return particles;
+  return { particles, spacing };
 }
 
 // Uniformly subdivide every triangle (1→4, sharing midpoints) while the mesh's
@@ -824,17 +826,24 @@ function meltGeometry(
   sceneCollider?: SceneCollider | null,
 ): BufferGeometry {
   const welded = weldByPosition(input);
-  let seeds = fillSolidParticles(welded, modifier.particleSize, MAX_PARTICLES);
+  const filled = fillSolidParticles(welded, modifier.particleSize, MAX_PARTICLES);
+  let seeds = filled.particles;
+  // Use the spacing the fill actually settled on (a tiny droplet is only honoured
+  // when the shape is small enough to fit the budget) so the SPH kernel matches.
+  let spacing = filled.spacing || modifier.particleSize;
   if (seeds.length < 8) {
     const position = welded.getAttribute("position") as BufferAttribute;
     const total = position.count;
     const stride = Math.max(1, Math.ceil(total / MAX_PARTICLES));
     seeds = [];
     for (let i = 0; i < total; i += stride) seeds.push(new Vector3(position.getX(i), position.getY(i), position.getZ(i)));
+    welded.computeBoundingBox();
+    const span = welded.boundingBox ? welded.boundingBox.getSize(new Vector3()).length() : 40;
+    spacing = Math.max(modifier.particleSize, span / 24);
   }
   welded.dispose();
   return simulateFluidParticles(seeds, {
-    particleSize: modifier.particleSize,
+    particleSize: spacing,
     viscosity: modifier.viscosity,
     gravity: modifier.gravity,
     steps: modifier.frames,

@@ -91,7 +91,7 @@ const MODIFIER_FIELDS: Record<string, { label: string; step?: number; min?: numb
   inflate: { label: "Balloon", step: 0.05, min: 0, max: 3 },
   pins: { label: "Pinned", options: ["none", "top", "base"] },
   viscosity: { label: "Viscosity", step: 0.05, min: 0, max: 1 },
-  particleSize: { label: "Droplet size", step: 0.5, min: 2, max: 20, unit: "mm" },
+  particleSize: { label: "Droplet size", step: 0.05, min: 0.05, max: 20, unit: "mm" },
   surfaceResolution: { label: "Surface detail", min: 24, max: 140 },
 };
 
@@ -367,7 +367,7 @@ function SourceEditor({ source, fonts, update }: { source: SourceSpec; fonts: Fo
         </Grid3>
         <Grid3>
           <NumberField label="Drop height" value={source.spawnHeight} min={0} unit="mm" onChange={(value) => set("spawnHeight", value)} />
-          <NumberField label="Droplet size" value={source.particleSize} min={3} max={20} step={0.5} unit="mm" onChange={(value) => set("particleSize", value)} />
+          <NumberField label="Droplet size" value={source.particleSize} min={0.05} max={20} step={0.05} unit="mm" onChange={(value) => set("particleSize", value)} />
           <NumberField label="Viscosity" value={source.viscosity} min={0} max={1} step={0.02} onChange={(value) => set("viscosity", value)} />
         </Grid3>
         <Grid3>

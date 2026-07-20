@@ -43,7 +43,13 @@ export type FluidSolveParams = {
 };
 
 export function simulateFluid(params: FluidParams, collider?: SceneCollider | null): BufferGeometry {
-  const spacing = params.particleSize;
+  // The droplet size can be arbitrarily small (down to 0.05 mm). Grow the
+  // effective spacing so the released column stays within the particle budget —
+  // and keep the SPH kernel (h) matched to the ACTUAL spacing so the fluid still
+  // coheres. A small enough pour honours the requested size; a large one coarsens.
+  const requested = Math.max(params.particleSize, 1e-3);
+  const cells = (params.width / requested) * (params.depth / requested) * (params.amount / requested);
+  const spacing = cells > MAX_PARTICLES ? requested * Math.cbrt(cells / MAX_PARTICLES) : requested;
 
   // --- spawn particles as a released grid column ---
   const nx = Math.max(2, Math.round(params.width / spacing));
@@ -61,7 +67,7 @@ export function simulateFluid(params: FluidParams, collider?: SceneCollider | nu
           params.spawnHeight + iz * spacing,
         ));
       }
-  return simulateFluidParticles(positions, params, collider);
+  return simulateFluidParticles(positions, { ...params, particleSize: spacing }, collider);
 }
 
 /**
