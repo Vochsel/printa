@@ -254,6 +254,13 @@ test("simulations as modifiers: drape (cloth) + melt (fluid) run on a shape's ow
   assert.match(fluid, /simulateFluidParticles/);
   assert.match(geometry, /drapeGeometry/);
   assert.match(geometry, /meltGeometry/);
+  // melt fills the shape's volume (BVH inside-test), not just its vertices
+  assert.match(geometry, /fillSolidParticles/);
+  assert.match(geometry, /MeshBVH/);
+  // drape inflates a closed solid like a balloon so it doesn't collapse flat
+  assert.match(modelSpec, /inflate/);
+  assert.match(geometry, /signedMeshVolume/);
+  assert.match(geometry, /weldByPosition/);
   assert.match(geometry, /applyModifiers\(input: BufferGeometry, modifiers: ModifierSpec\[\], sceneCollider/);
   // pipeline: sim modifiers collide with the scene and force full-quality bakes
   assert.match(mesh, /hasSimModifier/);

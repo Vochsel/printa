@@ -293,7 +293,7 @@ const addedCases = {
       modifiers: [],
       children: [
         { kind: "shape", id: "ball", source: { type: "primitive", shape: "sphere", radius: 18, segments: 48 }, modifiers: [], material: "pla-matte" },
-        { kind: "shape", id: "sheet", source: { type: "primitive", shape: "box", width: 60, depth: 60, height: 3, segments: 14 }, modifiers: [{ type: "drape", gravity: 0.4, frames: 90, stiffness: 0.9, pins: "none", bake: 1 }], transform: { translate: [0, 0, 46], rotate: [0, 0, 0], scale: 1 }, material: "petg" },
+        { kind: "shape", id: "sheet", source: { type: "primitive", shape: "box", width: 60, depth: 60, height: 3, segments: 3 }, modifiers: [{ type: "drape", gravity: 0.4, frames: 90, stiffness: 0.9, inflate: 0, pins: "none", bake: 1 }], transform: { translate: [0, 0, 46], rotate: [0, 0, 0], scale: 1 }, material: "petg" },
       ],
     },
     ...defaults,

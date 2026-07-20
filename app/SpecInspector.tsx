@@ -88,6 +88,7 @@ const MODIFIER_FIELDS: Record<string, { label: string; step?: number; min?: numb
   frames: { label: "Frames", min: 1, max: 600 },
   gravity: { label: "Gravity", step: 0.1, min: 0 },
   stiffness: { label: "Stiffness", step: 0.05, min: 0, max: 1 },
+  inflate: { label: "Balloon", step: 0.05, min: 0, max: 3 },
   pins: { label: "Pinned", options: ["none", "top", "base"] },
   viscosity: { label: "Viscosity", step: 0.05, min: 0, max: 1 },
   particleSize: { label: "Droplet size", step: 0.5, min: 2, max: 20, unit: "mm" },
@@ -191,7 +192,7 @@ function modifierDefaults(type: ModifierSpec["type"]): ModifierSpec {
   if (type === "axialWave") return { type, amplitude: 2, cycles: 3, phaseDeg: 0 };
   if (type === "bend") return { type, angleDeg: 20, directionDeg: 0 };
   if (type === "noise") return { type, amplitude: 1, scale: 12, seed: 1 };
-  if (type === "drape") return { type, gravity: 0.3, frames: 160, stiffness: 0.9, pins: "none", bake: 0 };
+  if (type === "drape") return { type, gravity: 0.3, frames: 160, stiffness: 0.9, inflate: 0.7, pins: "none", bake: 0 };
   if (type === "melt") return { type, gravity: 9.8, frames: 200, viscosity: 0.25, particleSize: 5, surfaceResolution: 64, bake: 0 };
   return { type: "smooth", iterations: 1, strength: 0.35 };
 }

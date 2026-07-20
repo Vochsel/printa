@@ -4,16 +4,19 @@ import {
   BufferGeometry,
   CatmullRomCurve3,
   CylinderGeometry,
+  DoubleSide,
   Euler,
   ExtrudeGeometry,
   Matrix4,
   Quaternion,
+  Ray,
   Shape,
   SphereGeometry,
   TorusGeometry,
   Vector3,
 } from "three";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { MeshBVH } from "three-mesh-bvh";
 import type { InteriorStrutsSpec, ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
 import { simulateFluid, simulateFluidParticles, MAX_PARTICLES, type SceneCollider } from "@/lib/fluid-sim";
 
@@ -573,22 +576,127 @@ function laplacianSmooth(input: BufferGeometry, iterations: number, strength: nu
   return geometry;
 }
 
-// Treat a shape's own mesh as cloth: weld coincident verts, use the mesh edges
-// as distance constraints, then settle under gravity + scene collision. Returns
-// a welded geometry with the same topology but drooped vertices.
+// Weld a geometry by POSITION only (dropping normals/uvs) so coincident verts
+// across hard edges fuse into one connected, closed shell. Plain mergeVertices
+// keeps a box's corners split because their per-face normals differ, which makes
+// the mesh read as "open" and defeats the closed-solid checks below.
+function weldByPosition(input: BufferGeometry): BufferGeometry {
+  const soup = input.index ? input.toNonIndexed() : input;
+  const posOnly = new BufferGeometry();
+  posOnly.setAttribute("position", (soup.getAttribute("position") as BufferAttribute).clone());
+  const welded = mergeVertices(posOnly);
+  if (soup !== input) soup.dispose();
+  return welded;
+}
+
+// Signed volume of a closed triangle mesh (divergence theorem). Positive for
+// outward-wound (CCW) faces, which three's generated geometry uses.
+function signedMeshVolume(positions: Vector3[], faces: Uint32Array | number[]): number {
+  const bxc = new Vector3();
+  let v = 0;
+  for (let i = 0; i < faces.length; i += 3) {
+    const a = positions[faces[i]], b = positions[faces[i + 1]], c = positions[faces[i + 2]];
+    bxc.crossVectors(b, c);
+    v += a.dot(bxc);
+  }
+  return v / 6;
+}
+
+// Fill a solid's interior with a regular lattice of particles using a BVH
+// inside-test (odd ray crossings ⇒ inside). This represents the shape's real
+// volume for melting, independent of how densely its surface is tessellated —
+// a low-poly cylinder fills as a solid slug, not a ring of rim vertices. Grows
+// the spacing to stay within the particle budget.
+function fillSolidParticles(indexed: BufferGeometry, targetSpacing: number, budget: number): Vector3[] {
+  indexed.computeBoundingBox();
+  const bb = indexed.boundingBox;
+  if (!bb) return [];
+  const size = new Vector3();
+  bb.getSize(size);
+  const gridPoints = (s: number) => (Math.floor(size.x / s) + 1) * (Math.floor(size.y / s) + 1) * (Math.floor(size.z / s) + 1);
+  let spacing = Math.max(targetSpacing, 0.5);
+  // Roughly half a bounding box is typically inside, so aim the grid a bit high.
+  while (gridPoints(spacing) > budget * 2 && spacing < targetSpacing * 12) spacing *= 1.12;
+  const bvh = new MeshBVH(indexed);
+  const ray = new Ray();
+  ray.direction.set(0, 0, 1);
+  const half = spacing * 0.5;
+  const particles: Vector3[] = [];
+  for (let z = bb.min.z + half; z <= bb.max.z && particles.length < budget; z += spacing)
+    for (let y = bb.min.y + half; y <= bb.max.y && particles.length < budget; y += spacing)
+      for (let x = bb.min.x + half; x <= bb.max.x; x += spacing) {
+        ray.origin.set(x, y, z);
+        if (bvh.raycast(ray, DoubleSide).length % 2 === 1) {
+          particles.push(new Vector3(x, y, z));
+          if (particles.length >= budget) break;
+        }
+      }
+  return particles;
+}
+
+// Uniformly subdivide every triangle (1→4, sharing midpoints) while the mesh's
+// longest edge exceeds `targetEdge` and it is under the vertex cap. Uniform
+// splitting keeps the mesh watertight — adaptive splitting leaves T-junctions
+// where a face splits but its neighbour does not. A bare primitive (a box is 12
+// tris / 8 verts) has nothing to drape until it is tessellated into a real sheet.
+function tessellate(positions: Vector3[], faces: number[], targetEdge: number, vertexCap: number): { positions: Vector3[]; faces: number[] } {
+  const target2 = targetEdge * targetEdge;
+  for (let pass = 0; pass < 7; pass += 1) {
+    if (positions.length * 4 > vertexCap) break;
+    let longest = 0;
+    for (let f = 0; f < faces.length; f += 3) {
+      const a = faces[f], b = faces[f + 1], c = faces[f + 2];
+      longest = Math.max(longest, positions[a].distanceToSquared(positions[b]), positions[b].distanceToSquared(positions[c]), positions[c].distanceToSquared(positions[a]));
+    }
+    if (longest <= target2) break;
+    const mid = new Map<string, number>();
+    const midpoint = (a: number, b: number) => {
+      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+      const existing = mid.get(key);
+      if (existing !== undefined) return existing;
+      const index = positions.length;
+      positions.push(new Vector3().addVectors(positions[a], positions[b]).multiplyScalar(0.5));
+      mid.set(key, index);
+      return index;
+    };
+    const next: number[] = [];
+    for (let f = 0; f < faces.length; f += 3) {
+      const a = faces[f], b = faces[f + 1], c = faces[f + 2];
+      const ab = midpoint(a, b), bc = midpoint(b, c), ca = midpoint(c, a);
+      next.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca);
+    }
+    faces = next;
+  }
+  return { positions, faces };
+}
+
+// Treat a shape's own mesh as cloth: weld coincident verts, tessellate so it has
+// enough vertices to deform, use the mesh edges as distance constraints, then
+// settle under gravity + scene collision. A closed solid also gets an internal
+// "balloon" pressure (modifier.inflate) that resists volume loss, so it squishes
+// and drapes softly instead of collapsing flat.
 function drapeGeometry(
   input: BufferGeometry,
   modifier: Extract<ModifierSpec, { type: "drape" }>,
   sceneCollider?: SceneCollider | null,
 ): BufferGeometry {
-  const geometry = mergeVertices(input.index ? input : mergeVertices(input));
-  const index = geometry.index;
-  const position = geometry.getAttribute("position") as BufferAttribute;
-  const count = position.count;
-  const positions = Array.from({ length: count }, (_, i) => new Vector3(position.getX(i), position.getY(i), position.getZ(i)));
+  const welded = weldByPosition(input);
+  const weldIndex = welded.index;
+  const weldPos = welded.getAttribute("position") as BufferAttribute;
+  const bounds = boundsFor(welded);
+  let positions = Array.from({ length: weldPos.count }, (_, i) => new Vector3(weldPos.getX(i), weldPos.getY(i), weldPos.getZ(i)));
+  let faces: number[] = weldIndex
+    ? Array.from(weldIndex.array as ArrayLike<number>)
+    : Array.from({ length: weldPos.count }, (_, i) => i);
+  welded.dispose();
+
+  // Subdivide so even a coarse primitive has a workable mesh to drape/inflate.
+  // The cap keeps the per-frame cost bounded (this is a CPU soft-body sim).
+  const maxDim = Math.max(bounds.height, bounds.width, bounds.depth, 1);
+  ({ positions, faces } = tessellate(positions, faces, Math.max(2, maxDim / 10), 2600));
+  const count = positions.length;
   const previous = positions.map((p) => p.clone());
 
-  const bounds = boundsFor(geometry);
   const minZ = bounds.minZ;
   const maxZ = minZ + bounds.height;
   const band = Math.max(1e-3, bounds.height * 0.06);
@@ -596,24 +704,34 @@ function drapeGeometry(
   if (modifier.pins === "top") positions.forEach((p, i) => { if (p.z >= maxZ - band) pinned.add(i); });
   else if (modifier.pins === "base") positions.forEach((p, i) => { if (p.z <= minZ + band) pinned.add(i); });
 
-  // Unique edges → distance constraints at their current rest length.
+  // Unique edges → distance constraints at rest length; edge→face counts tell us
+  // whether the mesh is closed (every edge shared by two faces).
   const constraints: Array<[number, number, number]> = [];
   const seen = new Set<number>();
+  const edgeFaces = new Map<number, number>();
   const addEdge = (a: number, b: number) => {
     const lo = Math.min(a, b), hi = Math.max(a, b);
     const key = lo * count + hi;
+    edgeFaces.set(key, (edgeFaces.get(key) ?? 0) + 1);
     if (seen.has(key)) return;
     seen.add(key);
     constraints.push([lo, hi, positions[lo].distanceTo(positions[hi])]);
   };
-  if (index) {
-    for (let i = 0; i < index.count; i += 3) {
-      const a = index.getX(i), b = index.getX(i + 1), c = index.getX(i + 2);
-      addEdge(a, b); addEdge(b, c); addEdge(c, a);
-    }
+  for (let i = 0; i < faces.length; i += 3) {
+    const a = faces[i], b = faces[i + 1], c = faces[i + 2];
+    addEdge(a, b); addEdge(b, c); addEdge(c, a);
   }
+  let boundaryEdges = 0;
+  for (const c of edgeFaces.values()) if (c === 1) boundaryEdges += 1;
 
   const stiffness = modifier.stiffness;
+  const restVolume = signedMeshVolume(positions, faces);
+  // Balloon pressure only makes sense for a closed, positively-wound solid.
+  const inflating = modifier.inflate > 0 && boundaryEdges === 0 && faces.length > 0 && restVolume > 1e-3;
+  const vertexNormals = inflating ? Array.from({ length: count }, () => new Vector3()) : null;
+  const ab = new Vector3();
+  const ac = new Vector3();
+  const faceNormal = new Vector3();
   const delta = new Vector3();
   const closestTarget = new Vector3();
   const margin = Math.max(0.4, bounds.height * 0.01);
@@ -633,6 +751,36 @@ function drapeGeometry(
       point.z -= modifier.gravity;
       if (point.z < margin) { point.z = margin; previous[i].z = margin; }
     }
+    // Gas pressure: restore the volume deficit as an outward push over the whole
+    // surface (spread evenly), scaled by inflate. Keeps a closed shape puffed.
+    if (inflating && vertexNormals) {
+      for (const n of vertexNormals) n.set(0, 0, 0);
+      let volume = 0;
+      let area = 0;
+      for (let f = 0; f < faces.length; f += 3) {
+        const ia = faces[f], ib = faces[f + 1], ic = faces[f + 2];
+        const pa = positions[ia], pb = positions[ib], pc = positions[ic];
+        ab.subVectors(pb, pa);
+        ac.subVectors(pc, pa);
+        faceNormal.crossVectors(ab, ac); // length = 2 × area, outward
+        area += faceNormal.length() * 0.5;
+        vertexNormals[ia].add(faceNormal);
+        vertexNormals[ib].add(faceNormal);
+        vertexNormals[ic].add(faceNormal);
+        delta.crossVectors(pb, pc);
+        volume += pa.dot(delta);
+      }
+      volume /= 6;
+      if (area > 1e-6 && volume > 1e-6) {
+        const push = Math.max(-maxStep, Math.min(maxStep, modifier.inflate * (restVolume - volume) / area));
+        for (let i = 0; i < count; i += 1) {
+          if (pinned.has(i)) continue;
+          const n = vertexNormals[i];
+          const len = n.length();
+          if (len > 1e-6) positions[i].addScaledVector(n, push / len);
+        }
+      }
+    }
     for (let iter = 0; iter < iterations; iter += 1) {
       for (const [a, b, rest] of constraints) {
         const pa = positions[a], pb = positions[b];
@@ -642,40 +790,48 @@ function drapeGeometry(
         if (!pinned.has(a)) pa.add(correction);
         if (!pinned.has(b)) pb.sub(correction);
       }
-      if (sceneCollider) {
-        for (let i = 0; i < count; i += 1) {
-          if (pinned.has(i)) continue;
-          const point = positions[i];
-          const hit = sceneCollider.closest(point, closestTarget);
-          if (hit && (hit.inside || hit.distance < margin)) {
-            point.copy(closestTarget).addScaledVector(delta.set(hit.nx, hit.ny, hit.nz), margin);
-            previous[i].lerp(point, 0.5);
-          }
+    }
+    // Scene collision once per frame (not per constraint iteration) — each check
+    // is a BVH closest-point query, so this keeps the drape affordable.
+    if (sceneCollider) {
+      for (let i = 0; i < count; i += 1) {
+        if (pinned.has(i)) continue;
+        const point = positions[i];
+        const hit = sceneCollider.closest(point, closestTarget);
+        if (hit && (hit.inside || hit.distance < margin)) {
+          point.copy(closestTarget).addScaledVector(delta.set(hit.nx, hit.ny, hit.nz), margin);
+          previous[i].lerp(point, 0.5);
         }
       }
     }
   }
-  for (let i = 0; i < count; i += 1) position.setXYZ(i, positions[i].x, positions[i].y, positions[i].z);
-  position.needsUpdate = true;
-  geometry.deleteAttribute("normal");
-  geometry.computeVertexNormals();
-  geometry.computeBoundingBox();
-  return geometry;
+  const out = new BufferGeometry();
+  const array = new Float32Array(count * 3);
+  for (let i = 0; i < count; i += 1) { array[i * 3] = positions[i].x; array[i * 3 + 1] = positions[i].y; array[i * 3 + 2] = positions[i].z; }
+  out.setAttribute("position", new BufferAttribute(array, 3));
+  out.setIndex(faces);
+  out.computeVertexNormals();
+  out.computeBoundingBox();
+  return out;
 }
 
-// Seed SPH particles from a shape's own vertices, settle them into a puddle,
-// then reconstruct a new watertight surface — a melting-solid effect.
+// Melt a solid into a puddle: fill its volume with SPH particles (surface +
+// interior via a BVH inside-test), settle them, and reconstruct a new watertight
+// surface. Falls back to vertex seeding for open/degenerate meshes.
 function meltGeometry(
   input: BufferGeometry,
   modifier: Extract<ModifierSpec, { type: "melt" }>,
   sceneCollider?: SceneCollider | null,
 ): BufferGeometry {
-  const welded = mergeVertices(input);
-  const position = welded.getAttribute("position") as BufferAttribute;
-  const total = position.count;
-  const stride = Math.max(1, Math.ceil(total / MAX_PARTICLES));
-  const seeds: Vector3[] = [];
-  for (let i = 0; i < total; i += stride) seeds.push(new Vector3(position.getX(i), position.getY(i), position.getZ(i)));
+  const welded = weldByPosition(input);
+  let seeds = fillSolidParticles(welded, modifier.particleSize, MAX_PARTICLES);
+  if (seeds.length < 8) {
+    const position = welded.getAttribute("position") as BufferAttribute;
+    const total = position.count;
+    const stride = Math.max(1, Math.ceil(total / MAX_PARTICLES));
+    seeds = [];
+    for (let i = 0; i < total; i += stride) seeds.push(new Vector3(position.getX(i), position.getY(i), position.getZ(i)));
+  }
   welded.dispose();
   return simulateFluidParticles(seeds, {
     particleSize: modifier.particleSize,

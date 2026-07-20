@@ -117,6 +117,7 @@ const drapeModifierSchema = z.object({
   gravity: positive.default(0.3).describe("Downward pull per frame"),
   frames: z.number().int().min(1).max(600).default(160).describe("Simulation frames to run"),
   stiffness: finite.min(0).max(1).default(0.9).describe("How rigid the fabric edges are"),
+  inflate: finite.min(0).max(3).default(0.7).describe("Balloon pressure that keeps a closed shape from collapsing (0 = limp fabric)"),
   pins: z.enum(["top", "base", "none"]).default("none").describe("Vertices held in place"),
   ...disabledField,
   ...bakeField,
