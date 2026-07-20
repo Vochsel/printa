@@ -174,6 +174,27 @@ test("ships the AI assistant chat that builds models from prompts and images", a
   assert.match(studio, /Assistant/);
 });
 
+test("ships the /chat beginner page with inline 3D model previews", async () => {
+  const [chatPage, chatExperience, preview, chatRoute, home] = await Promise.all([
+    readFile(new URL("app/chat/page.tsx", root), "utf8"),
+    readFile(new URL("components/chat/ChatExperience.tsx", root), "utf8"),
+    readFile(new URL("components/model-preview.tsx", root), "utf8"),
+    readFile(new URL("app/api/chat/route.ts", root), "utf8"),
+    readFile(new URL("app/HomePage.tsx", root), "utf8"),
+  ]);
+  assert.match(chatPage, /ChatExperience/);
+  assert.match(chatExperience, /useChat/);
+  assert.match(chatExperience, /ModelPreview/);
+  assert.match(chatExperience, /tool-build_model/);
+  assert.match(chatExperience, /download/);
+  assert.match(chatExperience, /h-dvh/);
+  assert.match(preview, /STLLoader/);
+  assert.match(preview, /toCreasedNormals/);
+  assert.match(chatRoute, /previewUrl/);
+  assert.match(chatRoute, /stlUrl/);
+  assert.match(home, /href="\/chat"/);
+});
+
 test("production build contains every public route", async () => {
   const assets = await Promise.all([
     access(new URL(".next/server/app/page.js", root)),

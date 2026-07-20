@@ -643,6 +643,7 @@ export function HomePage() {
       <nav className="home-nav" aria-label="Main navigation">
         <Brand />
         <div className="home-nav-links">
+          <Link href="/chat">Chat</Link>
           <a href="#capabilities">How it works</a>
           <a href="#workflow">Just ask</a>
           <a href="/mcp" target="_blank" rel="noreferrer">MCP</a>
@@ -656,8 +657,8 @@ export function HomePage() {
           <h1>Turn words into<br /><em>3D prints.</em></h1>
           <p>Tell Printa what you want in plain words. It builds the 3D model and gives you a file that&rsquo;s ready to print.</p>
           <div className="hero-actions">
-            <Link className="home-primary" href="/editor">Start creating <ArrowRight size={17} /></Link>
-            <a className="home-secondary" href="#workflow"><Play size={14} fill="currentColor" /> See how it works</a>
+            <Link className="home-primary" href="/chat">Chat to create <ArrowRight size={17} /></Link>
+            <Link className="home-secondary" href="/editor"><Play size={14} fill="currentColor" /> Open the editor</Link>
           </div>
           <div className="hero-proof">
             <span><Check size={14} /> Ready to print</span>

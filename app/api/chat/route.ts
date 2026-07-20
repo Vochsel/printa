@@ -6,7 +6,7 @@ import {
   type UIMessage,
 } from "ai";
 import { z } from "zod";
-import { modelSpecJsonSchema, parseModelDocument, stringifyModelDocument } from "@/lib/model-spec";
+import { encodeModelDocument, modelSpecJsonSchema, parseModelDocument, stringifyModelDocument, type ModelDocument } from "@/lib/model-spec";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -71,6 +71,12 @@ Rules:
 4. Prefer forms that print well: closed vase bottoms, sensible wall thickness (≥1.5 mm), no impossibly thin features.
 5. Favour a single expressive source over assembling many parts. For prisms and faceted pots use one primitive with a low segment count (e.g. cylinder segments:6 for a hexagon) or an extrude with a closed path; for round vessels use revolve. Only use assembly/repeat when the form genuinely needs multiple distinct pieces, and give each child an explicit transform so nothing floats apart.`;
 
+function documentMaterial(node: ModelDocument["root"]): string {
+  if (node.kind === "shape") return node.material ?? "pla-orange";
+  if (node.kind === "repeat") return documentMaterial(node.child);
+  return documentMaterial(node.children[0]);
+}
+
 const buildModel = tool({
   description: "Realize a Printa Spec 1.0 model. Pass the complete model document as a JSON string. Returns the validated model or a validation error to fix.",
   inputSchema: z.object({
@@ -80,10 +86,15 @@ const buildModel = tool({
   execute: async ({ spec }) => {
     try {
       const document = parseModelDocument(spec);
+      const encoded = encodeModelDocument(document);
       return {
         ok: true as const,
         name: document.name,
         spec: stringifyModelDocument(document, "json"),
+        material: documentMaterial(document.root),
+        previewUrl: `/api/model/stl?spec=${encoded}&preview=true`,
+        stlUrl: `/api/model/stl?spec=${encoded}`,
+        studioUrl: `/editor?spec=${encoded}`,
       };
     } catch (error) {
       return {
