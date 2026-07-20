@@ -19,7 +19,6 @@ import {
   MessageSquareText,
   MousePointer2,
   Search,
-  Sparkles,
   Sprout,
   Tag,
   Waves,
@@ -287,8 +286,8 @@ function TextPlayground() {
   const document = useMemo(() => textDoc({ text, font, depth, size: 32 }), [text, font, depth]);
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-      <div className="flex items-center justify-between border-b border-border px-3.5 py-2.5">
+    <div className="rounded-2xl border border-border bg-card shadow-sm">
+      <div className="flex items-center justify-between rounded-t-2xl border-b border-border px-3.5 py-2.5">
         <span className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
           <span className="size-1.5 rounded-full bg-[#ff4d8b]" /> live playground
         </span>
@@ -400,11 +399,9 @@ function StoryChat() {
   return (
     <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
       <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="flex items-center gap-1.5 border-b border-border px-3.5 py-2.5">
-          <span className="size-2.5 rounded-full bg-[#ff5f57]" />
-          <span className="size-2.5 rounded-full bg-[#febc2e]" />
-          <span className="size-2.5 rounded-full bg-[#28c840]" />
-          <span className="ml-2 font-mono text-[11px] text-muted-foreground">printa · chat</span>
+        <div className="flex items-center gap-2 border-b border-border px-3.5 py-2.5">
+          <Image src="/printa-logo.png" alt="" width={18} height={18} />
+          <span className="font-mono text-[11px] text-muted-foreground">printa · chat</span>
         </div>
         <div className="flex flex-col gap-2.5 p-3.5">
           {shown.map((step, i) => (
@@ -564,10 +561,7 @@ export function HomePage() {
       {/* Hero */}
       <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:gap-12 lg:py-20">
         <div>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-            <Sparkles size={13} className="text-[#ff4d8b]" /> Type it. Print it.
-          </span>
-          <h1 className="mt-5 font-heading text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
+          <h1 className="font-heading text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
             Turn words into<br /><span className="text-[#ff4d8b]">printable objects.</span>
           </h1>
           <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground sm:text-base">
