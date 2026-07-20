@@ -7,6 +7,8 @@ import { DefaultChatTransport } from "ai";
 import { bind } from "cuelume";
 import {
   ArrowUp,
+  Check,
+  ClipboardCopy,
   Download,
   ImagePlus,
   LoaderCircle,
@@ -127,6 +129,40 @@ export function ChatExperience() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // Copy the whole conversation — every message part plus each tool call's
+  // input and output — as JSON, for debugging what the model built and why.
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyDebug = useCallback(async () => {
+    const debug = {
+      exportedAt: new Date().toISOString(),
+      status,
+      error: error?.message,
+      currentSpec: lastSpec || undefined,
+      messages: messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        parts: message.parts.map((part) => {
+          if (part.type === "tool-build_model") {
+            const p = part as typeof part & { input?: unknown; output?: unknown; errorText?: string };
+            return { type: part.type, toolCallId: p.toolCallId, state: p.state, input: p.input, output: p.output, errorText: p.errorText };
+          }
+          return part;
+        }),
+      })),
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(debug, null, 2));
+      sfx("chime");
+      setCopied(true);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1600);
+    } catch {
+      sfx("whisper");
+    }
+  }, [messages, status, error, lastSpec]);
+  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
+
   const attachedCount = files?.length ?? 0;
   const empty = messages.length === 0;
 
@@ -135,7 +171,21 @@ export function ChatExperience() {
       <header className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border px-3 sm:px-4">
         <BrandLink />
         <span className="rounded-full bg-[var(--accent-tool-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-tool)]">Chat</span>
-        <Link href="/editor" className="ml-auto text-xs font-medium text-muted-foreground hover:text-foreground">Open editor →</Link>
+        <div className="ml-auto flex items-center gap-3">
+          {!empty && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground"
+              onClick={copyDebug}
+              title="Copy the conversation and tool calls as JSON for debugging"
+            >
+              {copied ? <Check className="text-emerald-500" /> : <ClipboardCopy />}
+              {copied ? "Copied" : "Copy debug"}
+            </Button>
+          )}
+          <Link href="/editor" className="text-xs font-medium text-muted-foreground hover:text-foreground">Open editor →</Link>
+        </div>
       </header>
 
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
