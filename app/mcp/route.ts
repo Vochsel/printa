@@ -18,8 +18,8 @@ import { inspectProceduralModel, makeProceduralFilename } from "@/lib/procedural
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TEMPLATE_URI = "ui://widget/printa-extruded-text-v9.html";
-const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v8.html";
+const TEMPLATE_URI = "ui://widget/printa-extruded-text-v10.html";
+const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v9.html";
 
 function createServer(origin: string) {
   const server = new McpServer(

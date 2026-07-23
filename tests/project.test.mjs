@@ -180,6 +180,9 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(icon, /stacked 3D printing layers/);
   assert.match(modelWidget, /spec-hidden/);
   assert.match(modelWidget, /toggleSpec/);
+  assert.match(modelWidget, /\.stage\{grid-column:3/);
+  assert.match(modelWidget, /if\(!viewportReady\|\|document\.hidden\)return/);
+  assert.match(widget, /if\(!viewportReady\|\|document\.hidden\)return/);
 });
 
 test("ships the AI assistant chat that builds models from prompts and images", async () => {

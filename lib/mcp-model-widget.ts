@@ -21,7 +21,7 @@ export function createModelWidgetHtml(origin: string) {
     .app.spec-hidden .side,.app.spec-hidden .grip{display:none}
 
     /* Sidebar */
-    .side{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--soft)}
+    .side{grid-column:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--soft)}
     .side-head{display:flex;align-items:center;gap:8px;padding:14px 14px 10px}
     .mark{display:grid;place-items:center;width:26px;height:26px;border-radius:6px;background:var(--ink);color:#fff;font-size:13px}
     .brand{font-size:12px;font-weight:700;letter-spacing:.08em}
@@ -44,11 +44,11 @@ export function createModelWidgetHtml(origin: string) {
     .hint b{font-weight:650}
 
     /* Resize handle */
-    .grip{position:relative;cursor:col-resize;background:var(--soft);border-right:1px solid var(--hair)}
+    .grip{grid-column:2;position:relative;cursor:col-resize;background:var(--soft);border-right:1px solid var(--hair)}
     .grip:hover:after,.grip.is-active:after{content:"";position:absolute;inset:0 2px;background:var(--lav);border-radius:2px;opacity:.7}
 
     /* Stage */
-    .stage{position:relative;min-width:0;min-height:0;background:#11110f}
+    .stage{grid-column:3;position:relative;min-width:0;min-height:0;background:#11110f}
     .canvas{position:absolute;inset:0}
     .canvas canvas{display:block;width:100%;height:100%}
     .chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid rgba(255,255,255,.13);border-radius:999px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.78);font:600 8.5px/1 ui-monospace,Menlo,monospace;backdrop-filter:blur(8px)}
@@ -87,7 +87,9 @@ export function createModelWidgetHtml(origin: string) {
       .app{height:auto;min-height:660px;grid-template-columns:1fr;grid-template-rows:auto 420px}
       .app.spec-hidden{grid-template-rows:minmax(420px,1fr)}
       .grip{display:none}
-      .side{border-bottom:1px solid var(--hair)}
+      .side{grid-column:1;grid-row:1;border-bottom:1px solid var(--hair)}
+      .stage{grid-column:1;grid-row:2}
+      .app.spec-hidden .stage{grid-row:1}
     }
   </style>
 </head>
@@ -172,7 +174,7 @@ export function createModelWidgetHtml(origin: string) {
     renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     renderer.shadowMap.enabled=true;
-    renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type=THREE.PCFShadowMap;
     renderer.toneMapping=THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure=1.08;
     el("canvas").appendChild(renderer.domElement);
@@ -365,10 +367,23 @@ export function createModelWidgetHtml(origin: string) {
     if(legacyOutput)void show(legacyOutput,true);else if(legacyInput)acceptInput(legacyInput);
     app.connect().then(()=>{appReady=true}).catch(error=>{if(!legacyOutput&&!legacyInput)showError("Could not connect to the MCP host: "+errorText(error))});
 
-    function resize(){const box=el("canvas").getBoundingClientRect();renderer.setSize(box.width,box.height,false);composer.setSize(box.width,box.height);gtao.setSize(box.width,box.height);camera.aspect=box.width/Math.max(box.height,1);camera.updateProjectionMatrix()}
-    new ResizeObserver(resize).observe(el("canvas"));
-    resize();
-    (function loop(){requestAnimationFrame(loop);controls.update();composer.render()})();
+    let viewportReady=false,resizeFrame=0;
+    function resize(){
+      const box=el("canvas").getBoundingClientRect();
+      const width=Math.floor(box.width),height=Math.floor(box.height);
+      if(width<2||height<2){viewportReady=false;return false}
+      renderer.setSize(width,height,false);
+      composer.setSize(width,height);
+      camera.aspect=width/height;
+      camera.updateProjectionMatrix();
+      viewportReady=true;
+      return true;
+    }
+    function scheduleResize(){if(resizeFrame)return;resizeFrame=requestAnimationFrame(()=>{resizeFrame=0;resize()})}
+    new ResizeObserver(scheduleResize).observe(el("canvas"));
+    window.addEventListener("resize",scheduleResize);
+    scheduleResize();
+    (function loop(){requestAnimationFrame(loop);if(!viewportReady||document.hidden)return;controls.update();composer.render()})();
   </script>
 </body>
 </html>`;
