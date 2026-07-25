@@ -5,23 +5,15 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
-  Boxes,
-  Braces,
   Check,
   ChevronDown,
   Download,
-  FileBox,
-  FolderKanban,
-  Grid3x3,
-  History,
   Loader2,
   Lock,
   MessageSquareText,
   MousePointer2,
   Search,
-  Sprout,
-  Tag,
-  Waves,
+  Sparkles,
 } from "lucide-react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -31,11 +23,14 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { DEFAULT_VIEW, fitCameraToBox } from "@/lib/camera-fit";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
-// Shared: everything on this page is built from the platform's real schema and
-// compiled by the same /api/model/stl pipeline the editor and MCP tools use.
+// Everything on this page is built from the platform's real schema and compiled
+// by the same /api/model/stl pipeline the editor and MCP tools use. The page
+// runs exactly one WebGL context — the gallery swaps what it is showing rather
+// than mounting a viewport per example.
 // ---------------------------------------------------------------------------
 
 function encodeSpec(document: unknown) {
@@ -59,18 +54,6 @@ async function loadGeometry(document: unknown, signal: AbortSignal) {
   return geometry;
 }
 
-function frameGeometry(camera: THREE.PerspectiveCamera, controls: OrbitControls, sphere: THREE.Sphere) {
-  const fov = THREE.MathUtils.degToRad(camera.fov);
-  const distance = (sphere.radius / Math.sin(fov / 2)) * 1.15;
-  const direction = camera.position.clone().sub(controls.target);
-  if (direction.lengthSq() < 1e-4) direction.set(0.4, -0.85, 0.7);
-  direction.normalize();
-  controls.target.copy(sphere.center);
-  camera.position.copy(sphere.center).addScaledVector(direction, distance);
-  camera.updateProjectionMatrix();
-  controls.update();
-}
-
 function textDoc({ text, font, depth, size }: { text: string; font: string; depth: number; size: number }) {
   return {
     version: "1.0",
@@ -86,21 +69,24 @@ function textDoc({ text, font, depth, size }: { text: string; font: string; dept
 }
 
 // ---------------------------------------------------------------------------
-// ModelStage — one reusable WebGL viewport. Recompiles when `document` changes.
+// ModelStage — the page's single WebGL viewport. Recompiles when `document`
+// changes; the old model stays on screen until the new one is ready so the
+// gallery never flashes empty.
 // ---------------------------------------------------------------------------
 
-// A fake 3D-printer build plate + grid the model sits on, sized to the model.
+// A build plate just wide enough to read as a printer bed. Sizing it much
+// larger than the model pushes the model into the distance and leaves the frame
+// mostly empty plate.
 function buildBed(size: number) {
   const group = new THREE.Group();
   const plate = new THREE.Mesh(
     new THREE.PlaneGeometry(size, size),
-    new THREE.MeshStandardMaterial({ color: "#f1ede3", roughness: 0.97, metalness: 0 }),
+    new THREE.MeshStandardMaterial({ color: "#e9e4d8", roughness: 0.97, metalness: 0 }),
   );
   plate.position.z = -0.15;
   plate.receiveShadow = true;
   group.add(plate);
-  const divisions = Math.max(6, Math.round(size / 10));
-  const grid = new THREE.GridHelper(size, divisions, "#c4bdac", "#e1dbcd");
+  const grid = new THREE.GridHelper(size, Math.max(6, Math.round(size / 10)), "#a9a191", "#cec7b8");
   grid.rotation.x = Math.PI / 2;
   group.add(grid);
   return group;
@@ -108,8 +94,10 @@ function buildBed(size: number) {
 
 function disposeBed(bed: THREE.Group) {
   bed.traverse((child) => {
-    if (child instanceof THREE.Mesh) { child.geometry.dispose(); (child.material as THREE.Material).dispose(); }
-    if (child instanceof THREE.GridHelper) { child.geometry.dispose(); (child.material as THREE.Material).dispose(); }
+    if (child instanceof THREE.Mesh || child instanceof THREE.GridHelper) {
+      child.geometry.dispose();
+      (child.material as THREE.Material).dispose();
+    }
   });
 }
 
@@ -117,7 +105,6 @@ type Stage = {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
-  composer: EffectComposer;
   gtao: GTAOPass;
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> | null;
   bed: THREE.Group | null;
@@ -138,7 +125,7 @@ function ModelStage({ document, color = "#ff4d8b", className }: { document: unkn
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 4000);
     camera.up.set(0, 0, 1);
-    camera.position.set(90, -150, 115);
+    camera.position.copy(DEFAULT_VIEW).multiplyScalar(220);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -200,7 +187,7 @@ function ModelStage({ document, color = "#ff4d8b", className }: { document: unkn
     observer.observe(mount);
     resize();
     animate();
-    store.current = { scene, camera, controls, composer, gtao, mesh: null, bed: null, loader: null, markDirty };
+    store.current = { scene, camera, controls, gtao, mesh: null, bed: null, loader: null, markDirty };
 
     return () => {
       cancelAnimationFrame(frame);
@@ -240,21 +227,23 @@ function ModelStage({ document, color = "#ff4d8b", className }: { document: unkn
           geometry.computeBoundingSphere();
           const box = geometry.boundingBox!;
           const spanXY = Math.max(box.max.x - box.min.x, box.max.y - box.min.y);
-          const heightZ = box.max.z - box.min.z;
 
           if (active.mesh) { active.scene.remove(active.mesh); active.mesh.geometry.dispose(); active.mesh.material.dispose(); }
           if (active.bed) { active.scene.remove(active.bed); disposeBed(active.bed); }
-          const bed = buildBed(Math.max(70, Math.ceil((spanXY * 2.1) / 10) * 10));
+          const bed = buildBed(Math.max(60, Math.ceil((spanXY * 1.45) / 10) * 10));
           active.scene.add(bed);
           active.bed = bed;
 
-          const material = new THREE.MeshStandardMaterial({ color, roughness: 0.46, metalness: 0.02 });
-          const mesh = new THREE.Mesh(geometry, material);
+          const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: 0.46, metalness: 0.02 }));
           active.scene.add(mesh);
           active.mesh = mesh;
 
           active.gtao.updateGtaoMaterial({ radius: THREE.MathUtils.clamp(spanXY * 0.12, 2.5, 22) });
-          frameGeometry(active.camera, active.controls, new THREE.Sphere(new THREE.Vector3(0, 0, heightZ / 2), geometry.boundingSphere!.radius));
+          // Frame on the model, not the plate. Keep whatever angle the visitor
+          // has orbited to; only fall back to the house three-quarter view.
+          const direction = active.camera.position.clone().sub(active.controls.target);
+          if (direction.lengthSq() < 1e-4) direction.copy(DEFAULT_VIEW);
+          fitCameraToBox(active.camera, active.controls, box, direction, { padding: 1.16 });
           active.markDirty();
           setLoading(false);
         })
@@ -267,12 +256,15 @@ function ModelStage({ document, color = "#ff4d8b", className }: { document: unkn
   return (
     <div className={cn("relative overflow-hidden", className)}>
       <div ref={mountRef} className="h-full w-full overflow-hidden" aria-label="3D model preview" />
-      {loading && (
-        <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-background/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground backdrop-blur">
-          <Loader2 size={12} className="animate-spin" /> generating geometry
-        </div>
-      )}
-      <span className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-1 rounded-full bg-background/80 px-2 py-1 text-[10px] font-medium text-muted-foreground backdrop-blur">
+      <span
+        className={cn(
+          "pointer-events-none absolute left-4 top-4 flex items-center gap-1.5 rounded-full bg-background/85 px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur transition-opacity duration-200",
+          loading ? "opacity-100" : "opacity-0",
+        )}
+      >
+        <Loader2 size={12} className="animate-spin" /> compiling geometry
+      </span>
+      <span className="pointer-events-none absolute bottom-4 right-4 flex items-center gap-1.5 rounded-full bg-background/85 px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur">
         <MousePointer2 size={11} /> drag to orbit
       </span>
     </div>
@@ -280,7 +272,7 @@ function ModelStage({ document, color = "#ff4d8b", className }: { document: unkn
 }
 
 // ---------------------------------------------------------------------------
-// FontPicker — searchable Google Fonts combobox for the hero playground.
+// FontPicker — searchable Google Fonts combobox for the text example.
 // ---------------------------------------------------------------------------
 
 const POPULAR_FONTS = ["Poppins", "Space Grotesk", "Bebas Neue", "Pacifico", "Playfair Display", "Lobster"];
@@ -304,8 +296,7 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const list = needle ? fonts.filter((f) => f.toLowerCase().includes(needle)) : fonts;
-    return list.slice(0, 80);
+    return (needle ? fonts.filter((f) => f.toLowerCase().includes(needle)) : fonts).slice(0, 80);
   }, [fonts, query]);
 
   return (
@@ -313,21 +304,21 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-input bg-background px-3 text-sm outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
       >
         <span className="truncate">{value}</span>
         <ChevronDown size={14} className={cn("shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
-          <label className="flex h-9 items-center gap-2 border-b border-border px-2.5 text-muted-foreground">
+        <div className="absolute z-30 mt-1.5 w-full overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
+          <label className="flex h-10 items-center gap-2 border-b border-border px-3 text-muted-foreground">
             <Search size={13} />
             <input
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search fonts…"
-              className="w-full bg-transparent text-xs outline-none"
+              placeholder="Search Google Fonts…"
+              className="w-full bg-transparent text-xs text-foreground outline-none"
             />
           </label>
           <div className="max-h-56 overflow-y-auto p-1">
@@ -336,7 +327,10 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
                 key={font}
                 type="button"
                 onClick={() => { onChange(font); setOpen(false); setQuery(""); }}
-                className={cn("flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs hover:bg-secondary", font === value && "bg-secondary font-medium")}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-secondary",
+                  font === value && "bg-secondary font-medium",
+                )}
               >
                 {font}
                 {font === value && <Check size={13} className="text-[var(--accent-tool)]" />}
@@ -351,186 +345,40 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
 }
 
 // ---------------------------------------------------------------------------
-// Hero playground — editable text, font, extrusion → live model + real STL.
+// Gallery — each entry is a real Printa Spec document, drawn in the rail as a
+// line-art silhouette of the form it compiles to.
 // ---------------------------------------------------------------------------
 
-function TextPlayground() {
-  const [text, setText] = useState("PRINTA");
-  const [font, setFont] = useState("Poppins");
-  const [depth, setDepth] = useState(14);
-  const document = useMemo(() => textDoc({ text, font, depth, size: 32 }), [text, font, depth]);
+type Glyph = (props: { className?: string }) => React.ReactElement;
 
-  return (
-    <div className="rounded-2xl border border-border bg-card shadow-sm">
-      <div className="flex items-center justify-between rounded-t-2xl border-b border-border px-3.5 py-2.5">
-        <span className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-          <span className="size-1.5 rounded-full bg-[#ff4d8b]" /> live playground
-        </span>
-        <span className="font-mono text-[11px] text-muted-foreground">source · text</span>
-      </div>
-      <ModelStage document={document} color="#ff4d8b" className="h-64 w-full bg-[radial-gradient(circle_at_50%_0%,#faf7ff,transparent_70%)] sm:h-72" />
-      <div className="grid gap-3 border-t border-border p-3.5">
-        <div className="grid gap-1.5">
-          <label htmlFor="pg-text" className="text-[11px] font-medium text-muted-foreground">Your text</label>
-          <input
-            id="pg-text"
-            value={text}
-            maxLength={16}
-            onChange={(e) => setText(e.target.value.toUpperCase())}
-            placeholder="Type something…"
-            className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-          />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="grid gap-1.5">
-            <label className="text-[11px] font-medium text-muted-foreground">Font</label>
-            <FontPicker value={font} onChange={setFont} />
-          </div>
-          <div className="grid gap-1.5">
-            <label htmlFor="pg-depth" className="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
-              Extrusion <span className="font-mono text-foreground">{depth} mm</span>
-            </label>
-            <input
-              id="pg-depth"
-              type="range"
-              min={3}
-              max={40}
-              value={depth}
-              onChange={(e) => setDepth(Number(e.target.value))}
-              className="h-9 w-full accent-[#ff4d8b]"
-            />
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <a
-            href={downloadUrl(document)}
-            download={`${(text || "printa").toLowerCase()}.stl`}
-            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            <Download size={15} /> Download STL
-          </a>
-          <a
-            href={editorUrl(document)}
-            className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-border px-3 text-sm font-medium transition-colors hover:bg-secondary"
-          >
-            Open in editor <ArrowRight size={14} />
-          </a>
-        </div>
-      </div>
-    </div>
-  );
-}
+const stroke = {
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.6,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+};
 
-// ---------------------------------------------------------------------------
-// Story chat — three steps of one user's conversation, model updating live.
-// ---------------------------------------------------------------------------
+const GLYPH_TEXT: Glyph = ({ className }) => (
+  <svg viewBox="0 0 24 24" className={className} {...stroke}><path d="M5 6h14M12 6v12M9 18h6" /></svg>
+);
+const GLYPH_VASE: Glyph = ({ className }) => (
+  <svg viewBox="0 0 24 24" className={className} {...stroke}><path d="M9 4c0 3-3 4-3 8s2.5 8 6 8 6-4 6-8-3-5-3-8" /><path d="M9 4h6" /></svg>
+);
+const GLYPH_TAG: Glyph = ({ className }) => (
+  <svg viewBox="0 0 24 24" className={className} {...stroke}><rect x="3" y="8" width="18" height="9" rx="4.5" /><circle cx="7" cy="12.5" r="1.6" /><path d="M12 11h5" /></svg>
+);
+const GLYPH_PRISM: Glyph = ({ className }) => (
+  <svg viewBox="0 0 24 24" className={className} {...stroke}><path d="M6 20 8 4h8l2 16z" /><path d="M7 14h10M7.5 9h9" /></svg>
+);
+const GLYPH_LANTERN: Glyph = ({ className }) => (
+  <svg viewBox="0 0 24 24" className={className} {...stroke}><path d="M7 4h10l-1.5 16h-7z" /><path d="M10 4c-.6 5.5-.6 10.5 0 16M14 4c.6 5.5.6 10.5 0 16" /></svg>
+);
+const GLYPH_BOWL: Glyph = ({ className }) => (
+  <svg viewBox="0 0 24 24" className={className} {...stroke}><path d="M3 10h18c0 5.5-4 9-9 9s-9-3.5-9-9z" /><path d="M8 10.5c.4 4 .9 6.4 1.6 8M16 10.5c-.4 4-.9 6.4-1.6 8" /></svg>
+);
 
-type StoryStep = { step: string; user: string; reply: string; tool: string; args: string; document: unknown };
-
-const STORY: StoryStep[] = [
-  {
-    step: "Ask",
-    user: "Make a sign that says SYDNEY, about 4 cm tall.",
-    reply: "Here's SYDNEY in Space Grotesk.",
-    tool: "build_model",
-    args: "text · SYDNEY · 42 mm",
-    document: textDoc({ text: "SYDNEY", font: "Space Grotesk", depth: 6, size: 42 }),
-  },
-  {
-    step: "Refine",
-    user: "Taller, and round the edges a bit.",
-    reply: "Bumped it to 60 mm with a soft bevel.",
-    tool: "build_model",
-    args: "height 60 · soft edges",
-    document: textDoc({ text: "SYDNEY", font: "Space Grotesk", depth: 10, size: 60 }),
-  },
-  {
-    step: "Print",
-    user: "Perfect — can I download it?",
-    reply: "Here's your print-ready STL. ✓",
-    tool: "build_model",
-    args: "SYDNEY.stl ready",
-    document: textDoc({ text: "SYDNEY", font: "Space Grotesk", depth: 10, size: 60 }),
-  },
-];
-
-// Each step plays out as three beats so the user message, the "generating"
-// spinner, and the assistant reply never appear at the same instant.
-type Beat = { step: number; phase: "user" | "gen" | "reply" };
-const BEATS: Beat[] = STORY.flatMap((_, step) => [
-  { step, phase: "user" as const },
-  { step, phase: "gen" as const },
-  { step, phase: "reply" as const },
-]);
-const DWELL: Record<Beat["phase"], number> = { user: 1300, gen: 1500, reply: 1900 };
-
-function StoryChat() {
-  const [beatIndex, setBeatIndex] = useState(BEATS.length - 1);
-
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let index = -1;
-    let timer = 0;
-    const tick = () => {
-      index = (index + 1) % BEATS.length;
-      setBeatIndex(index);
-      timer = window.setTimeout(tick, DWELL[BEATS[index].phase]);
-    };
-    timer = window.setTimeout(tick, 500);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  const beat = BEATS[beatIndex];
-  // On "user" the model still shows the previous state; it starts regenerating
-  // on "gen" (viewport spinner) and is ready by "reply".
-  const activeDoc = beat.phase === "user" ? STORY[Math.max(0, beat.step - 1)].document : STORY[beat.step].document;
-
-  return (
-    <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="flex items-center gap-2 border-b border-border px-3.5 py-2.5">
-          <Image src="/printa-logo.png" alt="" width={18} height={18} />
-          <span className="font-mono text-[11px] text-muted-foreground">printa · chat</span>
-        </div>
-        <div className="flex min-h-[220px] flex-col gap-2.5 p-3.5">
-          {STORY.slice(0, beat.step + 1).map((step, i) => {
-            const isCurrent = i === beat.step;
-            const showReply = !isCurrent || beat.phase === "reply";
-            const showGen = isCurrent && beat.phase === "gen";
-            return (
-              <div key={i} className="flex flex-col gap-2">
-                <span className="w-fit rounded-full border border-border bg-secondary px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">0{i + 1} · {step.step}</span>
-                <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-foreground px-3 py-2 text-sm text-background">{step.user}</div>
-                {showGen && (
-                  <div className="flex w-fit items-center gap-2 rounded-2xl rounded-bl-sm bg-secondary px-3 py-2 text-sm text-muted-foreground">
-                    <Loader2 size={14} className="animate-spin" /> generating geometry…
-                  </div>
-                )}
-                {showReply && (
-                  <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-secondary px-3 py-2 text-sm">
-                    <span className="mb-1 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground"><Braces size={11} /> {step.tool} · {step.args} <Check size={11} className="text-emerald-500" /></span>
-                    {step.reply}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <ModelStage document={activeDoc} color="#ff4d8b" className="h-64 w-full sm:h-[420px]" />
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Showcase — many real examples, compiled from their actual schema on demand.
-// ---------------------------------------------------------------------------
-
-type Example = { id: string; name: string; blurb: string; color: string; document: unknown };
-
-// A circle as four cubic-bezier arcs (kappa ≈ 0.5523), used for the keychain hole.
+// A circle as four cubic-bezier arcs (kappa ≈ 0.5523), used for the keyring hole.
 function circlePath(cx: number, cy: number, r: number) {
   const k = 0.5523 * r;
   return [
@@ -559,85 +407,152 @@ function roundedRectPath(w: number, h: number, r: number) {
   ];
 }
 
-const KEYCHAIN = {
-  version: "1.0", name: "Name keychain", units: "mm",
-  root: {
-    kind: "assembly", id: "keychain", operation: "merge",
-    children: [
-      { kind: "shape", id: "plate", source: { type: "extrude", depth: 4, bevel: 0.8, bevelSegments: 3, curveSegments: 18, path: { commands: roundedRectPath(68, 26, 8), holes: [circlePath(-27, 0, 3.6)] } }, material: "pla-silk" },
-      { kind: "shape", id: "label", source: { type: "text", text: "LUCK", font: "Poppins", size: 13, depth: 3, bevel: 0.35, bevelSide: "top" }, transform: { translate: [5, 0, 4], rotate: [0, 0, 0], scale: 1 } },
-    ],
-  },
-};
+type Example = { id: string; name: string; blurb: string; color: string; glyph: Glyph; document: unknown };
 
 const EXAMPLES: Example[] = [
   {
-    id: "vase", name: "Rippled vase", blurb: "A revolved profile with fluted radial waves.", color: "#7b63ce",
+    id: "vase", name: "Rippled vase", blurb: "A spun profile with fluted radial waves.", color: "#7b63ce", glyph: GLYPH_VASE,
     document: { version: "1.0", name: "Rippled vase", units: "mm", root: { kind: "shape", id: "v", source: { type: "revolve", profile: [[26, 0], [34, 40], [30, 90], [24, 130]], wall: 2.2, bottomCap: true, interpolation: "catmull-rom" }, modifiers: [{ type: "radialWave", amplitude: 2.4, count: 12, axialTurns: 0.5 }] } },
   },
   {
-    id: "keychain", name: "Name keychain", blurb: "An extruded plate with a keyring hole and raised text.", color: "#e58fb4",
-    document: KEYCHAIN,
+    id: "keychain", name: "Name keychain", blurb: "An extruded plate, a keyring hole, raised text.", color: "#e58fb4", glyph: GLYPH_TAG,
+    document: {
+      version: "1.0", name: "Name keychain", units: "mm",
+      root: {
+        kind: "assembly", id: "keychain", operation: "merge",
+        children: [
+          { kind: "shape", id: "plate", source: { type: "extrude", depth: 4, bevel: 0.8, bevelSegments: 3, curveSegments: 18, path: { commands: roundedRectPath(68, 26, 8), holes: [circlePath(-27, 0, 3.6)] } }, material: "pla-silk" },
+          { kind: "shape", id: "label", source: { type: "text", text: "LUCK", font: "Poppins", size: 13, depth: 3, bevel: 0.35, bevelSide: "top" }, transform: { translate: [5, 0, 4], rotate: [0, 0, 0], scale: 1 } },
+        ],
+      },
+    },
   },
   {
-    id: "prism", name: "Prism vase", blurb: "A square column with a smooth helical twist and taper.", color: "#4aa3c9",
+    id: "prism", name: "Prism vase", blurb: "A square column with a helical twist and taper.", color: "#4aa3c9", glyph: GLYPH_PRISM,
     document: { version: "1.0", name: "Prism vase", units: "mm", root: { kind: "shape", id: "p", source: { type: "primitive", shape: "box", width: 46, depth: 46, height: 128, segments: 10 }, modifiers: [{ type: "twist", angleDeg: 150, start: 0, end: 1 }, { type: "taper", from: 1, to: 0.62 }] } },
   },
   {
-    id: "spiral", name: "Spiral vessel", blurb: "A revolved vase twisted into a spiral.", color: "#c05fe0",
-    document: { version: "1.0", name: "Spiral vessel", units: "mm", root: { kind: "shape", id: "s", source: { type: "revolve", profile: [[22, 0], [30, 50], [26, 110], [20, 150]], wall: 2, bottomCap: true, interpolation: "catmull-rom" }, modifiers: [{ type: "radialWave", amplitude: 3, count: 6, axialTurns: 1.5 }, { type: "twist", angleDeg: 60, start: 0, end: 1 }] } },
-  },
-  {
-    id: "lantern", name: "Twisted lantern", blurb: "A fluted column twisted along its full height.", color: "#ff4d8b",
+    id: "lantern", name: "Twisted lantern", blurb: "A fluted column twisted along its height.", color: "#ff4d8b", glyph: GLYPH_LANTERN,
     document: { version: "1.0", name: "Twisted lantern", units: "mm", root: { kind: "shape", id: "l", source: { type: "primitive", shape: "cylinder", radius: 26, height: 120, segments: 5 }, modifiers: [{ type: "radialWave", amplitude: 3, count: 5, axialTurns: 0 }, { type: "twist", angleDeg: 150, start: 0, end: 1 }, { type: "taper", from: 1, to: 0.72 }] } },
   },
   {
-    id: "bowl", name: "Fluted bowl", blurb: "A shallow revolved bowl with soft flutes.", color: "#e8934a",
+    id: "bowl", name: "Fluted bowl", blurb: "A shallow spun bowl with soft flutes.", color: "#e8934a", glyph: GLYPH_BOWL,
     document: { version: "1.0", name: "Fluted bowl", units: "mm", root: { kind: "shape", id: "w", source: { type: "revolve", profile: [[10, 0], [46, 8], [52, 34], [50, 40]], wall: 2.4, bottomCap: true, interpolation: "catmull-rom" }, modifiers: [{ type: "radialWave", amplitude: 1.6, count: 20, axialTurns: 0 }] } },
   },
 ];
 
-function Showcase() {
-  const [active, setActive] = useState(0);
-  const example = EXAMPLES[active];
-  const json = useMemo(() => JSON.stringify(example.document, null, 2), [example]);
+// ---------------------------------------------------------------------------
+// Workbench — the whole product in one block: pick a form on the left, watch it
+// compile in the middle, tweak and download underneath.
+// ---------------------------------------------------------------------------
+
+function Workbench() {
+  const [active, setActive] = useState("text");
+  const [text, setText] = useState("PRINTA");
+  const [font, setFont] = useState("Poppins");
+  const [depth, setDepth] = useState(14);
+
+  const yourText = useMemo(() => textDoc({ text, font, depth, size: 32 }), [text, font, depth]);
+  const example = EXAMPLES.find((item) => item.id === active);
+  const document = example ? example.document : yourText;
+  const color = example ? example.color : "#ff4d8b";
+  const name = example ? example.name : text || "Your text";
+  const blurb = example ? example.blurb : "Any Google font, extruded and bevelled.";
+  const filename = `${(example ? example.id : text || "printa").toLowerCase()}.stl`;
+
+  const items: { id: string; name: string; glyph: Glyph }[] = [
+    { id: "text", name: "Your text", glyph: GLYPH_TEXT },
+    ...EXAMPLES.map(({ id, name: label, glyph }) => ({ id, name: label, glyph })),
+  ];
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap gap-2">
-          {EXAMPLES.map((ex, i) => (
-            <button
-              key={ex.id}
-              type="button"
-              onClick={() => setActive(i)}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                i === active ? "border-foreground bg-foreground text-background" : "border-border bg-card hover:bg-secondary",
-              )}
-            >
-              {ex.name}
-            </button>
-          ))}
+    <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
+      <div className="grid lg:grid-cols-[188px_minmax(0,1fr)]">
+        {/* Gallery rail */}
+        <div className="flex gap-1.5 overflow-x-auto border-b border-border p-2.5 lg:flex-col lg:overflow-visible lg:border-b-0 lg:border-r">
+          {items.map((item) => {
+            const on = item.id === active;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActive(item.id)}
+                aria-pressed={on}
+                className={cn(
+                  "flex shrink-0 items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[13px] font-medium transition-colors lg:w-full",
+                  on ? "bg-foreground text-background" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                )}
+              >
+                <item.glyph className="size-[22px] shrink-0" />
+                <span className="whitespace-nowrap">{item.name}</span>
+              </button>
+            );
+          })}
+          <p className="mt-auto hidden px-2.5 pb-1 pt-6 text-[11px] leading-relaxed text-muted-foreground lg:block">
+            Every form here is a Printa Spec document, compiled to a mesh on request — the same pipeline the editor and the ChatGPT app use.
+          </p>
         </div>
-        <div className="overflow-hidden rounded-2xl border border-border bg-card">
-          <ModelStage document={example.document} color={example.color} className="h-72 w-full sm:h-80" />
-          <div className="flex flex-wrap items-center gap-2 border-t border-border p-3.5">
-            <div className="mr-auto">
-              <p className="text-sm font-semibold">{example.name}</p>
-              <p className="text-xs text-muted-foreground">{example.blurb}</p>
+
+        {/* Stage + controls */}
+        <div className="min-w-0">
+          <ModelStage
+            document={document}
+            color={color}
+            className="h-[300px] w-full bg-[radial-gradient(circle_at_50%_-10%,#f7f3ff,transparent_72%)] sm:h-[400px]"
+          />
+          <div className="grid gap-3 border-t border-border p-4">
+            {!example && (
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] font-medium text-muted-foreground">Your text</span>
+                  <input
+                    value={text}
+                    maxLength={16}
+                    onChange={(e) => setText(e.target.value.toUpperCase())}
+                    placeholder="Type something…"
+                    className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                  />
+                </label>
+                <div className="grid gap-1.5">
+                  <span className="text-[11px] font-medium text-muted-foreground">Font</span>
+                  <FontPicker value={font} onChange={setFont} />
+                </div>
+                <label className="grid gap-1.5">
+                  <span className="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
+                    Extrusion <span className="tabular-nums text-foreground">{depth} mm</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={3}
+                    max={40}
+                    value={depth}
+                    onChange={(e) => setDepth(Number(e.target.value))}
+                    className="h-10 w-full accent-[#ff4d8b]"
+                  />
+                </label>
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="mr-auto min-w-0">
+                <p className="truncate text-sm font-semibold">{name}</p>
+                <p className="truncate text-xs text-muted-foreground">{blurb}</p>
+              </div>
+              <a
+                href={editorUrl(document)}
+                className="flex h-10 items-center gap-1.5 rounded-xl border border-border px-3.5 text-sm font-medium transition-colors hover:bg-secondary"
+              >
+                Open in editor <ArrowRight size={14} />
+              </a>
+              <a
+                href={downloadUrl(document)}
+                download={filename}
+                className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Download size={15} /> Download STL
+              </a>
             </div>
-            <a href={downloadUrl(example.document)} download={`${example.id}.stl`} className="flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-medium hover:bg-secondary"><Download size={13} /> STL</a>
-            <a href={editorUrl(example.document)} className="flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">Open <ArrowRight size={13} /></a>
           </div>
         </div>
-      </div>
-      <div className="overflow-hidden rounded-2xl border border-border bg-[#0e0e12]">
-        <div className="flex items-center justify-between border-b border-white/10 px-3.5 py-2.5">
-          <span className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-white/50"><Braces size={12} /> printa spec — compiled live</span>
-          <span className="font-mono text-[11px] text-white/40">{example.id}.json</span>
-        </div>
-        <pre className="max-h-[26rem] overflow-auto p-4 font-mono text-[11px] leading-relaxed text-[#c9d1e6]"><code>{json}</code></pre>
       </div>
     </div>
   );
@@ -648,172 +563,125 @@ function Showcase() {
 // ---------------------------------------------------------------------------
 
 const STEPS = [
-  { icon: MessageSquareText, label: "Ask", title: "Say what you want", body: "Type it in plain words — “a sign that says SYDNEY”. No modeling, no menus." },
-  { icon: MousePointer2, label: "Refine", title: "Tweak by talking", body: "Taller, rounder, a softer font. Every message updates the real 3D model." },
-  { icon: Download, label: "Print", title: "Download the file", body: "Get a watertight STL that works with any slicer and any 3D printer." },
+  { label: "Ask", body: "Describe it in plain words — “a sign that says SYDNEY”." },
+  { label: "Refine", body: "Taller, rounder, a softer font. The model updates as you talk." },
+  { label: "Print", body: "Download a watertight STL that works in any slicer." },
 ];
 
 const PRO_FEATURES = [
-  { icon: FileBox, title: "Every format", body: "Export 3MF, OBJ and STEP — not just STL." },
-  { icon: Waves, title: "Cloth & water sim", body: "Drape fabric and pour fluid that settles over your scene." },
-  { icon: Grid3x3, title: "Voronoi noise", body: "Cellular textures and lightweight lattice infills." },
-  { icon: Sprout, title: "Organic growth", body: "Grow branching, coral-like structures procedurally." },
-  { icon: Boxes, title: "Struts & smart seams", body: "Auto interior bracing and seams placed where they hide." },
-  { icon: FolderKanban, title: "Projects", body: "Save, organise and revisit everything you make." },
-  { icon: History, title: "Chat history", body: "Your whole conversation, kept and searchable." },
-  { icon: Tag, title: "Print-on-demand discounts", body: "Order finished prints at member pricing." },
+  "Every format — 3MF, OBJ, STEP",
+  "Cloth & water sim",
+  "Voronoi noise & lattices",
+  "Organic growth",
+  "Struts & smart seams",
+  "Projects & chat history",
 ];
-
-function SectionHead({ kicker, title, sub }: { kicker: string; title: string; sub?: string }) {
-  return (
-    <div className="mx-auto max-w-2xl text-center">
-      <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#ff4d8b]">{kicker}</span>
-      <h2 className="mt-3 font-heading text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h2>
-      {sub && <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-muted-foreground">{sub}</p>}
-    </div>
-  );
-}
 
 export function HomePage() {
   return (
     <main className="min-h-dvh bg-background text-foreground">
-      {/* Nav */}
-      <nav className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur">
+      <nav className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2 font-heading text-[15px] font-semibold tracking-tight" aria-label="Printa home">
             <Image src="/printa-logo.png" alt="" width={26} height={26} priority />
             Printa
-            <span className="rounded border border-border px-1 py-0.5 font-mono text-[9px] font-medium text-muted-foreground">alpha</span>
           </Link>
-          <div className="ml-auto hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-            <a href="#how" className="hover:text-foreground">How it works</a>
-            <a href="#showcase" className="hover:text-foreground">Showcase</a>
-            <a href="#pricing" className="hover:text-foreground">Pricing</a>
-            <Link href="/chat" className="hover:text-foreground">Chat</Link>
+          <div className="ml-auto flex items-center gap-2">
+            <Link href="/chat" className="hidden h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:flex">
+              <MessageSquareText size={15} /> Chat
+            </Link>
+            <Link href="/editor" className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+              Open editor <ArrowRight size={15} />
+            </Link>
           </div>
-          <Link href="/editor" className="ml-auto flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 md:ml-0">
-            Open editor <ArrowRight size={15} />
-          </Link>
         </div>
       </nav>
 
-      {/* Hero */}
-      <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:gap-12 lg:py-20">
-        <div>
+      {/* Hero — short copy, then the product itself */}
+      <section className="mx-auto max-w-6xl px-4 pb-14 pt-12 sm:px-6 sm:pt-16">
+        <div className="mx-auto max-w-2xl text-center">
           <h1 className="font-heading text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
             Turn words into<br /><span className="text-[#ff4d8b]">printable objects.</span>
           </h1>
-          <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground sm:text-base">
-            Describe an object in plain language and Printa builds a real, watertight 3D model — ready to download and print. Start right here: edit the text, pick a font, grab the STL.
+          <p className="mx-auto mt-5 max-w-lg text-[15px] leading-relaxed text-muted-foreground sm:text-base">
+            Describe an object and Printa builds a real, watertight 3D model. Everything below is compiled live — pick a form, change it, download the STL.
           </p>
-          <div className="mt-7 flex flex-wrap items-center gap-3">
-            <Link href="/editor" className="flex h-11 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
-              Start creating <ArrowRight size={16} />
-            </Link>
-            <Link href="/chat" className="flex h-11 items-center gap-2 rounded-lg border border-border px-5 text-sm font-medium transition-colors hover:bg-secondary">
-              <MessageSquareText size={16} /> Chat to create
-            </Link>
-          </div>
-          <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
+          <div className="mt-7 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Watertight, print-ready</span>
             <span className="flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Any Google font</span>
-            <span className="flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Free editor, no sign-up</span>
+            <span className="flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Free, no sign-up</span>
           </div>
         </div>
-        <TextPlayground />
-      </section>
 
-      {/* How it works — one story */}
-      <section id="how" className="border-t border-border bg-secondary/30 py-16 sm:py-20">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <SectionHead kicker="How it works" title="From a sentence to a solid" sub="Three steps, one conversation. Watch a real thread take an idea to a printable file." />
-          <div className="mt-10 grid gap-4 sm:grid-cols-3">
-            {STEPS.map(({ icon: Icon, label, title, body }, i) => (
-              <article key={label} className="rounded-2xl border border-border bg-card p-5">
-                <div className="flex items-center justify-between">
-                  <span className="grid size-9 place-items-center rounded-lg bg-[var(--accent-tool-soft)] text-[var(--accent-tool)]"><Icon size={18} /></span>
-                  <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">0{i + 1} · {label}</span>
-                </div>
-                <h3 className="mt-4 font-heading text-lg font-semibold tracking-tight">{title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{body}</p>
-              </article>
-            ))}
-          </div>
-          <div className="mt-8">
-            <StoryChat />
-          </div>
+        <div className="mt-10">
+          <Workbench />
         </div>
       </section>
 
-      {/* Showcase */}
-      <section id="showcase" className="py-16 sm:py-20">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <SectionHead kicker="Showcase" title="Everything here is really compiled" sub="Pick an example — the model on the left is built from the exact schema on the right, by the same engine that powers the editor." />
-          <div className="mt-10">
-            <Showcase />
-          </div>
+      {/* How it works — one compact strip */}
+      <section id="how" className="border-y border-border bg-secondary/30">
+        <div className="mx-auto grid max-w-6xl gap-6 px-4 py-12 sm:grid-cols-3 sm:px-6">
+          {STEPS.map((step, i) => (
+            <div key={step.label} className="flex gap-3">
+              <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-[var(--accent-tool-soft)] font-mono text-[11px] font-semibold text-[var(--accent-tool)]">
+                {i + 1}
+              </span>
+              <div>
+                <h2 className="font-heading text-base font-semibold tracking-tight">{step.label}</h2>
+                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="border-t border-border bg-secondary/30 py-16 sm:py-20">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <SectionHead kicker="Pricing" title="Start free. Go further with Pro." sub="The editor, chat and STL export are free. Pro unlocks the heavy machinery." />
-          <div className="mx-auto mt-10 grid max-w-4xl gap-4 md:grid-cols-2">
-            {/* Free */}
-            <div className="flex flex-col rounded-2xl border border-border bg-card p-6">
-              <h3 className="font-heading text-lg font-semibold tracking-tight">Free</h3>
-              <div className="mt-2 flex items-baseline gap-1">
-                <span className="font-heading text-4xl font-semibold tracking-tight">$0</span>
-                <span className="text-sm text-muted-foreground">/ forever</span>
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">Everything you need to make and print.</p>
-              <ul className="mt-5 grid gap-2.5 text-sm">
-                {["Visual editor & procedural modeling", "Text, shapes, revolves & modifiers", "Watertight STL download", "MCP endpoint for ChatGPT"].map((item) => (
-                  <li key={item} className="flex items-start gap-2"><Check size={16} className="mt-0.5 shrink-0 text-emerald-500" /> {item}</li>
-                ))}
-              </ul>
-              <Link href="/editor" className="mt-6 flex h-10 items-center justify-center gap-1.5 rounded-lg border border-border text-sm font-medium transition-colors hover:bg-secondary">
-                Open the editor <ArrowRight size={15} />
-              </Link>
+      <section id="pricing" className="mx-auto max-w-4xl px-4 py-16 sm:px-6 sm:py-20">
+        <div className="mx-auto max-w-xl text-center">
+          <h2 className="font-heading text-3xl font-semibold tracking-tight sm:text-4xl">Start free. Go further with Pro.</h2>
+          <p className="mt-3 text-[15px] text-muted-foreground">The editor, chat and STL export are free forever.</p>
+        </div>
+        <div className="mt-9 grid gap-4 md:grid-cols-2">
+          <div className="flex flex-col rounded-2xl border border-border bg-card p-6">
+            <h3 className="font-heading text-lg font-semibold tracking-tight">Free</h3>
+            <div className="mt-2 flex items-baseline gap-1">
+              <span className="font-heading text-4xl font-semibold tracking-tight">$0</span>
+              <span className="text-sm text-muted-foreground">/ forever</span>
             </div>
-            {/* Pro */}
-            <div className="relative flex flex-col rounded-2xl border-2 border-foreground bg-card p-6">
-              <span className="absolute -top-3 left-6 rounded-full bg-[#ff4d8b] px-2.5 py-0.5 text-[11px] font-semibold text-white">Pro</span>
-              <h3 className="font-heading text-lg font-semibold tracking-tight">Pro</h3>
-              <div className="mt-2 flex items-baseline gap-1">
-                <span className="font-heading text-4xl font-semibold tracking-tight">$10</span>
-                <span className="text-sm text-muted-foreground">/ month</span>
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">For makers who want the full toolbox.</p>
-              <ul className="mt-5 grid gap-2.5 text-sm">
-                {PRO_FEATURES.map(({ icon: Icon, title, body }) => (
-                  <li key={title} className="flex items-start gap-2.5">
-                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-md bg-[var(--accent-tool-soft)] text-[var(--accent-tool)]"><Icon size={12} /></span>
-                    <span><span className="font-medium">{title}</span> <span className="text-muted-foreground">— {body}</span></span>
-                  </li>
-                ))}
-              </ul>
-              <a href="/chat" className="mt-6 flex h-10 items-center justify-center gap-1.5 rounded-lg bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
-                Go Pro — $10/mo
-              </a>
-              <p className="mt-2 flex items-center justify-center gap-1 text-center text-[11px] text-muted-foreground"><Lock size={11} /> Billing launches soon — early makers lock in this price.</p>
+            <ul className="mt-5 grid gap-2.5 text-sm">
+              {["Visual editor & procedural modeling", "Text, shapes, revolves & modifiers", "Watertight STL download", "MCP endpoint for ChatGPT"].map((item) => (
+                <li key={item} className="flex items-start gap-2"><Check size={16} className="mt-0.5 shrink-0 text-emerald-500" /> {item}</li>
+              ))}
+            </ul>
+            <Link href="/editor" className="mt-6 flex h-10 items-center justify-center gap-1.5 rounded-xl border border-border text-sm font-medium transition-colors hover:bg-secondary">
+              Open the editor <ArrowRight size={15} />
+            </Link>
+          </div>
+
+          <div className="relative flex flex-col rounded-2xl border-2 border-foreground bg-card p-6">
+            <span className="absolute -top-3 left-6 flex items-center gap-1 rounded-full bg-[#ff4d8b] px-2.5 py-0.5 text-[11px] font-semibold text-white">
+              <Sparkles size={11} /> Pro
+            </span>
+            <h3 className="font-heading text-lg font-semibold tracking-tight">Pro</h3>
+            <div className="mt-2 flex items-baseline gap-1">
+              <span className="font-heading text-4xl font-semibold tracking-tight">$10</span>
+              <span className="text-sm text-muted-foreground">/ month</span>
             </div>
+            <ul className="mt-5 grid gap-2.5 text-sm sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2">
+              {PRO_FEATURES.map((item) => (
+                <li key={item} className="flex items-start gap-2"><Check size={16} className="mt-0.5 shrink-0 text-[var(--accent-tool)]" /> {item}</li>
+              ))}
+            </ul>
+            <a href="/chat" className="mt-6 flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+              Go Pro — $10/mo
+            </a>
+            <p className="mt-2 flex items-center justify-center gap-1 text-center text-[11px] text-muted-foreground">
+              <Lock size={11} /> Billing launches soon — early makers lock in this price.
+            </p>
           </div>
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
-        <Image src="/printa-logo.png" alt="" width={48} height={48} className="mx-auto" />
-        <h2 className="mt-5 font-heading text-3xl font-semibold tracking-tight sm:text-4xl">Make something real.</h2>
-        <p className="mx-auto mt-3 max-w-md text-[15px] text-muted-foreground">From an idea to a printable file in a couple of minutes.</p>
-        <Link href="/editor" className="mt-6 inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
-          Start creating <ArrowRight size={16} />
-        </Link>
-      </section>
-
-      {/* Footer */}
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-muted-foreground sm:flex-row sm:px-6">
           <div className="flex items-center gap-2">

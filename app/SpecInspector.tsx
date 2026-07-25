@@ -152,8 +152,8 @@ function SpecFontPicker({ value, fonts, onChange }: { value: string; fonts: Font
   useEffect(() => { if (selected) void loadFontPreview(selected); }, [selected]);
   useEffect(() => { if (open) visible.forEach((font) => void loadFontPreview(font)); }, [open, visible]);
   return (
-    <div className="relative grid min-w-0 grid-cols-[58px_minmax(0,1fr)] items-center gap-2">
-      <span className="truncate text-[11px] text-muted-foreground">Font</span>
+    <div className="relative grid min-w-0 grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
+      <span className="text-[11px] leading-tight text-muted-foreground">Font</span>
       <button
         type="button"
         className="grid h-7 w-full grid-cols-[minmax(0,1fr)_14px] items-center gap-1.5 rounded-md border border-transparent bg-secondary px-2 text-left outline-none focus-visible:border-ring focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/40"

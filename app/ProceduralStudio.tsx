@@ -32,6 +32,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { bind } from "cuelume";
+import { DEFAULT_VIEW, fitCameraToBox } from "@/lib/camera-fit";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -330,7 +331,7 @@ function disposePathTraceScene(scene: THREE.Scene | null) {
   });
 }
 
-function ModelViewport({ source, materialPreset, display, units, buildVolume, shading, slice, pathTraced, onSamples, onReady }: {
+function ModelViewport({ source, materialPreset, display, units, buildVolume, shading, slice, pathTraced, onSamples, onReady, onRegisterFrame }: {
   source: PreviewSource;
   materialPreset: PrintMaterialPreset;
   display: ModelDocument["display"];
@@ -341,6 +342,9 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
   pathTraced: boolean;
   onSamples?: (samples: number) => void;
   onReady?: () => void;
+  /** Hands the "fit model in view" action to the parent so every viewport
+   *  control can live in one tool rail instead of floating separately. */
+  onRegisterFrame?: (frame: () => void) => void;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<() => void>(() => undefined);
@@ -372,7 +376,9 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
   const pathTokenRef = useRef(0);
   const restartPathTraceRef = useRef<() => void>(() => undefined);
   const onSamplesRef = useRef(onSamples);
+  const onRegisterFrameRef = useRef(onRegisterFrame);
   useEffect(() => { onSamplesRef.current = onSamples; }, [onSamples]);
+  useEffect(() => { onRegisterFrameRef.current = onRegisterFrame; }, [onRegisterFrame]);
 
   useEffect(() => {
     displayRef.current = display;
@@ -457,7 +463,7 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
     sceneRef.current = scene;
     const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 3000);
     camera.up.set(0, 0, 1);
-    camera.position.set(170, -210, 150);
+    camera.position.copy(DEFAULT_VIEW).multiplyScalar(320);
     cameraRef.current = camera;
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -611,17 +617,15 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
       const box = new THREE.Box3().setFromObject(model);
       if (dimensionsRef.current) box.expandByObject(dimensionsRef.current);
       if (buildPlateRef.current?.visible) box.expandByObject(buildPlateRef.current);
-      const sphere = box.getBoundingSphere(new THREE.Sphere());
-      const distance = Math.max(45, sphere.radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.22);
-      camera.position.set(sphere.center.x + distance * 0.78, sphere.center.y - distance, sphere.center.z + distance * 0.66);
-      camera.near = Math.max(0.1, distance / 150);
-      camera.far = distance * 20;
-      camera.updateProjectionMatrix();
-      controls.target.copy(sphere.center);
-      controls.update();
+      // Re-frame from the angle the user is already looking from, so hitting
+      // "fit" zooms rather than snapping the view back to a default.
+      const direction = camera.position.clone().sub(controls.target);
+      if (direction.lengthSq() < 1e-4) direction.copy(DEFAULT_VIEW);
+      fitCameraToBox(camera, controls, box, direction, { padding: 1.12, minDistance: 45 });
       invalidate(24);
     };
     frameRef.current = frame;
+    onRegisterFrameRef.current?.(frame);
 
     const resize = () => {
       const bounds = mount.getBoundingClientRect();
@@ -758,27 +762,38 @@ function ModelViewport({ source, materialPreset, display, units, buildVolume, sh
   }, [buildVolume, display, units]);
 
   return (
-    <div className="absolute inset-0">
-      <div ref={mountRef} className="absolute inset-0 [&_canvas]:block [&_canvas]:h-full [&_canvas]:w-full" aria-label="Interactive procedural model preview" />
-      <button
-        className="absolute right-3.5 top-3.5 z-10 grid size-9 place-items-center rounded-lg border border-white/15 bg-black/45 text-white/75 backdrop-blur transition-colors hover:text-white"
-        type="button"
-        onClick={() => { sfx("tick"); frameRef.current(); }}
-        aria-label="Frame model"
-        title="Fit the model in view"
-      >
-        <Scan size={15} />
-      </button>
-    </div>
+    <div
+      ref={mountRef}
+      className="absolute inset-0 [&_canvas]:block [&_canvas]:h-full [&_canvas]:w-full"
+      aria-label="Interactive procedural model preview"
+    />
   );
 }
 
 function statChip(label: string, value: string) {
   return (
-    <span className="pointer-events-none flex items-baseline gap-1.5 rounded-full border border-white/12 bg-black/45 px-3 py-1.5 font-mono text-[10px] text-white/80 backdrop-blur">
-      <span className="uppercase tracking-wide text-white/45">{label}</span>
+    <span className="pointer-events-none flex items-baseline gap-1.5 rounded-full border border-white/10 bg-black/50 px-3 py-1.5 text-[11px] tabular-nums text-white/85 backdrop-blur">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-white/45">{label}</span>
       {value}
     </span>
+  );
+}
+
+/** One button in the viewport tool rail. */
+function RailButton({ label, active, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={cn(
+        "grid size-9 place-items-center rounded-lg transition-colors",
+        active ? "bg-[var(--accent-tool)] text-white" : "text-white/70 hover:bg-white/10 hover:text-white",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -796,6 +811,7 @@ export function ProceduralStudio() {
   const [shading, setShading] = useState<ShadingMode>(() =>
     typeof window !== "undefined" && window.localStorage.getItem(SHADING_KEY) === "flat" ? "flat" : "smooth");
   const [slice, setSlice] = useState(1);
+  const [sliceOpen, setSliceOpen] = useState(false);
   const [pathTraced, setPathTraced] = useState(false);
   const [pathSamples, setPathSamples] = useState(0);
   const [simStale, setSimStale] = useState(false);
@@ -814,6 +830,8 @@ export function ProceduralStudio() {
   const compiledGeometryKeyRef = useRef("");
   const modelWasReadyRef = useRef(false);
   const sidebarDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const frameModelRef = useRef<() => void>(() => undefined);
+  const registerFrame = useCallback((frame: () => void) => { frameModelRef.current = frame; }, []);
 
   const handleModelReady = useCallback(() => {
     setModelReady(true);
@@ -1065,13 +1083,13 @@ export function ProceduralStudio() {
     <TooltipProvider>
       <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
         {/* Top bar */}
-        <header className="z-20 flex h-12 shrink-0 items-center gap-2.5 border-b border-border bg-background px-3">
+        <header className="z-20 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3">
           <BrandLink />
           <span className="mx-0.5 hidden h-4 w-px bg-border sm:block" />
-          <span className="hidden truncate text-[13px] font-medium text-foreground sm:block">
+          <span className="hidden min-w-0 truncate text-[13px] font-medium text-foreground sm:block">
             {result?.document.name ?? "Building form…"}
           </span>
-          <span className={cn("hidden items-center gap-1.5 font-mono text-[10px] text-muted-foreground/70 md:flex", liveUpdating && "text-[#c92f69]")}>
+          <span className={cn("hidden items-center gap-1.5 text-[11px] text-muted-foreground md:flex", liveUpdating && "text-[var(--accent-tool)]")}>
             {liveUpdating ? <LoaderCircle className="animate-spin" size={11} /> : <Check size={11} />}
             {liveUpdating ? "Compiling…" : "Ready"}
           </span>
@@ -1083,7 +1101,7 @@ export function ProceduralStudio() {
               onClick={() => { sfx("page"); setChatOpen((open) => !open); }}
               data-cuelume-press
             >
-              <Sparkles /> Assistant
+              <Sparkles /> <span className="hidden sm:inline">Assistant</span>
             </Button>
             {document && documentHasSim(document.root) && (
               <>
@@ -1108,19 +1126,23 @@ export function ProceduralStudio() {
               </>
             )}
             <span className="mx-0.5 h-4 w-px bg-border" />
-            <Button variant="ghost" size="sm" onClick={openLoad} data-cuelume-press><FolderOpen /> Load</Button>
-            <Button variant="ghost" size="sm" onClick={openSave} disabled={!document} data-cuelume-press><Save /> Save</Button>
+            {/* Load/Save collapse into the overflow menu on narrow screens so the
+                bar never wraps behind the primary Download action. */}
+            <Button variant="ghost" size="sm" className="hidden lg:inline-flex" onClick={openLoad} data-cuelume-press><FolderOpen /> Load</Button>
+            <Button variant="ghost" size="sm" className="hidden lg:inline-flex" onClick={openSave} disabled={!document} data-cuelume-press><Save /> Save</Button>
             <Button
               size="sm"
               disabled={!result || liveUpdating}
               onClick={() => { if (result) { sfx("chime"); window.open(result.stlUrl, "_blank"); } }}
               data-cuelume-press
             >
-              <Download /> {liveUpdating ? "Updating…" : "Download STL"}
+              <Download /> <span className="hidden sm:inline">{liveUpdating ? "Updating…" : "Download STL"}</span>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="More"><Ellipsis /></Button>} />
               <DropdownMenuContent align="end">
+                <DropdownMenuItem className="lg:hidden" onClick={openLoad}><FolderOpen /> Load</DropdownMenuItem>
+                <DropdownMenuItem className="lg:hidden" disabled={!document} onClick={openSave}><Save /> Save</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => { sfx("page"); setSpecOpen(true); }}><Braces /> Raw spec (advanced)</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => window.open("/skills", "_blank")}><ScrollText /> Agent skill</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => window.open("/api/model/schema", "_blank")}><Braces /> JSON schema</DropdownMenuItem>
@@ -1132,7 +1154,7 @@ export function ProceduralStudio() {
         <div className="flex min-h-0 flex-1">
           {/* Sidebar */}
           <aside
-            className="flex min-h-0 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-border bg-background px-3 py-3 [scrollbar-color:#d4d4d8_transparent] [scrollbar-width:thin]"
+            className="scroll-slim flex min-h-0 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-border bg-background px-3 py-3"
             style={{ width: `min(${sidebarWidth}px, 46vw)` }}
           >
             {document && <SpecInspector document={document} fonts={fonts} onChange={updateDocument} />}
@@ -1153,7 +1175,7 @@ export function ProceduralStudio() {
           </div>
 
           {/* Viewport */}
-          <section className="relative min-w-0 flex-1 bg-[#11110f]">
+          <section className="relative min-w-0 flex-1 bg-[var(--stage)]">
             {result && preview && document && (
               <ModelViewport
                 source={preview}
@@ -1166,35 +1188,37 @@ export function ProceduralStudio() {
                 pathTraced={pathTraced}
                 onSamples={handleSamples}
                 onReady={handleModelReady}
+                onRegisterFrame={registerFrame}
               />
             )}
             {!modelReady && (
-              <div className="absolute inset-0 z-30 flex items-center justify-center gap-2.5 bg-black/60 font-mono text-[11px] text-white/70 backdrop-blur-sm">
+              <div className="absolute inset-0 z-30 flex items-center justify-center gap-2.5 bg-black/60 text-[12px] text-white/70 backdrop-blur-sm">
                 <LoaderCircle className="animate-spin" size={17} /> {loading ? "Evaluating model graph…" : "Loading printable mesh…"}
               </div>
             )}
 
-            {/* Orbit hint */}
-            <span className="pointer-events-none absolute left-3.5 top-3.5 z-10 flex items-center gap-1.5 rounded-full border border-white/12 bg-black/45 px-2.5 py-1.5 font-mono text-[9px] text-white/60 backdrop-blur">
-              <Rotate3D size={12} /> Drag to orbit · scroll to zoom
-            </span>
+            {/* One tool rail holds every viewport control, so the stage stays
+                clear instead of sprouting a floating button per feature. */}
+            <div className="absolute right-3.5 top-3.5 z-20 flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-black/50 p-1 backdrop-blur">
+              <RailButton label="Fit model in view" onClick={() => { sfx("tick"); frameModelRef.current(); }}>
+                <Scan size={15} />
+              </RailButton>
 
-            {/* View settings */}
-            <Popover>
-              <PopoverTrigger
-                render={
-                  <button
-                    type="button"
-                    className="absolute right-3.5 top-[60px] z-10 grid size-9 place-items-center rounded-lg border border-white/15 bg-black/45 text-white/75 backdrop-blur transition-colors hover:text-white"
-                    aria-label="View settings"
-                    title="View settings"
-                    onClick={() => sfx("page")}
-                  >
-                    <Eye size={15} />
-                  </button>
-                }
-              />
-              <PopoverContent align="end" className="w-64 p-3">
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="grid size-9 place-items-center rounded-lg text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+                      aria-label="View settings"
+                      title="View settings"
+                      onClick={() => sfx("page")}
+                    >
+                      <Eye size={15} />
+                    </button>
+                  }
+                />
+                <PopoverContent align="end" className="w-64 p-3">
                 <div className="grid gap-2.5">
                   <span className="font-heading text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">View settings</span>
                   <div className="grid gap-1.5">
@@ -1262,39 +1286,46 @@ export function ProceduralStudio() {
                     value={soundOn}
                     onChange={(value) => { setSoundOn(value); setSfxEnabled(value); }}
                   />
-                </div>
-              </PopoverContent>
-            </Popover>
+                  </div>
+                </PopoverContent>
+              </Popover>
 
-            {/* Z slice */}
-            <div className="absolute right-3.5 top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-2 rounded-xl border border-white/12 bg-black/45 px-2 py-3 backdrop-blur">
-              <Layers3 size={13} className="text-white/55" />
-              <div className="h-36">
-                <Slider
-                  orientation="vertical"
-                  min={0.02}
-                  max={1}
-                  step={0.005}
-                  value={[slice]}
-                  aria-label="Slice height"
-                  onValueChange={(value) => {
-                    const next = Array.isArray(value) ? value[0] : value;
-                    if (next !== slice) sfxThrottled("tick", 80);
-                    setSlice(next);
-                  }}
-                />
-              </div>
-              <span className="font-mono text-[9px] text-white/60">{slice > 0.998 ? "Full" : `${sliceMm.toFixed(1)}mm`}</span>
+              <RailButton label="Cutaway view" active={sliceOpen || slice <= 0.998} onClick={() => { sfx("page"); setSliceOpen((open) => !open); }}>
+                <Layers3 size={15} />
+              </RailButton>
+
+              {/* The slice slider drops out of the rail so it reads as part of
+                  the same cluster rather than a stray control mid-canvas. */}
+              {sliceOpen && (
+                <div className="flex flex-col items-center gap-2 border-t border-white/10 pb-1 pt-2.5">
+                  <div className="h-32">
+                    <Slider
+                      orientation="vertical"
+                      min={0.02}
+                      max={1}
+                      step={0.005}
+                      value={[slice]}
+                      aria-label="Cutaway height"
+                      onValueChange={(value) => {
+                        const next = Array.isArray(value) ? value[0] : value;
+                        if (next !== slice) sfxThrottled("tick", 80);
+                        setSlice(next);
+                      }}
+                    />
+                  </div>
+                  <span className="text-[10px] tabular-nums text-white/60">{slice > 0.998 ? "Full" : `${sliceMm.toFixed(1)}mm`}</span>
+                </div>
+              )}
             </div>
 
-            {/* Stats */}
-            <div className="absolute bottom-3.5 left-3.5 right-16 z-10 flex flex-wrap items-center gap-1.5">
+            {/* Status bar: everything the model is, on one line */}
+            <div className="pointer-events-none absolute inset-x-3.5 bottom-3.5 z-10 flex flex-wrap items-center gap-1.5">
               {result && <>
                 {statChip("Size", `${result.stats.widthMm.toFixed(1)} × ${result.stats.depthMm.toFixed(1)} × ${result.stats.heightMm.toFixed(1)} mm`)}
                 {statChip("Mesh", `${result.stats.triangles.toLocaleString()} tris${previewQuality ? " · preview" : ""}`)}
                 {!previewQuality && statChip("Volume", `${(result.stats.volumeEstimateMm3 / 1000).toFixed(1)} cm³`)}
                 <span className={cn(
-                  "pointer-events-none flex items-center gap-1.5 rounded-full px-3 py-1.5 font-mono text-[10px] backdrop-blur",
+                  "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] backdrop-blur",
                   result.exceedsBuildVolume ? "border border-amber-300/40 bg-amber-950/60 text-amber-200" : "border border-emerald-300/25 bg-emerald-950/50 text-emerald-200",
                 )}>
                   {result.exceedsBuildVolume ? <TriangleAlert size={12} /> : <Check size={12} />}
@@ -1302,10 +1333,13 @@ export function ProceduralStudio() {
                 </span>
               </>}
               {error && !loading && (
-                <span className="flex items-center gap-1.5 rounded-full border border-red-300/40 bg-red-950/70 px-3 py-1.5 font-mono text-[10px] text-red-200 backdrop-blur">
+                <span className="flex items-center gap-1.5 rounded-full border border-red-300/40 bg-red-950/70 px-3 py-1.5 text-[11px] text-red-200 backdrop-blur">
                   <TriangleAlert size={12} /> {error}
                 </span>
               )}
+              <span className="ml-auto hidden items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-2.5 py-1.5 text-[10px] text-white/45 backdrop-blur lg:flex">
+                <Rotate3D size={11} /> Drag to orbit · scroll to zoom
+              </span>
             </div>
           </section>
 

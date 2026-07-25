@@ -18,8 +18,10 @@ import { inspectProceduralModel, makeProceduralFilename } from "@/lib/procedural
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TEMPLATE_URI = "ui://widget/printa-extruded-text-v10.html";
-const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v9.html";
+// Hosts cache widget HTML against these URIs, so any change to the widget
+// markup or bootstrap must bump the version or clients keep the stale copy.
+const TEMPLATE_URI = "ui://widget/printa-extruded-text-v11.html";
+const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v10.html";
 
 function createServer(origin: string) {
   const server = new McpServer(
