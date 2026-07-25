@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/build-widget-renderer.mjs && next build",
     "benchmark": "npm run build && npm run benchmark:model",
     "benchmark:model": "tsx benchmarks/model-build.ts",
     "start": "next start",
@@ -45,6 +45,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@types/three": "0.181.0",
+    "esbuild": "^0.28.1",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
     "playwright-core": "^1.61.1",

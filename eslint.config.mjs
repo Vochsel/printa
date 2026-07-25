@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated vendor bundle for the MCP widgets (scripts/build-widget-renderer.mjs).
+    "public/widget/**",
   ]),
 ]);
 

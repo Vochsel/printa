@@ -20,7 +20,11 @@
 // widget reports. Reporting nothing collapses the frame, which reads as
 // "nothing rendered". We report an intrinsic height on load, on resize, and
 // whenever the display mode changes.
-export function createModelWidgetHtml(origin: string) {
+// Bumped whenever the widget or its renderer bundle changes, so a webview never
+// pairs new widget markup with a cached older bundle.
+export const WIDGET_RENDERER_VERSION = "2";
+
+export function createModelWidgetHtml(origin: string, rendererVersion = WIDGET_RENDERER_VERSION) {
   return String.raw`<!doctype html>
 <html lang="en">
 <head>
@@ -87,7 +91,7 @@ export function createModelWidgetHtml(origin: string) {
     .bar{position:absolute;z-index:3;inset:10px 10px auto;display:flex;align-items:center;gap:8px;
       pointer-events:none}
     .id{display:flex;align-items:center;gap:8px;min-width:0;padding:7px 12px 7px 8px;border-radius:999px;
-      border:1px solid rgba(255,255,255,.12);background:rgba(10,10,12,.55);backdrop-filter:blur(12px)}
+      border:1px solid rgba(255,255,255,.12);background:rgba(10,10,12,.55);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
     .mark{display:grid;place-items:center;width:22px;height:22px;flex:0 0 auto;border-radius:7px;
       background:var(--pink);color:#fff;font-size:11px;font-weight:800}
     .id b{overflow:hidden;color:#fff;font-size:12.5px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
@@ -96,7 +100,7 @@ export function createModelWidgetHtml(origin: string) {
     .tools{margin-left:auto;display:flex;align-items:center;gap:6px;pointer-events:auto}
     .icon{display:grid;place-items:center;width:34px;height:34px;border:1px solid rgba(255,255,255,.12);
       border-radius:10px;background:rgba(10,10,12,.55);color:rgba(255,255,255,.8);
-      backdrop-filter:blur(12px);transition:background .15s,color .15s}
+      -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);transition:background .15s,color .15s}
     .icon:hover{background:rgba(30,30,36,.8);color:#fff}
     .icon.is-on{border-color:transparent;background:var(--accent);color:var(--accent-ink)}
     .stl{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:10px;
@@ -110,7 +114,7 @@ export function createModelWidgetHtml(origin: string) {
     .app.sheet-open .stats{left:calc(min(340px,86%) + 20px)}
     .chip{display:inline-flex;align-items:baseline;gap:6px;padding:6px 11px;border-radius:999px;
       border:1px solid rgba(255,255,255,.12);background:rgba(10,10,12,.55);color:rgba(255,255,255,.85);
-      font-size:11.5px;font-variant-numeric:tabular-nums;backdrop-filter:blur(12px)}
+      font-size:11.5px;font-variant-numeric:tabular-nums;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
     .chip small{color:rgba(255,255,255,.45);font-size:10px;font-weight:600;letter-spacing:.04em;
       text-transform:uppercase}
     .chip.ok{border-color:rgba(52,211,153,.32);color:#a7f3d0}
@@ -182,13 +186,16 @@ export function createModelWidgetHtml(origin: string) {
     /* ---- veil: loading + hard failures ---- */
     .veil{position:absolute;z-index:8;inset:0;display:none;flex-direction:column;align-items:center;
       justify-content:center;gap:12px;padding:24px;background:rgba(10,11,13,.72);text-align:center;
-      backdrop-filter:blur(3px)}
+      -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
     .veil.is-shown{display:flex}
     .veil i{width:22px;height:22px;border:2px solid rgba(255,255,255,.28);border-top-color:#fff;
       border-radius:50%;animation:spin .85s linear infinite}
     .veil p{margin:0;max-width:34ch;color:rgba(255,255,255,.82);font-size:12.5px;line-height:1.5}
     .veil.is-fatal i{display:none}
     .veil a{color:#fff;font-weight:600}
+    .veil details{margin-top:2px;color:rgba(255,255,255,.5);font-size:11px;text-align:left}
+    .veil summary{cursor:pointer;text-align:center}
+    .veil details p{margin:6px 0 0;max-width:44ch;line-height:1.45;word-break:break-word}
 
     @media (max-width:640px){
       .id span{display:none}
@@ -278,6 +285,7 @@ export function createModelWidgetHtml(origin: string) {
   </script>
   <script type="module">
     const ORIGIN=${JSON.stringify(origin)};
+    const RENDERER_VERSION=${JSON.stringify(rendererVersion)};
     const TOOL="create_procedural_model";
     const el=id=>document.getElementById(id);
     const PRESETS=[
@@ -291,6 +299,21 @@ export function createModelWidgetHtml(origin: string) {
       get(key){try{return localStorage.getItem(key)}catch{return null}},
       set(key,value){try{localStorage.setItem(key,value)}catch{}}
     };
+
+    /* Collected so a failure can be shown to the user and pasted into a bug
+       report, instead of being invisible inside an embedded webview with no
+       reachable console. */
+    const diagnostics=[];
+
+    /* Coarse pointer + small viewport, or few cores: phones and tablets, where
+       the postprocessing stack is the difference between a picture and a lost
+       WebGL context. */
+    const LOW_POWER=(()=>{
+      try{
+        if(navigator.hardwareConcurrency&&navigator.hardwareConcurrency<=4)return true;
+        return matchMedia("(pointer: coarse)").matches&&matchMedia("(max-width: 1024px)").matches;
+      }catch{return false}
+    })();
 
     /* ---------- theme ---------------------------------------------------- */
     /* Hosts render widgets in light or dark chrome; follow whichever we are
@@ -449,6 +472,17 @@ export function createModelWidgetHtml(origin: string) {
         anchor.textContent=link.label;
         copy.append(" ",anchor);
       }
+      /* There is no reachable console inside an embedded webview, so the reason
+         has to be on screen or it may as well not exist. */
+      if(diagnostics.length){
+        const details=document.createElement("details");
+        const summary=document.createElement("summary");
+        summary.textContent="Technical details";
+        const list=document.createElement("p");
+        list.textContent=diagnostics.join(" · ");
+        details.append(summary,list);
+        copy.append(details);
+      }
       veil.classList.add("is-shown","is-fatal");
     }
 
@@ -456,18 +490,50 @@ export function createModelWidgetHtml(origin: string) {
        three.js is loaded dynamically so a blocked CDN degrades to "no 3D
        preview" with a working download link, instead of killing the module and
        leaving an empty frame. */
-    let three=null,renderFrame=()=>{},showMesh=async()=>{},frameModel=()=>{},setShading=()=>{},
-        setSceneVisibility=()=>{},scheduleResize=()=>{};
-    let rendererReady=false;
+    let three=null,showMesh=async()=>{},frameModel=()=>{},scheduleResize=()=>{};
+    let rendererReady=false,rendererSource="none",contextLost=false;
+
+    /* Load order matters far more than it looks. The CDN path resolves bare
+       specifiers through an import map and pulls 16 files across a waterfall of
+       cross-origin requests — slow and failure-prone inside a mobile webview,
+       and dependent on import-map support in whatever engine the host embeds.
+       The self-hosted bundle is one request to an origin the host already
+       trusts, with no bare specifiers at all. Try it first. */
+    async function loadRendererModules(){
+      try{
+        const bundle=await import(ORIGIN+"/widget/renderer.js?v="+RENDERER_VERSION);
+        if(!bundle||!bundle.THREE)throw new Error("bundle missing exports");
+        rendererSource="bundle";
+        return bundle;
+      }catch(bundleError){
+        diagnostics.push("self-hosted bundle: "+errorText(bundleError,"unavailable"));
+        const [THREE,controls,loader,utils,composer,renderPass,gtao,output]=await Promise.all([
+          import("three"),
+          import("three/addons/controls/OrbitControls.js"),
+          import("three/addons/loaders/STLLoader.js"),
+          import("three/addons/utils/BufferGeometryUtils.js"),
+          import("three/addons/postprocessing/EffectComposer.js"),
+          import("three/addons/postprocessing/RenderPass.js"),
+          import("three/addons/postprocessing/GTAOPass.js"),
+          import("three/addons/postprocessing/OutputPass.js"),
+        ]);
+        rendererSource="cdn";
+        return {
+          THREE,
+          OrbitControls:controls.OrbitControls,
+          STLLoader:loader.STLLoader,
+          toCreasedNormals:utils.toCreasedNormals,
+          EffectComposer:composer.EffectComposer,
+          RenderPass:renderPass.RenderPass,
+          GTAOPass:gtao.GTAOPass,
+          OutputPass:output.OutputPass,
+        };
+      }
+    }
 
     async function bootRenderer(){
-      const [THREE,controlsModule,loaderModule,utilsModule]=await Promise.all([
-        import("three"),
-        import("three/addons/controls/OrbitControls.js"),
-        import("three/addons/loaders/STLLoader.js"),
-        import("three/addons/utils/BufferGeometryUtils.js"),
-      ]);
-      const {OrbitControls}=controlsModule,{STLLoader}=loaderModule,{toCreasedNormals}=utilsModule;
+      const modules=await loadRendererModules();
+      const {THREE,OrbitControls,STLLoader,toCreasedNormals}=modules;
       three=THREE;
 
       const scene=new THREE.Scene();
@@ -476,14 +542,34 @@ export function createModelWidgetHtml(origin: string) {
       const camera=new THREE.PerspectiveCamera(34,1,.1,3000);
       camera.up.set(0,0,1);
       camera.position.set(145,-185,125);
-      const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});
-      renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+      /* Mobile GPUs in an embedded webview have a much smaller memory budget
+         than a desktop tab. Full-resolution GTAO render targets plus a 2048²
+         shadow map is a reliable way to lose the WebGL context on a phone, so
+         the expensive parts scale down there. */
+      const renderer=new THREE.WebGLRenderer({antialias:!LOW_POWER,powerPreference:"high-performance"});
+      renderer.setPixelRatio(Math.min(devicePixelRatio,LOW_POWER?1.5:2));
       renderer.outputColorSpace=THREE.SRGBColorSpace;
       renderer.shadowMap.enabled=true;
       renderer.shadowMap.type=THREE.PCFShadowMap;
       renderer.toneMapping=THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure=1.08;
       el("canvas").appendChild(renderer.domElement);
+
+      /* A lost context leaves a black canvas and fires no error anywhere else —
+         exactly the "it just never shows anything" failure. Say so, and pick the
+         model back up when the browser hands the context back. */
+      renderer.domElement.addEventListener("webglcontextlost",event=>{
+        event.preventDefault();
+        contextLost=true;
+        showFatal("The 3D view lost its graphics context — this usually means the device ran low on memory.",
+          lastData&&lastData.stlUrl?{href:lastData.stlUrl,label:"Download the STL →"}:null);
+      });
+      renderer.domElement.addEventListener("webglcontextrestored",()=>{
+        contextLost=false;
+        el("veil").classList.remove("is-shown","is-fatal");
+        lastUrl="";
+        if(lastData)void show(lastData,false);
+      });
 
       const controls=new OrbitControls(camera,renderer.domElement);
       controls.enableDamping=true;
@@ -515,12 +601,8 @@ export function createModelWidgetHtml(origin: string) {
          forward render rather than showing nothing. */
       let composer=null,gtao=null;
       try{
-        const [{EffectComposer},{RenderPass},{GTAOPass},{OutputPass}]=await Promise.all([
-          import("three/addons/postprocessing/EffectComposer.js"),
-          import("three/addons/postprocessing/RenderPass.js"),
-          import("three/addons/postprocessing/GTAOPass.js"),
-          import("three/addons/postprocessing/OutputPass.js"),
-        ]);
+        if(LOW_POWER)throw new Error("ambient occlusion skipped on low-power devices");
+        const {EffectComposer,RenderPass,GTAOPass,OutputPass}=modules;
         composer=new EffectComposer(renderer);
         composer.addPass(new RenderPass(scene,camera));
         gtao=new GTAOPass(scene,camera,1,1);
@@ -529,7 +611,11 @@ export function createModelWidgetHtml(origin: string) {
         gtao.updateGtaoMaterial({radius:8,distanceExponent:1,thickness:1,scale:1.1,samples:16,screenSpaceRadius:false});
         composer.addPass(gtao);
         composer.addPass(new OutputPass());
-      }catch{composer=null;gtao=null}
+      }catch(aoError){
+        composer=null;
+        gtao=null;
+        diagnostics.push("ambient occlusion: "+errorText(aoError,"unavailable"));
+      }
 
       let mesh=null,baseGeometry=null,dimensions=null;
       let shadingMode=store.get("printa:shading")==="flat"?"flat":"smooth";
@@ -570,7 +656,12 @@ export function createModelWidgetHtml(origin: string) {
         const canvas=document.createElement("canvas");
         canvas.width=512;canvas.height=128;
         const c=canvas.getContext("2d");
-        c.fillStyle="rgba(10,26,25,.92)";c.beginPath();c.roundRect(3,3,506,122,24);c.fill();
+        c.fillStyle="rgba(10,26,25,.92)";
+        c.beginPath();
+        /* roundRect is Safari 16.4+; older WKWebView builds would throw here and
+           take the whole mesh load down with them. */
+        if(typeof c.roundRect==="function")c.roundRect(3,3,506,122,24);else c.rect(3,3,506,122);
+        c.fill();
         c.strokeStyle=color;c.lineWidth=5;c.stroke();
         c.fillStyle="#fffaf0";c.font="700 48px ui-monospace,monospace";
         c.textAlign="center";c.textBaseline="middle";c.fillText(text,256,65);
@@ -714,12 +805,13 @@ export function createModelWidgetHtml(origin: string) {
 
     const rendererBoot=bootRenderer().catch(error=>{
       rendererReady=false;
+      diagnostics.push("renderer: "+errorText(error,"failed to start"));
       console.error("[printa] 3D preview unavailable:",error);
     });
     el("focus").addEventListener("click",()=>{play("tick");frameModel()});
 
     /* ---------- model data ----------------------------------------------- */
-    let token=0,resultTimer=0,lastUrl="";
+    let token=0,resultTimer=0,lastUrl="",lastData=null;
     const isCurrent=value=>value===token;
 
     function acceptInput(args){
@@ -739,6 +831,7 @@ export function createModelWidgetHtml(origin: string) {
         return;
       }
       clearTimeout(resultTimer);
+      lastData=data;
       const previewUrl=data.previewUrl||data.stlUrl;
       const current=++token;
       el("title").textContent=data.name||"Printable model";
@@ -755,7 +848,7 @@ export function createModelWidgetHtml(origin: string) {
       /* Metadata is live even when the mesh cannot be drawn, so a failed 3D
          boot still leaves a usable card rather than a blank frame. */
       await rendererBoot;
-      if(!rendererReady){
+      if(!rendererReady||contextLost){
         setBusy(false);
         showFatal("The 3D preview could not load in this browser, but the model is ready.",
           {href:data.stlUrl,label:"Download the STL →"});

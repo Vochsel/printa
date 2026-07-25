@@ -187,6 +187,19 @@ test("MCP widgets survive every way a host can hand them data", async () => {
     assert.match(source, /size-changed/, `${name} widget posts a size notification`);
   }
 
+  // Neither widget may have a fatal top-level CDN import. Sixteen files hid
+  // behind those bare specifiers, discovered as a waterfall of cross-origin
+  // requests and resolved through an import map — the combination that never
+  // rendered inside the ChatGPT iOS webview.
+  for (const [name, source] of [["model", modelWidget], ["text", widget]]) {
+    const script = source
+      .match(/<script type="module">([\s\S]*?)<\/script>/)[1]
+      .replace(/\/\*[\s\S]*?\*\//g, "")   // prose about imports is not an import
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+    assert.doesNotMatch(script, /^[ \t]*import[ \t]+[{*A-Za-z_$]/m, `${name} widget has no static top-level import`);
+    assert.match(source, /\/widget\/renderer\.js\?v="\+RENDERER_VERSION/, `${name} widget loads the self-hosted bundle`);
+  }
+
   // The SDK handshake must never be fatal: ChatGPT uses its own window.openai
   // bridge and rejects the ext-apps connect() call.
   assert.doesNotMatch(modelWidget, /Could not connect to the MCP host/);
@@ -201,10 +214,49 @@ test("MCP widgets survive every way a host can hand them data", async () => {
   assert.match(inspectRoute, /Access-Control-Allow-Origin/);
   assert.match(inspectRoute, /export function OPTIONS/);
   // Widget HTML is cached by resource URI, so the version must move with it.
-  assert.match(mcpRoute, /printa-procedural-model-v10\.html/);
+  assert.match(mcpRoute, /printa-procedural-model-v11\.html/);
   assert.match(mcpRoute, /printa-extruded-text-v11\.html/);
   // Hosts render widgets on light and dark chrome.
   assert.match(modelWidget, /prefers-color-scheme: dark/);
+  // A lost WebGL context is silent — no error anywhere — and leaves a black
+  // canvas, which is indistinguishable from "never rendered".
+  assert.match(modelWidget, /webglcontextlost/);
+  assert.match(modelWidget, /webglcontextrestored/);
+  // roundRect is Safari 16.4+; without the guard it takes the mesh load down.
+  assert.match(modelWidget, /typeof c\.roundRect==="function"/);
+  // Safari needs the prefixed backdrop-filter.
+  assert.match(modelWidget, /-webkit-backdrop-filter/);
+});
+
+// The widget iframe runs on a host-controlled sandbox origin, so pulling the
+// renderer from our own origin is a *cross-origin* module import — which the
+// browser refuses without CORS, exactly like a cross-origin fetch. (The CDN
+// worked only because jsdelivr sends Access-Control-Allow-Origin.)
+test("the self-hosted widget renderer bundle is built and served cross-origin", async () => {
+  const [entry, script, config, pkg, ignore] = await Promise.all([
+    readFile(new URL("lib/widget-renderer.entry.js", root), "utf8"),
+    readFile(new URL("scripts/build-widget-renderer.mjs", root), "utf8"),
+    readFile(new URL("next.config.ts", root), "utf8"),
+    readFile(new URL("package.json", root), "utf8"),
+    readFile(new URL(".gitignore", root), "utf8"),
+  ]);
+
+  // Everything both widgets need, so neither falls back to the CDN waterfall.
+  for (const symbol of ["THREE", "OrbitControls", "STLLoader", "toCreasedNormals", "mergeVertices", "EffectComposer", "GTAOPass", "parseOpenType"]) {
+    assert.match(entry, new RegExp(`\\b${symbol}\\b`), `bundle exports ${symbol}`);
+  }
+  assert.match(script, /public\/widget\/renderer\.js/);
+  assert.match(script, /format: "esm"/);
+  assert.match(config, /Access-Control-Allow-Origin/);
+  assert.match(config, /\/widget\/:path\*/);
+  // Must run before `next build` copies public/, or the bundle ships missing.
+  assert.match(JSON.parse(pkg).scripts.build, /build-widget-renderer\.mjs && next build/);
+  // Generated vendor output stays out of git; the CDN fallback covers a skipped build.
+  assert.match(ignore, /public\/widget\/renderer\.js/);
+
+  const bundle = await readFile(new URL("public/widget/renderer.js", root), "utf8");
+  assert.ok(bundle.length > 200_000, "bundle looks fully bundled");
+  assert.doesNotMatch(bundle, /from\s*["']three["']/, "no unresolved bare specifiers survive bundling");
 });
 
 // A syntax error inside a widget's inline module is invisible to tsc and to the

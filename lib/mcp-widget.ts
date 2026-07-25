@@ -1,4 +1,6 @@
-export function createWidgetHtml(origin: string) {
+import { WIDGET_RENDERER_VERSION } from "@/lib/mcp-model-widget";
+
+export function createWidgetHtml(origin: string, rendererVersion = WIDGET_RENDERER_VERSION) {
   const safeOrigin = JSON.stringify(origin);
   return String.raw`<!doctype html>
 <html lang="en">
@@ -67,12 +69,46 @@ export function createWidgetHtml(origin: string) {
     <main><div id="canvas" class="canvas"></div><div id="loading" class="loading">Building geometry…</div><button id="floating-menu" class="floating-menu" type="button" aria-label="Show settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button><div id="dims" class="dims">— × — × — mm</div><button id="fullscreen" class="fullscreen" type="button" aria-label="Open fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" /></svg></button><button id="path-toggle" class="path-toggle" type="button" aria-pressed="false" aria-label="Toggle GPU path tracing"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.4" /><path d="M12 3v2.6M12 18.4V21M3 12h2.6M18.4 12H21M5.6 5.6l1.9 1.9M16.5 16.5l1.9 1.9M18.4 5.6l-1.9 1.9M7.5 16.5l-1.9 1.9" /></svg></button><button id="focus" class="focus" type="button" aria-label="Frame model">◎</button><div id="mesh-stats" class="mesh-stats">— triangles</div></main>
   </div>
   <script type="module">
-    import * as THREE from "three";
-    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-    import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-    import { parse as parseOpenType } from "opentype.js";
     const ORIGIN=${safeOrigin};
+    const RENDERER_VERSION=${JSON.stringify(rendererVersion)};
     const el=(id)=>document.getElementById(id);
+
+    /* Static top-level CDN imports used to sit here. Any one of them failing —
+       and there were 16 files behind those four specifiers, resolved through an
+       import map — killed the whole module, leaving the static skeleton and a
+       permanently blank stage. That is the failure mode inside a mobile webview.
+       Load one self-hosted bundle instead, fall back to the CDN, and surface a
+       real message if both are unreachable. */
+    async function loadRenderer(){
+      try{
+        const bundle=await import(ORIGIN+"/widget/renderer.js?v="+RENDERER_VERSION);
+        if(!bundle||!bundle.THREE)throw new Error("bundle missing exports");
+        return bundle;
+      }catch(bundleError){
+        const [THREE,controls,utils,opentype]=await Promise.all([
+          import("three"),
+          import("three/addons/controls/OrbitControls.js"),
+          import("three/addons/utils/BufferGeometryUtils.js"),
+          import("opentype.js"),
+        ]);
+        return {THREE,OrbitControls:controls.OrbitControls,mergeVertices:utils.mergeVertices,parseOpenType:opentype.parse};
+      }
+    }
+
+    let modules;
+    try{
+      modules=await loadRenderer();
+    }catch(error){
+      const loading=el("loading");
+      if(loading){
+        loading.textContent="The 3D preview could not load in this browser. Use Download STL to open the model in your slicer.";
+        loading.style.padding="0 24px";
+        loading.style.textAlign="center";
+      }
+      throw error;
+    }
+    const THREE=modules.THREE,OrbitControls=modules.OrbitControls,
+      mergeVertices=modules.mergeVertices,parseOpenType=modules.parseOpenType;
     const appShell=el("app"),sidebarToggle=el("sidebar-toggle"),fullscreenButton=el("fullscreen");
     function setSettingsExpanded(expanded){appShell.classList.toggle("settings-collapsed",!expanded);sidebarToggle.setAttribute("aria-expanded",String(expanded));sidebarToggle.setAttribute("aria-label",expanded?"Collapse settings":"Expand settings")}
     sidebarToggle.addEventListener("click",()=>setSettingsExpanded(appShell.classList.contains("settings-collapsed")));
