@@ -33,7 +33,9 @@ import { sfx } from "@/lib/sfx";
 
 type FieldLayout = "row" | "stack";
 
-const rowLabelClass = "truncate text-[11px] text-muted-foreground";
+// Row labels wrap rather than truncate — "Extrusion segments" and "Global
+// radius offset" were both being cut mid-word in the fixed label column.
+const rowLabelClass = "text-[11px] leading-tight text-muted-foreground";
 const stackLabelClass = "truncate text-[10px] font-medium text-muted-foreground";
 const controlClass =
   "h-7 rounded-md border border-transparent bg-secondary px-2 text-xs md:text-xs shadow-none focus-visible:border-ring focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/40";
@@ -42,7 +44,7 @@ export function FieldShell({ label, layout = "stack", htmlFor, children, classNa
   if (!label) return <div className={cn("min-w-0", className)}>{children}</div>;
   if (layout === "row") {
     return (
-      <div className={cn("grid min-w-0 grid-cols-[58px_minmax(0,1fr)] items-center gap-2", className)}>
+      <div className={cn("grid min-w-0 grid-cols-[76px_minmax(0,1fr)] items-center gap-2", className)}>
         <Label htmlFor={htmlFor} className={rowLabelClass}>{label}</Label>
         {children}
       </div>
@@ -410,7 +412,7 @@ export function VectorField({
   onChange: (value: [number, number, number]) => void;
 }) {
   return (
-    <div className="grid grid-cols-[58px_repeat(3,minmax(0,1fr))] items-center gap-1.5">
+    <div className="grid grid-cols-[76px_repeat(3,minmax(0,1fr))] items-center gap-1.5">
       <span className={rowLabelClass}>{label}</span>
       {value.map((item, index) => (
         <NumberField

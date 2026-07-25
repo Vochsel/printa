@@ -5,11 +5,10 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("ships the homepage, advanced editors, MCP widgets, skills, icons, and generation routes", async () => {
-  const [page, home, editor, playground, studio, inspector, widget, modelWidget, modelSpec, proceduralGeometry, demos, modelStlRoute, publicStlRoute, skill, skillRoute, stlRoute, mcpRoute, fontRoute, icon] = await Promise.all([
+  const [page, home, editor, studio, inspector, widget, modelWidget, modelSpec, proceduralGeometry, demos, modelStlRoute, publicStlRoute, skill, skillRoute, stlRoute, mcpRoute, fontRoute, icon] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/HomePage.tsx", root), "utf8"),
     readFile(new URL("app/editor/page.tsx", root), "utf8"),
-    readFile(new URL("app/TextPlayground.tsx", root), "utf8"),
     readFile(new URL("app/ProceduralStudio.tsx", root), "utf8"),
     readFile(new URL("app/SpecInspector.tsx", root), "utf8"),
     readFile(new URL("lib/mcp-widget.ts", root), "utf8"),
@@ -28,36 +27,20 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   ]);
 
   assert.match(page, /<HomePage\s*\/>/);
-  // Landing: interactive hero playground + live-compiled showcase + pricing.
-  assert.match(home, /function TextPlayground/);
+  // Landing: one live-compiled workbench (gallery + editable text) then pricing.
+  assert.match(home, /function Workbench/);
   assert.match(home, /function ModelStage/);
   assert.match(home, /function FontPicker/);
-  assert.match(home, /function Showcase/);
   assert.match(home, /Download STL/);
+  assert.match(home, /Open in editor/);
   assert.match(home, /\/api\/model\/stl\?spec=/);
   assert.match(home, /Go Pro — \$10\/mo/);
   assert.match(home, /Cloth & water sim/);
   assert.match(home, /href="\/editor"/);
+  // The page mounts exactly one WebGL viewport; the gallery swaps its document.
+  assert.equal(home.match(/<ModelStage\b/g)?.length, 1, "landing keeps a single WebGL context");
+  assert.match(home, /const EXAMPLES: Example\[\]/);
   assert.match(editor, /<ProceduralStudio\s*\/>/);
-  assert.match(playground, /Download STL/);
-  assert.match(playground, /OrbitControls/);
-  assert.match(playground, /Smooth normals/);
-  assert.match(playground, /Bevel resolution/);
-  assert.match(playground, /Extrusion resolution/);
-  assert.match(playground, /UPPERCASE/);
-  assert.match(playground, /Printable underline bar/);
-  assert.match(playground, /loadFontPreview/);
-  assert.match(playground, /font-popover-search/);
-  assert.match(playground, /loadMoreFontsOnScroll/);
-  assert.match(playground, /scroll for all/);
-  assert.match(playground, /Exceeds 256 mm build volume/);
-  assert.match(playground, /createGroundDimensions/);
-  assert.match(playground, /readEditorQuery/);
-  assert.match(playground, /history\.replaceState/);
-  assert.match(playground, /bevelSegments/);
-  assert.match(playground, /three-gpu-pathtracer/);
-  assert.match(playground, /High quality/);
-  assert.match(playground, /Print material/);
   assert.match(studio, /View settings/);
   assert.match(studio, /toCreasedNormals/);
   assert.match(studio, /Raw model spec/);
@@ -100,7 +83,7 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(widget, /app settings-collapsed/);
   assert.match(widget, /requestDisplayMode\(\{mode:target\}\)/);
   assert.match(widget, /Three\.js/);
-  assert.match(modelWidget, /View settings/);
+  assert.match(modelWidget, /Shading/);
   assert.match(modelWidget, /importmap/);
   assert.match(modelWidget, /cuelume/);
   assert.match(modelWidget, /create_procedural_model/);
@@ -110,7 +93,6 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(modelWidget, /app\.ontoolresult/);
   assert.match(modelWidget, /previewUrl/);
   assert.match(modelWidget, /The model result did not arrive/);
-  assert.match(modelWidget, /busy\?"grid":"none"/);
   assert.match(modelSpec, /MODEL_SPEC_VERSION/);
   assert.match(modelSpec, /radialWave/);
   assert.match(modelSpec, /waterSourceSchema/);
@@ -178,11 +160,75 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(mcpRoute, /text\/html;profile=mcp-app|RESOURCE_MIME_TYPE/);
   assert.match(fontRoute, /getGoogleFontCatalog/);
   assert.match(icon, /stacked 3D printing layers/);
-  assert.match(modelWidget, /spec-hidden/);
   assert.match(modelWidget, /toggleSpec/);
-  assert.match(modelWidget, /\.stage\{grid-column:3/);
   assert.match(modelWidget, /if\(!viewportReady\|\|document\.hidden\)return/);
   assert.match(widget, /if\(!viewportReady\|\|document\.hidden\)return/);
+});
+
+// These are the failure modes that left the ChatGPT widget rendering nothing:
+// tool output that arrives after the module evaluates, an unreported frame
+// height, and a single CDN or SDK failure taking the whole module down.
+test("MCP widgets survive every way a host can hand them data", async () => {
+  const [modelWidget, widget, mcpRoute, inspectRoute] = await Promise.all([
+    readFile(new URL("lib/mcp-model-widget.ts", root), "utf8"),
+    readFile(new URL("lib/mcp-widget.ts", root), "utf8"),
+    readFile(new URL("app/mcp/route.ts", root), "utf8"),
+    readFile(new URL("app/api/model/inspect/route.ts", root), "utf8"),
+  ]);
+
+  for (const [name, source] of [["model", modelWidget], ["text", widget]]) {
+    // Late-arriving globals: ChatGPT does not guarantee toolOutput exists at
+    // module-evaluation time, so both widgets must keep listening.
+    assert.match(source, /openai:set_globals/, `${name} widget listens for late globals`);
+    assert.match(source, /toolOutput/, `${name} widget reads toolOutput`);
+    assert.match(source, /setInterval/, `${name} widget polls for globals`);
+    // A host sizes the iframe from what the widget reports; silence collapses it.
+    assert.match(source, /notifyIntrinsicHeight/, `${name} widget reports its height`);
+    assert.match(source, /size-changed/, `${name} widget posts a size notification`);
+  }
+
+  // The SDK handshake must never be fatal: ChatGPT uses its own window.openai
+  // bridge and rejects the ext-apps connect() call.
+  assert.doesNotMatch(modelWidget, /Could not connect to the MCP host/);
+  assert.match(modelWidget, /import\("https:\/\/cdn\.jsdelivr\.net\/npm\/@modelcontextprotocol\/ext-apps[^)]*\)/);
+  assert.match(modelWidget, /notifications\/initialized/);
+  // three.js loads dynamically so a blocked CDN degrades to a download link.
+  assert.match(modelWidget, /async function bootRenderer/);
+  assert.match(modelWidget, /rendererReady/);
+  assert.match(modelWidget, /The 3D preview could not load/);
+  // Last-resort self-bootstrap needs a CORS-enabled inspect endpoint.
+  assert.match(modelWidget, /\/api\/model\/inspect/);
+  assert.match(inspectRoute, /Access-Control-Allow-Origin/);
+  assert.match(inspectRoute, /export function OPTIONS/);
+  // Widget HTML is cached by resource URI, so the version must move with it.
+  assert.match(mcpRoute, /printa-procedural-model-v10\.html/);
+  assert.match(mcpRoute, /printa-extruded-text-v11\.html/);
+  // Hosts render widgets on light and dark chrome.
+  assert.match(modelWidget, /prefers-color-scheme: dark/);
+});
+
+// A syntax error inside a widget's inline module is invisible to tsc and to the
+// Next build — the string still compiles, the browser just renders nothing.
+test("MCP widget inline scripts parse as ES modules", async () => {
+  const vm = await import("node:vm");
+  const { createModelWidgetHtml } = await import(new URL("lib/mcp-model-widget.ts", root).href);
+  const { createWidgetHtml } = await import(new URL("lib/mcp-widget.ts", root).href);
+
+  for (const [name, html] of [
+    ["model", createModelWidgetHtml("https://printa.test")],
+    ["text", createWidgetHtml("https://printa.test")],
+  ]) {
+    const scripts = [...html.matchAll(/<script type="module">([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+    assert.ok(scripts.length > 0, `${name} widget has an inline module`);
+    for (const source of scripts) {
+      assert.doesNotThrow(() => new vm.SourceTextModule(source, { identifier: name }), `${name} widget script parses`);
+    }
+    for (const map of html.matchAll(/<script type="importmap">([\s\S]*?)<\/script>/g)) {
+      assert.doesNotThrow(() => JSON.parse(map[1]), `${name} widget importmap is valid JSON`);
+    }
+    // The origin must be interpolated, never left as a literal placeholder.
+    assert.match(html, /https:\/\/printa\.test/, `${name} widget embeds its origin`);
+  }
 });
 
 test("ships the AI assistant chat that builds models from prompts and images", async () => {

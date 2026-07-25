@@ -5,6 +5,18 @@ import { inspectProceduralModel } from "@/lib/procedural-mesh";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// The MCP widget runs on a host-controlled sandbox origin, so it needs CORS to
+// self-bootstrap a starting model when no tool result reaches it.
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+} as const;
+
+export function OPTIONS() {
+  return new Response(null, { status: 204, headers: { ...CORS, "Access-Control-Max-Age": "86400" } });
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json() as { spec?: string | unknown; encoded?: string; demo?: string; format?: "json" | "yaml" };
@@ -21,8 +33,11 @@ export async function POST(request: Request) {
       encoded,
       stlUrl: `${origin}/make/model.stl?spec=${encoded}`,
       studioUrl: `${origin}/editor?spec=${encoded}`,
-    });
+    }, { headers: CORS });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Invalid model spec." }, { status: 400 });
+    return Response.json(
+      { error: error instanceof Error ? error.message : "Invalid model spec." },
+      { status: 400, headers: CORS },
+    );
   }
 }
