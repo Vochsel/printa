@@ -9,6 +9,29 @@ const defaults = {
 
 const tallMarbleVase = parseModelDocument(readFileSync(new URL("../tests/fixtures/tall-marble-vase.yaml", import.meta.url), "utf8"));
 
+// A letter-shaped outline with a counter plus a detached curved contour — the
+// shape of real imported logo artwork, and the case hole nesting must get right.
+const importedGlyphContours = [
+  [
+    { op: "move", to: [-24, -30] }, { op: "line", to: [24, -30] },
+    { op: "bezier", control1: [34, -30], control2: [34, -14], to: [24, -12] },
+    { op: "line", to: [24, 12] },
+    { op: "bezier", control1: [34, 14], control2: [34, 30], to: [24, 30] },
+    { op: "line", to: [-24, 30] }, { op: "close" },
+  ],
+  [
+    { op: "move", to: [-12, -18] }, { op: "line", to: [12, -18] },
+    { op: "quadratic", control: [16, 0], to: [12, 18] },
+    { op: "line", to: [-12, 18] }, { op: "close" },
+  ],
+  [
+    { op: "move", to: [34, -8] },
+    { op: "bezier", control1: [46, -8], control2: [46, 8], to: [34, 8] },
+    { op: "bezier", control1: [26, 8], control2: [26, -8], to: [34, -8] },
+    { op: "close" },
+  ],
+] as const;
+
 const modifierGauntlet: ModifierSpec[] = [
   { type: "twist", angleDeg: 145, start: 0, end: 1 },
   { type: "taper", from: 1.1, to: 0.65, easing: "smoothstep" },
@@ -211,6 +234,63 @@ const addedCases = {
     ...defaults,
     metadata: { benchmark: true, coverage: "extrude,curves,holes,bevel,direction" },
   },
+  "imported-vector-artwork": {
+    version: "1.0",
+    name: "Imported vector artwork",
+    description: "Exercises SVG/PDF import geometry: nested hole detection, bevelled extrusion, and exact outer bounds.",
+    units: "mm",
+    root: {
+      kind: "shape",
+      id: "imported-mark",
+      source: {
+        type: "vector",
+        contours: importedGlyphContours.map((contour) => [...contour]),
+        fillRule: "evenodd",
+        width: 96,
+        height: 60,
+        depth: 5,
+        bevel: 0.6,
+        bevelSegments: 4,
+        curveSegments: 18,
+        origin: "center",
+        label: "benchmark-mark.svg",
+      },
+      modifiers: [],
+      material: "pla-orange",
+    },
+    ...defaults,
+    metadata: { benchmark: true, coverage: "vector,import,hole-nesting,evenodd,bevel,exact-dimensions", expectedBoundsMm: "96,60,5" },
+  },
+  "imported-vector-modifiers": {
+    version: "1.0",
+    name: "Imported artwork with modifiers",
+    description: "Exercises the modifier-based extrusion path on imported artwork: subdivided topology, twist, and taper.",
+    units: "mm",
+    root: {
+      kind: "shape",
+      id: "imported-relief",
+      source: {
+        type: "vector",
+        contours: importedGlyphContours.map((contour) => [...contour]),
+        fillRule: "nonzero",
+        width: 70,
+        depth: 14,
+        bevel: 0,
+        bevelSegments: 3,
+        curveSegments: 14,
+        origin: "center",
+        label: "benchmark-mark.pdf · page 1",
+      },
+      modifiers: [
+        { type: "subdivide", scheme: "linear", levels: 1, boundary: "sharp" },
+        { type: "twist", angleDeg: 42, start: 0, end: 1 },
+        { type: "taper", from: 1, to: 0.7, easing: "smoothstep" },
+      ],
+      material: "petg",
+    },
+    ...defaults,
+    metadata: { benchmark: true, coverage: "vector,import,modifier-extrusion,nonzero" },
+  },
   "deep-repeat-graph": {
     version: "1.0",
     name: "Deep repeat graph",
@@ -368,7 +448,7 @@ const addedCases = {
 export const BENCHMARK_SPECS = { ...DEMO_MODELS, ...addedCases } as const;
 
 export const REQUIRED_BENCHMARK_COVERAGE = {
-  sources: ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic"],
+  sources: ["primitive", "extrude", "vector", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic"],
   primitives: ["box", "cylinder", "cone", "sphere", "torus"],
   modifiers: ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "vine", "subdivide", "array", "step", "smooth", "drape", "melt"],
   graph: ["shape", "assembly", "repeat"],

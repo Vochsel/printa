@@ -109,6 +109,36 @@ axis: z # x | y | z
 
 `wall` controls the side shell. `bottomCap: true` creates a solid base whose interior floor is raised by `bottomThickness`. `topCap: true` seals the form and lowers the interior ceiling by `topThickness`. With either cap disabled, that end remains open but receives a watertight annular rim. Ordinary vases normally use a solid bottom and open top; sculptures and enclosed forms can enable both caps.
 
+### Vector (imported SVG/PDF artwork)
+
+Extrude artwork imported from an SVG or PDF. Each entry in `contours` is one closed outline in document units with Y pointing up, using the same curve commands as `extrude`. Nesting decides holes, so letter counters and logo cutouts survive without listing them separately.
+
+```yaml
+type: vector
+fillRule: nonzero # nonzero | evenodd
+width: 60 # optional exact outer X, including bevel
+height: 42 # optional exact outer Y, including bevel
+depth: 4 # exact outer depth including bevels
+bevel: 0
+bevelSegments: 3
+curveSegments: 12
+origin: center # center | keep
+label: logo.svg · path 3
+contours:
+  - - { op: move, to: [-20, -20] }
+    - { op: line, to: [20, -20] }
+    - { op: line, to: [20, 20] }
+    - { op: line, to: [-20, 20] }
+    - { op: close }
+  - - { op: move, to: [-8, -8] } # nested contour becomes a hole
+    - { op: line, to: [8, -8] }
+    - { op: line, to: [8, 8] }
+    - { op: line, to: [-8, 8] }
+    - { op: close }
+```
+
+Under `evenodd`, every nested contour cuts a hole. Under `nonzero`, a nested contour wound the same direction as its parent stays solid. Omit `width`/`height` to keep the artwork's imported size; set either one to scale proportionally, or both to stretch to exact bounds. `origin: center` centers each source on its own bounds — use a node `transform.translate` to place it. Editor users normally get this source from **Import SVG or PDF**, which uploads to `POST /api/vector/import` and returns the shape list the picker shows. Documents may hold up to 512 contours per source and 40,000 curve commands in total, so import simplified artwork rather than traced raster scans.
+
 ### Extrude
 
 Extrude one closed 2D path, optionally with hole paths. Commands are `move`, `line`, `quadratic`, `bezier`, and `close`.

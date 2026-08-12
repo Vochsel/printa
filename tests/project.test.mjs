@@ -168,6 +168,62 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
 // These are the failure modes that left the ChatGPT widget rendering nothing:
 // tool output that arrives after the module evaluates, an unreported frame
 // height, and a single CDN or SDK failure taking the whole module down.
+test("imports SVG and PDF artwork through a visual picker into extrudable layers", async () => {
+  const [dialog, studio, inspector, modelSpec, geometry, mesh, importRoute, parser, shapes, specReference] = await Promise.all([
+    readFile(new URL("components/editor/ImportDialog.tsx", root), "utf8"),
+    readFile(new URL("app/ProceduralStudio.tsx", root), "utf8"),
+    readFile(new URL("app/SpecInspector.tsx", root), "utf8"),
+    readFile(new URL("lib/model-spec.ts", root), "utf8"),
+    readFile(new URL("lib/procedural-geometry.ts", root), "utf8"),
+    readFile(new URL("lib/procedural-mesh.ts", root), "utf8"),
+    readFile(new URL("app/api/vector/import/route.ts", root), "utf8"),
+    readFile(new URL("lib/vector-import.ts", root), "utf8"),
+    readFile(new URL("lib/vector-shapes.ts", root), "utf8"),
+    readFile(new URL("skills/printa-modeling/references/spec-reference.md", root), "utf8"),
+  ]);
+
+  // Both formats are read in-process; no external converter is involved.
+  assert.match(parser, /export function parseSvgDocument/);
+  assert.match(parser, /export function parsePdfDocument/);
+  assert.match(parser, /export function importVectorDocument/);
+  assert.match(parser, /inflateSync/, "PDF content streams are Flate-decoded");
+  assert.match(parser, /ObjStm/, "object streams are expanded so modern PDFs resolve their pages");
+  assert.match(parser, /arcToCubics/);
+  assert.match(parser, /MediaBox/);
+  assert.match(shapes, /export function nestContours/);
+  assert.match(shapes, /export function simplifyContour/);
+
+  assert.match(importRoute, /multipart\/form-data/);
+  assert.match(importRoute, /MAX_UPLOAD_BYTES/);
+  assert.match(importRoute, /importVectorDocument/);
+
+  // The picker is the interactive part of the feature: a visual preview and an
+  // outliner that select the same shapes.
+  assert.match(dialog, /Import SVG or PDF/);
+  assert.match(dialog, /Imported artwork preview/);
+  assert.match(dialog, /onPointerEnter/);
+  assert.match(dialog, /fillRule/);
+  assert.match(dialog, /\/api\/vector\/import/);
+  assert.match(dialog, /A layer per shape/);
+  assert.match(dialog, /One layer \(holes kept\)/);
+  assert.match(dialog, /export function buildImportNodes/);
+  assert.match(dialog, /onDrop/, "artwork can be dropped onto the dialog");
+
+  assert.match(studio, /ImportDialog/);
+  assert.match(studio, /openImport/);
+  assert.match(studio, /applyStudioUrl/, "oversized imported specs never become an unusable URL");
+  assert.match(studio, /downloadStl/);
+  assert.match(inspector, /Import SVG or PDF…/);
+  assert.match(inspector, /Imported artwork/);
+  assert.match(inspector, /Fill rule/);
+
+  assert.match(modelSpec, /vectorSourceSchema/);
+  assert.match(modelSpec, /MAX_VECTOR_COMMANDS/);
+  assert.match(geometry, /createVectorGeometry/);
+  assert.match(mesh, /source\.type === "vector"/, "imported artwork gets preview resolution caps");
+  assert.match(specReference, /### Vector \(imported SVG\/PDF artwork\)/);
+});
+
 test("MCP widgets survive every way a host can hand them data", async () => {
   const [modelWidget, widget, mcpRoute, inspectRoute] = await Promise.all([
     readFile(new URL("lib/mcp-model-widget.ts", root), "utf8"),
@@ -367,6 +423,7 @@ test("production build contains every public route", async () => {
     access(new URL(".next/server/app/make/model.stl/route.js", root)),
     access(new URL(".next/server/app/api/model/inspect/route.js", root)),
     access(new URL(".next/server/app/api/model/schema/route.js", root)),
+    access(new URL(".next/server/app/api/vector/import/route.js", root)),
     access(new URL(".next/server/app/skills/route.js", root)),
     access(new URL(".next/server/app/mcp/route.js", root)),
     access(new URL(".next/server/app/health/route.js", root)),

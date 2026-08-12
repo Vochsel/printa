@@ -15,6 +15,7 @@ import { buildSceneCollider } from "@/lib/scene-collider";
 import type { SceneCollider } from "@/lib/fluid-sim";
 import {
   parseModelDocument,
+  unitScaleMm,
   type InteriorStrutsSpec,
   type ModelDocument,
   type ModelNode,
@@ -318,7 +319,7 @@ function resolveNode(node: ModelNode, quality: Quality): ModelNode {
       source.curveSegments = Math.min(source.curveSegments, 8);
       source.bevelSegments = Math.min(source.bevelSegments, 3);
       source.extrudeSegments = Math.min(source.extrudeSegments, 4);
-    } else if (source.type === "extrude") {
+    } else if (source.type === "extrude" || source.type === "vector") {
       source.curveSegments = Math.min(source.curveSegments, 12);
       source.bevelSegments = Math.min(source.bevelSegments, 3);
     } else if (source.type === "water") {
@@ -331,14 +332,8 @@ function resolveNode(node: ModelNode, quality: Quality): ModelNode {
   return next;
 }
 
-function unitScale(units: ModelDocument["units"]) {
-  if (units === "cm") return 10;
-  if (units === "in") return 25.4;
-  return 1;
-}
-
 function finishGeometry(geometry: BufferGeometry, document: ModelDocument) {
-  const scale = unitScale(document.units);
+  const scale = unitScaleMm(document.units);
   if (scale !== 1) geometry.scale(scale, scale, scale);
   geometry.computeBoundingBox();
   const bounds = geometry.boundingBox;

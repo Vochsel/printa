@@ -182,7 +182,7 @@ root:
 
 test("publishes a machine-readable schema with every source family", () => {
   const schema = JSON.stringify(modelSpecJsonSchema());
-  for (const source of ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic"]) {
+  for (const source of ["primitive", "extrude", "vector", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic"]) {
     assert.match(schema, new RegExp(`\\b${source}\\b`));
   }
   for (const modifier of ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "vine", "subdivide", "array", "step", "smooth", "drape", "melt"]) {

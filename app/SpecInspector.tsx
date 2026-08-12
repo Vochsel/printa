@@ -16,6 +16,7 @@ import {
   Printer,
   Search,
   Settings2,
+  Shapes,
   Trash2,
   Type,
   Waves,
@@ -51,6 +52,7 @@ const MATERIALS = [
 const SOURCE_TYPES: { value: SourceSpec["type"]; label: string; hint: string }[] = [
   { value: "text", label: "3D text", hint: "Any Google font, extruded" },
   { value: "primitive", label: "Basic shape", hint: "Box, cylinder, cone, sphere, torus" },
+  { value: "vector", label: "Imported artwork", hint: "Outlines from an SVG or PDF" },
   { value: "extrude", label: "Extruded outline", hint: "A 2D path pulled into 3D" },
   { value: "revolve", label: "Spun profile", hint: "Vases, bowls, anything round" },
   { value: "cellular", label: "Cellular lattice", hint: "Lightweight seeded Voronoi-style struts" },
@@ -210,6 +212,9 @@ function sourceDefaults(type: SourceSpec["type"]): SourceSpec {
   if (type === "primitive") return { type, shape: "cylinder", radius: 20, height: 60, segments: 64 };
   if (type === "revolve") return { type, profile: [[24, 0], [32, 30], [29, 70], [24, 110]], segments: 128, profileSegments: 96, radiusOffset: 0, wall: 2, bottomCap: true, bottomThickness: 2.4, topCap: false, topThickness: 2.4, interpolation: "catmull-rom", axis: "z" };
   if (type === "extrude") return { type, depth: 8, bevel: 0.8, bevelSegments: 3, curveSegments: 12, direction: [0, 0, 1], path: { commands: [{ op: "move", to: [-25, -25] }, { op: "line", to: [25, -25] }, { op: "line", to: [25, 25] }, { op: "line", to: [-25, 25] }, { op: "close" }], holes: [] } };
+  // A plain plate placeholder: switching an existing layer to "imported
+  // artwork" without a file still has to produce something buildable.
+  if (type === "vector") return { type, contours: [[{ op: "move", to: [-20, -20] }, { op: "line", to: [20, -20] }, { op: "line", to: [20, 20] }, { op: "line", to: [-20, 20] }, { op: "close" }]], fillRule: "nonzero", depth: 4, bevel: 0, bevelSegments: 3, curveSegments: 12, origin: "center" };
   if (type === "water") return { type, width: 100, depth: 80, base: 3, resolution: 56, steps: 50, damping: 0.985, drops: [{ x: 0, y: 0, radius: 8, amplitude: 5 }], bake: 0 };
   if (type === "fluid") return { type, width: 70, depth: 70, amount: 55, spawnHeight: 70, particleSize: 6, viscosity: 0.18, gravity: 9.8, steps: 220, surfaceResolution: 64, bake: 0 };
   if (type === "cellular") return { type, width: 64, depth: 64, height: 72, cellSize: 18, strutDiameter: 2.2, jitter: 0.62, neighbors: 3, seed: 1, radialSegments: 8 };
@@ -261,6 +266,7 @@ function updateNode(node: ModelNode, id: string, update: (target: ModelNode) => 
 function nodeIcon(node: ModelNode) {
   if (node.kind !== "shape") return <Layers3 size={13} />;
   if (node.source.type === "text") return <Type size={13} />;
+  if (node.source.type === "vector") return <Shapes size={13} />;
   if (node.source.type === "water" || node.source.type === "cloth" || node.source.type === "fluid") return <Waves size={13} />;
   return <Box size={13} />;
 }
@@ -367,6 +373,26 @@ function SourceEditor({ source, fonts, update }: { source: SourceSpec; fonts: Fo
         <Grid2>
           <SelectField label="Curve style" value={source.interpolation} options={[{ value: "linear", label: "Straight lines" }, { value: "catmull-rom", label: "Smooth curve" }]} onChange={(value) => set("interpolation", value)} />
           <SelectField label="Spin axis" value={source.axis} options={["x", "y", "z"]} onChange={(value) => set("axis", value)} />
+        </Grid2>
+      </>}
+      {source.type === "vector" && <>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          {source.label ? <>From <strong className="text-foreground">{source.label}</strong>. </> : null}
+          {source.contours.length.toLocaleString()} contour{source.contours.length === 1 ? "" : "s"} · {source.contours.reduce((total, contour) => total + contour.length, 0).toLocaleString()} curve commands. Nested outlines cut holes.
+        </p>
+        <Grid3>
+          <NumberField label="Width" optional value={source.width} min={0.1} unit="mm" onChange={(value) => set("width", value)} />
+          <NumberField label="Height" optional value={source.height} min={0.1} unit="mm" onChange={(value) => set("height", value)} />
+          <NumberField label="Depth" value={source.depth} min={0.1} step={0.5} unit="mm" onChange={(value) => set("depth", value)} />
+        </Grid3>
+        <Grid3>
+          <NumberField label="Bevel" value={source.bevel} min={0} step={0.1} unit="mm" onChange={(value) => set("bevel", value)} />
+          <NumberField label="Bevel detail" value={source.bevelSegments} min={1} max={16} onChange={(value) => set("bevelSegments", value)} />
+          <NumberField label="Curve detail" value={source.curveSegments} min={1} max={64} onChange={(value) => set("curveSegments", value)} />
+        </Grid3>
+        <Grid2>
+          <SelectField label="Fill rule" value={source.fillRule} options={[{ value: "nonzero", label: "Non-zero" }, { value: "evenodd", label: "Even-odd" }]} onChange={(value) => set("fillRule", value)} />
+          <SelectField label="Placement" value={source.origin} options={[{ value: "center", label: "Center outline" }, { value: "keep", label: "Keep imported" }]} onChange={(value) => set("origin", value)} />
         </Grid2>
       </>}
       {source.type === "extrude" && <>
@@ -493,7 +519,12 @@ function TransformEditor({ value, onChange, title = "Position & rotation" }: { v
   );
 }
 
-export function SpecInspector({ document, fonts, onChange }: { document: ModelDocument; fonts: FontSummary[]; onChange: (document: ModelDocument) => void }) {
+export function SpecInspector({ document, fonts, onChange, onRequestImport }: {
+  document: ModelDocument;
+  fonts: FontSummary[];
+  onChange: (document: ModelDocument) => void;
+  onRequestImport?: () => void;
+}) {
   const entries = useMemo(() => collectNodes(document.root), [document]);
   const [selection, setSelection] = useState<Selection>({ kind: "node", nodeId: document.root.id });
   const [draggedModifier, setDraggedModifier] = useState<{ nodeId: string; index: number } | null>(null);
@@ -574,7 +605,17 @@ export function SpecInspector({ document, fonts, onChange }: { document: ModelDo
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuGroup>
                   <DropdownMenuLabel>New layer</DropdownMenuLabel>
-                  {SOURCE_TYPES.map((type) => (
+                  {onRequestImport && (
+                    <DropdownMenuItem onClick={() => { sfx("page"); onRequestImport(); }}>
+                      <div className="grid gap-0.5">
+                        <span className="text-xs font-medium text-[var(--accent-tool)]">Import SVG or PDF…</span>
+                        <span className="text-[10px] text-muted-foreground">Pick outlines from artwork to extrude</span>
+                      </div>
+                    </DropdownMenuItem>
+                  )}
+                  {/* Imported artwork arrives through the import dialog, which is
+                      the only place that can produce real outline data. */}
+                  {SOURCE_TYPES.filter((type) => type.value !== "vector" || !onRequestImport).map((type) => (
                     <DropdownMenuItem key={type.value} onClick={() => addLayer(type.value)}>
                       <div className="grid gap-0.5">
                         <span className="text-xs font-medium">{type.label}</span>

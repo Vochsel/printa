@@ -4,6 +4,10 @@ import { z } from "zod";
 export const MODEL_SPEC_VERSION = "1.0" as const;
 export const MAX_MODEL_NODES = 64;
 export const MAX_REPEAT_COUNT = 32;
+// Imported SVG/PDF artwork is stored as literal outline data, so a document
+// carrying it is far larger than a hand-written procedural spec.
+export const MAX_SPEC_BYTES = 400_000;
+export const MAX_VECTOR_COMMANDS = 40_000;
 
 const finite = z.number().finite();
 const positive = finite.positive();
@@ -215,6 +219,9 @@ const curvePathSchema = z.object({
   holes: z.array(z.array(curveCommandSchema).min(3).max(128)).max(24).default([]),
 }).strict();
 
+export type CurveCommandSpec = z.infer<typeof curveCommandSchema>;
+export type VectorContourSpec = CurveCommandSpec[];
+
 const primitiveSourceSchema = z.object({
   type: z.literal("primitive"),
   shape: z.enum(["box", "cylinder", "cone", "sphere", "torus"]),
@@ -236,6 +243,26 @@ const extrudeSourceSchema = z.object({
   bevelSegments: z.number().int().min(1).max(16).default(3),
   curveSegments: z.number().int().min(1).max(64).default(12),
   direction: vec3.default([0, 0, 1]).describe("Extrusion vector; normalized before depth is applied"),
+}).strict();
+
+// Artwork imported from SVG or PDF. Contours are already in document units with
+// Y pointing up, so the importer owns every page/viewBox convention and the
+// evaluator only has to decide which contours cut holes.
+const vectorSourceSchema = z.object({
+  type: z.literal("vector"),
+  contours: z.array(z.array(curveCommandSchema).min(2).max(4000)).min(1).max(512)
+    .describe("Closed outlines in document units with Y up; nested contours cut holes"),
+  fillRule: z.enum(["nonzero", "evenodd"]).default("nonzero")
+    .describe("How nested contours are filled, matching the source artwork's fill rule"),
+  width: positive.optional().describe("Exact outer X size in document units; natural outline width when omitted"),
+  height: positive.optional().describe("Exact outer Y size in document units; natural outline height when omitted"),
+  depth: positive.default(4).describe("Exact outer extrusion depth including bevels"),
+  bevel: nonNegative.default(0),
+  bevelSegments: z.number().int().min(1).max(16).default(3),
+  curveSegments: z.number().int().min(1).max(64).default(12),
+  origin: z.enum(["center", "keep"]).default("center")
+    .describe("Center the outline on its own bounds, or keep the imported placement"),
+  label: z.string().max(120).optional().describe("Where the artwork came from, e.g. logo.svg · path 12"),
 }).strict();
 
 const revolveSourceSchema = z.object({
@@ -360,6 +387,7 @@ const organicSourceSchema = z.object({
 export const sourceSchema = z.discriminatedUnion("type", [
   primitiveSourceSchema,
   extrudeSourceSchema,
+  vectorSourceSchema,
   revolveSourceSchema,
   textSourceSchema,
   waterSourceSchema,
@@ -468,10 +496,29 @@ export const modelDocumentSchema = z.object({
 export type ModelDocument = z.infer<typeof modelDocumentSchema>;
 export type ModelDocumentInput = z.input<typeof modelDocumentSchema>;
 
+/** Millimetres per document unit — the one place the conversion is defined. */
+export function unitScaleMm(units: ModelDocument["units"]) {
+  if (units === "cm") return 10;
+  if (units === "in") return 25.4;
+  return 1;
+}
+
 function countNodes(node: ModelNode): number {
   if (node.kind === "shape") return 1;
   if (node.kind === "repeat") return 1 + countNodes(node.child) * node.count;
   return 1 + node.children.reduce((total, child) => total + countNodes(child), 0);
+}
+
+// Total imported outline commands after repeats expand, so a modest-looking
+// document cannot expand into an unbuildable amount of curve data.
+function countVectorCommands(node: ModelNode): number {
+  if (node.kind === "shape") {
+    return node.source.type === "vector"
+      ? node.source.contours.reduce((total, contour) => total + contour.length, 0)
+      : 0;
+  }
+  if (node.kind === "repeat") return countVectorCommands(node.child) * node.count;
+  return node.children.reduce((total, child) => total + countVectorCommands(child), 0);
 }
 
 export function validateModelDocument(input: unknown): ModelDocument {
@@ -480,12 +527,16 @@ export function validateModelDocument(input: unknown): ModelDocument {
   if (nodeCount > MAX_MODEL_NODES) {
     throw new Error(`Model expands to ${nodeCount} nodes; the limit is ${MAX_MODEL_NODES}.`);
   }
+  const vectorCommands = countVectorCommands(document.root);
+  if (vectorCommands > MAX_VECTOR_COMMANDS) {
+    throw new Error(`Imported outlines expand to ${vectorCommands.toLocaleString("en-US")} curve commands; the limit is ${MAX_VECTOR_COMMANDS.toLocaleString("en-US")}. Simplify the artwork on import.`);
+  }
   return document;
 }
 
 export function parseModelDocument(input: string | unknown): ModelDocument {
   if (typeof input !== "string") return validateModelDocument(input);
-  if (input.length > 80_000) throw new Error("Model spec is larger than 80 KB.");
+  if (input.length > MAX_SPEC_BYTES) throw new Error(`Model spec is larger than ${Math.round(MAX_SPEC_BYTES / 1000)} KB.`);
   const trimmed = input.trim();
   if (!trimmed) throw new Error("Model spec is empty.");
   const parsed = trimmed.startsWith("{") || trimmed.startsWith("[")

@@ -5,6 +5,7 @@ Printa is a Vercel-ready Next.js app and MCP server for creating printable 3D mo
 ## What is included
 
 - Three.js playground with orbit controls, searchable Google Fonts, unit-aware sliders, and live dimensions
+- SVG and PDF artwork import with an interactive shape picker, turning outlines into extrudable, modifier-ready layers
 - Deterministic binary STL downloads at `/api/stl`
 - Stateless Streamable HTTP MCP server at `/mcp`
 - MCP Apps UI resource for interactive use inside ChatGPT

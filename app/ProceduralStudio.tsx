@@ -19,6 +19,7 @@ import {
   Save,
   Scan,
   ScrollText,
+  Shapes,
   Sparkles,
   Trash2,
   TriangleAlert,
@@ -56,10 +57,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToggleField } from "@/components/editor/fields";
 import { ChatPanel } from "@/components/editor/ChatPanel";
+import { ImportDialog } from "@/components/editor/ImportDialog";
 import { BrandLink } from "@/components/brand-link";
 import { DEMO_MODEL_CARDS, type DemoModelId } from "@/lib/demo-models";
 import { printMaterialPreset, type PrintMaterialPreset } from "@/lib/material-presets";
-import type { ModelDocument } from "@/lib/model-spec";
+import type { ModelDocument, ModelNode } from "@/lib/model-spec";
 import { initSfx, isSfxEnabled, setSfxEnabled, sfx, sfxThrottled } from "@/lib/sfx";
 import { deleteSavedModel, listSavedModels, saveModel, type SavedModel } from "@/lib/user-models";
 import { cn } from "@/lib/utils";
@@ -82,6 +84,14 @@ type ShadingMode = "smooth" | "flat";
 
 const SHADING_KEY = "printa:shading";
 const SIDEBAR_KEY = "printa:sidebar-width";
+// Imported artwork can make an encoded spec far longer than a URL may carry.
+// Past this, the editor stops mirroring the spec into the address bar and the
+// STL download posts the document instead of linking to it.
+const MAX_SPEC_URL_LENGTH = 60_000;
+
+function applyStudioUrl(url: string) {
+  window.history.replaceState(window.history.state, "", url.length > MAX_SPEC_URL_LENGTH ? "/editor" : url);
+}
 
 function encodeDocument(document: ModelDocument) {
   const bytes = new TextEncoder().encode(JSON.stringify(document));
@@ -821,6 +831,7 @@ export function ProceduralStudio() {
   const [loadOpen, setLoadOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [specOpen, setSpecOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
@@ -877,7 +888,7 @@ export function ProceduralStudio() {
       compiledGeometryKeyRef.current = geometryKey(data.document);
       setPreviewQuality(false);
       setSlice(1);
-      if (data.encoded) window.history.replaceState(window.history.state, "", `/editor?spec=${data.encoded}`);
+      if (data.encoded) applyStudioUrl(`/editor?spec=${data.encoded}`);
     } catch (nextError) {
       sfx("error");
       setError(nextError instanceof Error ? nextError.message : "Model spec is invalid.");
@@ -931,7 +942,7 @@ export function ProceduralStudio() {
       setPreview({ key: `live-${sequence}`, buffer });
       compiledGeometryKeyRef.current = geometryKey(next);
       setPreviewQuality(true);
-      window.history.replaceState(window.history.state, "", studioUrl);
+      applyStudioUrl(studioUrl);
     } catch (nextError) {
       if (nextError instanceof DOMException && nextError.name === "AbortError") return;
       if (sequence === liveSequenceRef.current) {
@@ -965,7 +976,7 @@ export function ProceduralStudio() {
           || previous.stats.depthMm > next.print.buildVolume[1]
           || previous.stats.heightMm > next.print.buildVolume[2],
       } : previous);
-      window.history.replaceState(window.history.state, "", studioUrl);
+      applyStudioUrl(studioUrl);
       return;
     }
     // Fluid/cloth are on-command: stage the edit and wait for Simulate rather
@@ -977,7 +988,7 @@ export function ProceduralStudio() {
       const encoded = encodeDocument(next);
       const studioUrl = `/editor?spec=${encoded}`;
       setResult((previous) => previous ? { ...previous, document: next, spec: nextSpec, stlUrl: `/make/model.stl?spec=${encoded}`, studioUrl, materialPreset: documentMaterial(next.root) } : previous);
-      window.history.replaceState(window.history.state, "", studioUrl);
+      applyStudioUrl(studioUrl);
       return;
     }
     setLiveUpdating(true);
@@ -1032,6 +1043,11 @@ export function ProceduralStudio() {
     sfx("page");
   };
 
+  const openImport = () => {
+    setImportOpen(true);
+    sfx("page");
+  };
+
   const handleSave = () => {
     if (!document) return;
     saveModel(saveName, document);
@@ -1050,6 +1066,51 @@ export function ProceduralStudio() {
     sfx("droplet");
     void inspect({ spec: model.document });
   };
+
+  const importNodes = useCallback((nodes: ModelNode[]) => {
+    if (!document || !nodes.length) return;
+    // Several shapes from one file arrive as a single group so the outliner
+    // stays readable and the assembly child limit is never the user's problem.
+    const addition: ModelNode = nodes.length === 1
+      ? nodes[0]
+      : { kind: "assembly", id: `import-${Date.now().toString(36)}`, operation: "merge", children: nodes, modifiers: [] };
+    const next = structuredClone(document);
+    if (next.root.kind === "assembly") next.root.children.push(addition);
+    else next.root = { kind: "assembly", id: "model", operation: "merge", children: [next.root, addition], modifiers: [] };
+    updateDocument(next);
+  }, [document, updateDocument]);
+
+  const downloadStl = useCallback(async () => {
+    if (!result) return;
+    sfx("chime");
+    if (result.stlUrl.length <= MAX_SPEC_URL_LENGTH) {
+      window.open(result.stlUrl, "_blank");
+      return;
+    }
+    // Artwork-heavy documents cannot ride in a query string, so post the spec
+    // and save the STL the server streams back.
+    try {
+      const response = await fetch("/api/model/stl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: result.document }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(data?.error ?? "The STL could not be generated.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = `printa-${(result.document.name || "model").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "model"}.stl`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (nextError) {
+      sfx("error");
+      setError(nextError instanceof Error ? nextError.message : "The STL could not be generated.");
+    }
+  }, [result]);
 
   const startSidebarDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     sidebarDragRef.current = { startX: event.clientX, startWidth: sidebarWidth };
@@ -1128,12 +1189,13 @@ export function ProceduralStudio() {
             <span className="mx-0.5 h-4 w-px bg-border" />
             {/* Load/Save collapse into the overflow menu on narrow screens so the
                 bar never wraps behind the primary Download action. */}
+            <Button variant="ghost" size="sm" className="hidden lg:inline-flex" onClick={openImport} disabled={!document} data-cuelume-press><Shapes /> Import</Button>
             <Button variant="ghost" size="sm" className="hidden lg:inline-flex" onClick={openLoad} data-cuelume-press><FolderOpen /> Load</Button>
             <Button variant="ghost" size="sm" className="hidden lg:inline-flex" onClick={openSave} disabled={!document} data-cuelume-press><Save /> Save</Button>
             <Button
               size="sm"
               disabled={!result || liveUpdating}
-              onClick={() => { if (result) { sfx("chime"); window.open(result.stlUrl, "_blank"); } }}
+              onClick={() => void downloadStl()}
               data-cuelume-press
             >
               <Download /> <span className="hidden sm:inline">{liveUpdating ? "Updating…" : "Download STL"}</span>
@@ -1141,6 +1203,7 @@ export function ProceduralStudio() {
             <DropdownMenu>
               <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="More"><Ellipsis /></Button>} />
               <DropdownMenuContent align="end">
+                <DropdownMenuItem className="lg:hidden" disabled={!document} onClick={openImport}><Shapes /> Import SVG or PDF</DropdownMenuItem>
                 <DropdownMenuItem className="lg:hidden" onClick={openLoad}><FolderOpen /> Load</DropdownMenuItem>
                 <DropdownMenuItem className="lg:hidden" disabled={!document} onClick={openSave}><Save /> Save</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => { sfx("page"); setSpecOpen(true); }}><Braces /> Raw spec (advanced)</DropdownMenuItem>
@@ -1157,7 +1220,7 @@ export function ProceduralStudio() {
             className="scroll-slim flex min-h-0 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-border bg-background px-3 py-3"
             style={{ width: `min(${sidebarWidth}px, 46vw)` }}
           >
-            {document && <SpecInspector document={document} fonts={fonts} onChange={updateDocument} />}
+            {document && <SpecInspector document={document} fonts={fonts} onChange={updateDocument} onRequestImport={openImport} />}
           </aside>
 
           {/* Resize handle */}
@@ -1414,6 +1477,13 @@ export function ProceduralStudio() {
         </Dialog>
 
         {/* Raw spec dialog */}
+        <ImportDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          units={document?.units ?? "mm"}
+          onImport={importNodes}
+        />
+
         <Dialog open={specOpen} onOpenChange={setSpecOpen}>
           <DialogContent className="sm:max-w-xl">
             <DialogHeader>

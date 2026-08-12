@@ -1,6 +1,6 @@
 ---
 name: printa-modeling
-description: Create, revise, validate, preview, and export composable Printa Spec 1.0 JSON or YAML models through the Printa MCP server. Use for printable primitives, custom-curve extrusion, text, revolved profiles and vases, ordered deformation modifiers, assemblies, repeated forms, deterministic water surfaces, cloth drapes, editor previews, and STL output.
+description: Create, revise, validate, preview, and export composable Printa Spec 1.0 JSON or YAML models through the Printa MCP server. Use for printable primitives, custom-curve extrusion, imported SVG and PDF artwork, text, revolved profiles and vases, ordered deformation modifiers, assemblies, repeated forms, deterministic water surfaces, cloth drapes, editor previews, and STL output.
 ---
 
 # Printa procedural modeling
@@ -28,7 +28,7 @@ The endpoint evaluates the model when requested and returns `Content-Type: model
 
 1. Translate the request into one source node or a small graph of nodes.
 2. Choose document units and keep every dimensional value in those units.
-3. Create the base form with `primitive`, `extrude`, `revolve`, `text`, `water`, or `cloth`.
+3. Create the base form with `primitive`, `extrude`, `vector`, `revolve`, `text`, `water`, or `cloth`.
 4. Apply modifiers in intentional order. Modifier order changes the result.
 5. Use `assembly` to merge distinct parts or `repeat` to make transformed copies.
 6. Keep the graph compact. Prefer modifiers and repeats over enumerating many nodes.
@@ -41,6 +41,7 @@ The endpoint evaluates the model when requested and returns `Content-Type: model
 
 - Use `revolve` for vases, vessels, knobs, bowls, columns, and any radial profile.
 - Use `extrude` for badges, signs, trays, cutters, and custom 2D Bézier outlines.
+- Use `vector` for artwork imported from an SVG or PDF: logos, icons, and traced silhouettes. Nested contours cut holes, so counters and cutouts survive the import.
 - Use `primitive` for structural parts and assembly building blocks.
 - Treat primitive `width`, `depth`, and `height` as exact outer bounds. For text, set `height` and `depth` for exact final dimensions and add `width` only when stretching or fitting to an exact width is intended.
 - Use `text` for any Google-Font solid. Font, weight, case, italic, underline, bevel faces, smoothing, and curve resolution all belong in the source spec.

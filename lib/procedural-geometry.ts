@@ -18,7 +18,8 @@ import {
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { MeshBVH } from "three-mesh-bvh";
 import { weldGeometryPositions } from "@/lib/geometry-weld";
-import type { InteriorStrutsSpec, ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
+import type { InteriorStrutsSpec, ModifierSpec, SourceSpec, TransformSpec, VectorContourSpec } from "@/lib/model-spec";
+import { boundsSize, contourBounds, isFiniteBounds, mergeBounds, nestContours } from "@/lib/vector-shapes";
 import { simulateFluid, simulateFluidParticles, MAX_PARTICLES, type SceneCollider } from "@/lib/fluid-sim";
 import { remeshCapsuleNetwork, type CapsuleSegment } from "@/lib/volume-remesh";
 import { subdivideGeometry, subdivisionTriangleCount } from "@/lib/subdivision";
@@ -64,6 +65,87 @@ function createExtrudeGeometry(source: Extract<SourceSpec, { type: "extrude" }>)
   if (direction.lengthSq() < 1e-10) throw new Error("Extrusion direction cannot be zero.");
   direction.normalize();
   geometry.applyQuaternion(new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), direction));
+  return geometry;
+}
+
+function pathFromContour(commands: VectorContourSpec, scaleX: number, scaleY: number, offsetX: number, offsetY: number) {
+  const path = new Shape();
+  const at = (point: readonly [number, number]) => [point[0] * scaleX + offsetX, point[1] * scaleY + offsetY] as const;
+  for (const command of commands) {
+    if (command.op === "move") path.moveTo(...at(command.to));
+    else if (command.op === "line") path.lineTo(...at(command.to));
+    else if (command.op === "quadratic") path.quadraticCurveTo(...at(command.control), ...at(command.to));
+    else if (command.op === "bezier") path.bezierCurveTo(...at(command.control1), ...at(command.control2), ...at(command.to));
+    else path.closePath();
+  }
+  return path;
+}
+
+/*
+ * Imported SVG/PDF artwork. Nesting decides which contours cut holes, then the
+ * outlines are pre-scaled so the requested width/height/depth describe the final
+ * bevelled solid rather than the flat outline — the same exact-dimension
+ * contract the text source honors.
+ */
+function createVectorGeometry(source: Extract<SourceSpec, { type: "vector" }>) {
+  const nested = nestContours(source.contours, source.fillRule);
+  if (!nested.length) throw new Error("The imported outline has no closed contour to extrude.");
+  const bounds = mergeBounds(source.contours.map(contourBounds));
+  if (!isFiniteBounds(bounds)) throw new Error("The imported outline has no measurable size.");
+  const natural = boundsSize(bounds);
+  const naturalWidth = Math.max(1e-6, natural.width);
+  const naturalHeight = Math.max(1e-6, natural.height);
+
+  const bevel = Math.min(source.bevel, source.depth * 0.3);
+  const bevelSize = bevel * 0.72;
+  const coreDepth = Math.max(1e-5, source.depth - bevel * 2);
+  // The bevel grows the silhouette outward by a fixed amount at any scale, so
+  // solve the outline scale against the target minus that constant.
+  const solve = (target: number | undefined, naturalSize: number) => {
+    if (!target) return null;
+    const outline = target - bevelSize * 2;
+    return outline > 1e-6 ? outline / naturalSize : target / naturalSize;
+  };
+  const solvedX = solve(source.width, naturalWidth);
+  const solvedY = solve(source.height, naturalHeight);
+  const scaleX = solvedX ?? solvedY ?? 1;
+  const scaleY = solvedY ?? solvedX ?? 1;
+
+  const shapes = nested.map((entry) => {
+    const shape = pathFromContour(entry.contour, scaleX, scaleY, 0, 0);
+    for (const hole of entry.holes) shape.holes.push(pathFromContour(hole.contour, scaleX, scaleY, 0, 0));
+    return shape;
+  });
+
+  const geometry = new ExtrudeGeometry(shapes, {
+    depth: coreDepth,
+    bevelEnabled: bevel > 0,
+    bevelSize,
+    bevelThickness: bevel,
+    bevelSegments: bevel > 0 ? source.bevelSegments : 1,
+    curveSegments: source.curveSegments,
+  });
+
+  // Tessellation and bevel joins move the silhouette by a hair, so normalize
+  // once against the measured bounds to hit the requested size exactly.
+  geometry.computeBoundingBox();
+  const measured = geometry.boundingBox!;
+  const measuredWidth = measured.max.x - measured.min.x;
+  const measuredHeight = measured.max.y - measured.min.y;
+  geometry.scale(
+    source.width && measuredWidth > 1e-8 ? source.width / measuredWidth : 1,
+    source.height && measuredHeight > 1e-8 ? source.height / measuredHeight : 1,
+    1,
+  );
+
+  geometry.computeBoundingBox();
+  const placed = geometry.boundingBox!;
+  geometry.translate(
+    source.origin === "center" ? -(placed.min.x + placed.max.x) / 2 : 0,
+    source.origin === "center" ? -(placed.min.y + placed.max.y) / 2 : 0,
+    -placed.min.z,
+  );
+  geometry.computeBoundingBox();
   return geometry;
 }
 
@@ -678,6 +760,7 @@ function createFluidGeometry(source: Extract<SourceSpec, { type: "fluid" }>, col
 export function createSourceGeometryParts(source: Exclude<SourceSpec, { type: "text" }>, options?: SourceBuildOptions) {
   if (source.type === "primitive") return [createPrimitiveGeometry(source)];
   if (source.type === "extrude") return [createExtrudeGeometry(source)];
+  if (source.type === "vector") return [createVectorGeometry(source)];
   if (source.type === "revolve") return createRevolveGeometryParts(source, options?.interiorStruts);
   if (source.type === "water") return [createWaterGeometry(source)];
   if (source.type === "fluid") return [createFluidGeometry(source, options?.sceneCollider)];
