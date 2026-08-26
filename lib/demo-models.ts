@@ -1,4 +1,6 @@
 import type { ModelDocumentInput } from "@/lib/model-spec";
+import { PLACES } from "@/lib/place-library";
+import { placeDocument } from "@/lib/place-document";
 
 const printDefaults = {
   buildVolume: [256, 256, 256] as [number, number, number],
@@ -415,14 +417,38 @@ export const DEMO_MODELS = {
 
 export type DemoModelId = keyof typeof DEMO_MODELS;
 
-export const DEMO_MODEL_CARDS = Object.entries(DEMO_MODELS).map(([id, model]) => ({
-  id: id as DemoModelId,
-  name: model.name,
-  description: model.description,
-  family: String(model.metadata.family),
-}));
+/**
+ * Places, as demo models.
+ *
+ * Generated from the same roster that drives the landing pages, so a place
+ * added there becomes a preset, a gallery card and a `?demo=` id at once,
+ * with no second list to keep in step.
+ */
+export const PLACE_DEMOS: Record<string, ModelDocumentInput> = Object.fromEntries(
+  PLACES.map((place) => [`place-${place.slug}`, placeDocument(place)]),
+);
+
+function demoById(id: string): ModelDocumentInput | null {
+  if (id in DEMO_MODELS) return DEMO_MODELS[id as DemoModelId];
+  return PLACE_DEMOS[id] ?? null;
+}
+
+export const DEMO_MODEL_CARDS = [
+  ...Object.entries(DEMO_MODELS).map(([id, model]) => ({
+    id,
+    name: model.name,
+    description: model.description,
+    family: String(model.metadata.family),
+  })),
+  ...PLACES.map((place) => ({
+    id: `place-${place.slug}`,
+    name: place.name,
+    description: place.blurb,
+    family: "place",
+  })),
+];
 
 export function getDemoModel(id: string | null | undefined) {
-  if (!id || !(id in DEMO_MODELS)) return null;
-  return DEMO_MODELS[id as DemoModelId];
+  if (!id) return null;
+  return demoById(id);
 }

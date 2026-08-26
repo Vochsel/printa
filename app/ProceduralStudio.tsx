@@ -22,6 +22,7 @@ import {
   Sparkles,
   Trash2,
   TriangleAlert,
+  MapPin,
 } from "lucide-react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -1039,7 +1040,9 @@ export function ProceduralStudio() {
     sfx("success");
   };
 
-  const loadDemo = (id: DemoModelId) => {
+  // Places are demo ids too, and they are generated from the place roster
+  // rather than the literal DEMO_MODELS keys.
+  const loadDemo = (id: string) => {
     setLoadOpen(false);
     sfx("droplet");
     void inspect({ demo: id });
@@ -1372,7 +1375,11 @@ export function ProceduralStudio() {
                       onClick={() => loadDemo(demo.id)}
                     >
                       <span className="flex items-center gap-1.5 text-xs font-semibold">
-                        {demo.family === "simulation" ? <Droplets size={13} className="shrink-0" /> : <Box size={13} className="shrink-0" />}
+                        {demo.family === "simulation"
+                          ? <Droplets size={13} className="shrink-0" />
+                          : demo.family === "place"
+                            ? <MapPin size={13} className="shrink-0" />
+                            : <Box size={13} className="shrink-0" />}
                         {demo.name}
                       </span>
                       <span className="line-clamp-2 text-[10px] leading-snug text-muted-foreground">{demo.description}</span>

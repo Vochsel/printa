@@ -4,7 +4,10 @@ import test from "node:test";
 import * as opentype from "opentype.js";
 import type { BufferGeometry } from "three";
 import { DEMO_MODELS } from "../lib/demo-models";
-import { BENCHMARK_SPECS, REQUIRED_BENCHMARK_COVERAGE, REQUIRED_STRUT_PATTERNS, REQUIRED_SUBDIVISION_SCHEMES, REQUIRED_VORONOI_MODES } from "../benchmarks/specs";
+import { PLACES } from "../lib/place-library";
+import { placeDocument } from "../lib/place-document";
+import { createPlaceGeometryParts } from "../lib/place-geometry";
+import { BENCHMARK_SPECS, REQUIRED_BENCHMARK_COVERAGE, REQUIRED_PLACE_CAPTURES, REQUIRED_STRUT_PATTERNS, REQUIRED_SUBDIVISION_SCHEMES, REQUIRED_VORONOI_MODES } from "../benchmarks/specs";
 import {
   decodeModelDocument,
   encodeModelDocument,
@@ -209,6 +212,73 @@ test("benchmark matrix touches every evaluator family and validates every spec",
   for (const pattern of REQUIRED_STRUT_PATTERNS) assert.match(serialized, new RegExp(`\"pattern\":\"${pattern}\"`));
   for (const mode of REQUIRED_VORONOI_MODES) assert.match(serialized, new RegExp(`\"mode\":\"${mode}\"`));
   for (const scheme of REQUIRED_SUBDIVISION_SCHEMES) assert.match(serialized, new RegExp(`\"scheme\":\"${scheme}\"`));
+  for (const capture of REQUIRED_PLACE_CAPTURES) assert.match(serialized, new RegExp(`\"capture\":\"${capture}\"`));
+});
+
+test("every shipped place carries the capture its document claims", () => {
+  for (const place of PLACES) {
+    const document = parseModelDocument(placeDocument(place));
+    const node = document.root;
+    assert.equal(node.kind, "shape", `${place.slug} should be a single shape`);
+    const source = (node as { source: { type: string; capture: string; surface?: unknown; footprints?: unknown } }).source;
+
+    assert.equal(source.type, "place");
+    assert.equal(source.capture, place.capture);
+    // A place with no baked ground would render as a bare plinth, which is a
+    // failure the geometry itself cannot report.
+    assert.ok(source.surface, `${place.slug} should ship a baked surface`);
+    if (place.capture === "buildings") {
+      assert.ok(source.footprints, `${place.slug} should ship baked footprints`);
+    }
+  }
+});
+
+test("a place builds a closed solid for every shipped entry", () => {
+  for (const place of PLACES) {
+    const document = parseModelDocument(placeDocument(place));
+    const source = (document.root as { source: Parameters<typeof createPlaceGeometryParts>[0] }).source;
+    const parts = createPlaceGeometryParts(source);
+
+    assert.ok(parts.length >= 1, `${place.slug} should produce geometry`);
+    if (place.capture === "buildings") {
+      // Ground, rim, and a block per surviving footprint.
+      assert.ok(parts.length > 2, `${place.slug} should extrude buildings`);
+    }
+
+    // Every part must be an indexed triangle mesh with finite coordinates:
+    // a stray NaN travels all the way to the STL and only shows up as an
+    // empty preview.
+    for (const part of parts) {
+      const position = part.getAttribute("position");
+      const index = part.getIndex();
+      assert.ok(index && index.count % 3 === 0, `${place.slug} parts should be triangulated`);
+      for (let i = 0; i < position.count; i += 1) {
+        assert.ok(
+          Number.isFinite(position.getX(i)) && Number.isFinite(position.getY(i)) && Number.isFinite(position.getZ(i)),
+          `${place.slug} should not emit non-finite vertices`,
+        );
+      }
+      part.dispose();
+    }
+  }
+});
+
+test("a place with no baked capture still renders a plinth", () => {
+  const bare = parseModelDocument({
+    version: "1.0",
+    name: "Unbaked place",
+    units: "mm",
+    root: {
+      kind: "shape",
+      id: "bare",
+      source: { type: "place", lat: -33.87, lng: 151.21, radiusM: 200, capture: "surface" },
+      modifiers: [],
+    },
+  });
+  const source = (bare.root as { source: Parameters<typeof createPlaceGeometryParts>[0] }).source;
+  const parts = createPlaceGeometryParts(source);
+  assert.ok(parts.length >= 1, "an unbaked place should still produce a solid");
+  parts.forEach((part) => part.dispose());
 });
 
 test("rejects graphs that expand beyond the safe node limit", () => {

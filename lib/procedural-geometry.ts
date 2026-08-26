@@ -18,6 +18,7 @@ import {
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { MeshBVH } from "three-mesh-bvh";
 import { weldGeometryPositions } from "@/lib/geometry-weld";
+import { createPlaceGeometryParts } from "@/lib/place-geometry";
 import type { InteriorStrutsSpec, ModifierSpec, SourceSpec, TransformSpec } from "@/lib/model-spec";
 import { simulateFluid, simulateFluidParticles, MAX_PARTICLES, type SceneCollider } from "@/lib/fluid-sim";
 import { remeshCapsuleNetwork, type CapsuleSegment } from "@/lib/volume-remesh";
@@ -683,6 +684,9 @@ export function createSourceGeometryParts(source: Exclude<SourceSpec, { type: "t
   if (source.type === "fluid") return [createFluidGeometry(source, options?.sceneCollider)];
   if (source.type === "cloth") return [createClothGeometry(source, options?.sceneCollider)];
   if (source.type === "cellular") return [createCellularGeometry(source)];
+  // A place returns its ground, rim and every building separately; the model
+  // pipeline unions them into one manifold body.
+  if (source.type === "place") return createPlaceGeometryParts(source);
   return [createOrganicGeometry(source)];
 }
 

@@ -44,8 +44,24 @@ const previewUrl = (document: unknown) => `/api/model/stl?spec=${encodeSpec(docu
 const downloadUrl = (document: unknown) => `/api/model/stl?spec=${encodeSpec(document)}`;
 const editorUrl = (document: unknown) => `/editor?spec=${encodeSpec(document)}`;
 
-async function loadGeometry(document: unknown, signal: AbortSignal) {
-  const response = await fetch(previewUrl(document), { signal });
+/**
+ * A model to render: either an inline spec, or a demo id.
+ *
+ * A place carries its captured ground with it and runs to tens of kilobytes,
+ * which overflows what a URL will hold — so those are addressed by id and
+ * compiled server-side from the same document.
+ */
+type ModelRef = { document?: unknown; demo?: string };
+
+const refPreviewUrl = (ref: ModelRef) =>
+  ref.demo ? `/api/model/stl?demo=${ref.demo}&preview=true` : previewUrl(ref.document);
+const refDownloadUrl = (ref: ModelRef) =>
+  ref.demo ? `/api/model/stl?demo=${ref.demo}` : downloadUrl(ref.document);
+const refEditorUrl = (ref: ModelRef) =>
+  ref.demo ? `/editor?demo=${ref.demo}` : editorUrl(ref.document);
+
+async function loadGeometry(ref: ModelRef, signal: AbortSignal) {
+  const response = await fetch(refPreviewUrl(ref), { signal });
   if (!response.ok) throw new Error(`model ${response.status}`);
   const geometry = new STLLoader().parse(await response.arrayBuffer());
   geometry.computeBoundingBox();
@@ -112,11 +128,11 @@ type Stage = {
   markDirty: () => void;
 };
 
-function ModelStage({ document, color = "#ff4d8b", className }: { document: unknown; color?: string; className?: string }) {
+function ModelStage({ document, demo, color = "#ff4d8b", className }: { document?: unknown; demo?: string; color?: string; className?: string }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const store = useRef<Stage | null>(null);
   const [loading, setLoading] = useState(true);
-  const specKey = useMemo(() => JSON.stringify(document), [document]);
+  const specKey = useMemo(() => demo ?? JSON.stringify(document), [demo, document]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -213,7 +229,7 @@ function ModelStage({ document, color = "#ff4d8b", className }: { document: unkn
       active.loader?.abort();
       const controller = new AbortController();
       active.loader = controller;
-      loadGeometry(document, controller.signal)
+      loadGeometry({ document, demo }, controller.signal)
         .then((raw) => {
           if (controller.signal.aborted) { raw.dispose(); return; }
           // Sit the model on the bed: centre X/Y, drop its base to z = 0.
@@ -562,6 +578,115 @@ function Workbench() {
 // Static content
 // ---------------------------------------------------------------------------
 
+type GalleryItem = {
+  id: string;
+  name: string;
+  note: string;
+  tag: string;
+  color: string;
+  document?: unknown;
+  demo?: string;
+  href?: string;
+};
+
+/**
+ * What the engine makes, shown rather than described.
+ *
+ * Both place captures sit next to the hand-built forms so the difference
+ * between a photogrammetric surface and mapped outlines is visible side by
+ * side. Every tile compiles its own STL through the same endpoint the editor
+ * uses, so none of this can drift from what actually builds.
+ */
+const GALLERY: GalleryItem[] = [
+  {
+    id: "sydney-cbd",
+    name: "Sydney CBD",
+    note: "Photogrammetric surface — towers, trees and the harbour edge, captured from Google 3D tiles.",
+    tag: "Place · Surface",
+    color: "#9aa4b8",
+    demo: "place-sydney-cbd",
+    href: "/places/sydney-cbd",
+  },
+  {
+    id: "manhattan-midtown",
+    name: "Midtown Manhattan",
+    note: "Mapped outlines — OpenStreetMap footprints extruded into crisp blocks over sampled ground.",
+    tag: "Place · Mapped",
+    color: "#9aa4b8",
+    demo: "place-manhattan-midtown",
+    href: "/places/manhattan-midtown",
+  },
+  {
+    id: "san-francisco-downtown",
+    name: "Downtown San Francisco",
+    note: "Mapped outlines on genuine hills — blocks step up the slope instead of sitting flat.",
+    tag: "Place · Mapped",
+    color: "#9aa4b8",
+    demo: "place-san-francisco-downtown",
+    href: "/places/san-francisco-downtown",
+  },
+  {
+    id: "contour-spiral-vase",
+    name: "Contour spiral vase",
+    note: "A revolved profile with fine helical ribs and a wall thickness that slices without infill.",
+    tag: "Revolve",
+    color: "#7b63ce",
+    demo: "contour-spiral-vase",
+  },
+  {
+    id: "type-specimen",
+    name: "Type specimen",
+    note: "Any of 1,900+ Google Fonts, extruded and bevelled to an exact letter height.",
+    tag: "Text",
+    color: "#e58fb4",
+    demo: "type-specimen",
+  },
+  {
+    id: "cellular-lattice",
+    name: "Cellular lattice",
+    note: "A Voronoi strut lattice — light, rigid, and solid enough to print without infill.",
+    tag: "Lattice",
+    color: "#4aa3c9",
+    demo: "cellular-lattice",
+  },
+];
+
+function Gallery() {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {GALLERY.map((item) => (
+        <div key={item.id} className="overflow-hidden rounded-2xl border border-border bg-card">
+          <ModelStage document={item.document} demo={item.demo} color={item.color} className="h-48 w-full" />
+          <div className="border-t border-border p-3.5">
+            <div className="flex items-center gap-2">
+              <p className="font-heading text-sm font-semibold">{item.name}</p>
+              <span className="ml-auto shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                {item.tag}
+              </span>
+            </div>
+            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{item.note}</p>
+            <div className="mt-3 flex items-center gap-2">
+              <a
+                href={refDownloadUrl(item)}
+                download={`${item.id}.stl`}
+                className="flex h-7 items-center gap-1.5 rounded-lg border border-border px-2 text-[11px] font-medium hover:bg-secondary"
+              >
+                <Download size={12} /> STL
+              </a>
+              <Link
+                href={item.href ?? refEditorUrl(item)}
+                className="flex h-7 items-center gap-1 rounded-lg bg-secondary px-2 text-[11px] font-medium hover:bg-secondary/70"
+              >
+                {item.href ? "About" : "Open"} <ArrowRight size={12} />
+              </Link>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const STEPS = [
   { label: "Ask", body: "Describe it in plain words — “a sign that says SYDNEY”." },
   { label: "Refine", body: "Taller, rounder, a softer font. The model updates as you talk." },
@@ -632,6 +757,30 @@ export function HomePage() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Gallery */}
+      <section id="gallery" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="font-heading text-3xl font-semibold tracking-tight sm:text-4xl">
+            Real models, compiled on this page
+          </h2>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+            Type, vessels and lattices — and whole cities, captured from photogrammetry
+            or mapped outlines. Every tile is a live STL, not a screenshot.
+          </p>
+        </div>
+        <div className="mt-10">
+          <Gallery />
+        </div>
+        <div className="mt-6 flex justify-center">
+          <Link
+            href="/places"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-secondary"
+          >
+            Browse every place <ArrowRight size={14} />
+          </Link>
         </div>
       </section>
 

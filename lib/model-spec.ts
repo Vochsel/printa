@@ -357,6 +357,48 @@ const organicSourceSchema = z.object({
   smoothness: finite.min(0).max(2).default(0.75).describe("Blend radius at branch intersections"),
 }).strict();
 
+/**
+ * A real place, baked into the document.
+ *
+ * Geometry sources are evaluated synchronously, so this cannot reach out for
+ * map tiles while it builds. Instead the coordinates stay in the spec — so the
+ * place remains identifiable and can be re-fetched later — alongside a baked
+ * surface and footprints captured when it was created. A document is then
+ * self-contained, deterministic, and renders the same offline as online.
+ */
+const placeSurfaceSchema = z.object({
+  grid: z.number().int().min(8).max(512).describe("Samples across the baked square"),
+  minM: finite.describe("Ground height of the lowest sample, in metres"),
+  maxM: finite.describe("Ground height of the highest sample, in metres"),
+  heights: z.string().max(1_400_000).describe("base64 uint16 grid, row-major, spanning minM..maxM"),
+}).strict();
+
+const placeFootprintsSchema = z.object({
+  count: z.number().int().min(0).max(20_000),
+  data: z.string().max(4_000_000).describe("base64 packed outlines: per building an int16 point count, int16 x/y decimetres from centre, then a uint16 height in decimetres"),
+}).strict();
+
+const placeSourceSchema = z.object({
+  type: z.literal("place"),
+  label: z.string().max(160).default("").describe("Human name of the place, used for filenames and titles"),
+  lat: finite.min(-90).max(90),
+  lng: finite.min(-180).max(180),
+  radiusM: positive.max(20_000).default(300).describe("Half-width of the captured ground, in real metres"),
+  shape: z.enum(["circle", "square"]).default("circle"),
+  capture: z.enum(["surface", "buildings"]).default("surface")
+    .describe("surface bakes a photogrammetric skyline; buildings extrudes mapped footprints over sampled ground"),
+  size: positive.default(120).describe("Width or diameter of the finished model, in document units"),
+  plinth: nonNegative.max(80).default(4).describe("Solid base below the lowest ground"),
+  frame: nonNegative.max(40).default(0).describe("Raised rim thickness; 0 leaves the edge open"),
+  frameHeight: nonNegative.max(120).default(6),
+  exaggeration: finite.min(0.1).max(8).default(1.4).describe("Multiplies terrain and building heights"),
+  resolution: z.number().int().min(24).max(400).default(160).describe("Mesh divisions across the model"),
+  smoothing: z.number().int().min(0).max(4).default(1),
+  surface: placeSurfaceSchema.optional(),
+  footprints: placeFootprintsSchema.optional(),
+  ...bakeField,
+}).strict();
+
 export const sourceSchema = z.discriminatedUnion("type", [
   primitiveSourceSchema,
   extrudeSourceSchema,
@@ -367,6 +409,7 @@ export const sourceSchema = z.discriminatedUnion("type", [
   clothSourceSchema,
   cellularSourceSchema,
   organicSourceSchema,
+  placeSourceSchema,
 ]);
 
 export type TransformSpec = z.infer<typeof transformSchema>;

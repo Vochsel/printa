@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { DEMO_MODELS } from "../lib/demo-models";
 import { parseModelDocument, type ModelDocumentInput, type ModifierSpec } from "../lib/model-spec";
+import { getPlace } from "../lib/place-library";
+import { placeDocument } from "../lib/place-document";
 
 const defaults = {
   print: { buildVolume: [256, 256, 256] as [number, number, number], autoCenter: true, placeOnBed: true },
@@ -365,10 +367,23 @@ const addedCases = {
   },
 } as const satisfies Record<string, ModelDocumentInput>;
 
-export const BENCHMARK_SPECS = { ...DEMO_MODELS, ...addedCases } as const;
+/**
+ * Places, as benchmark fixtures.
+ *
+ * Both captures are represented because they exercise different work: a
+ * surface is one large heightfield solid, while mapped outlines produce
+ * hundreds of separate blocks that must be unioned into a manifold — by far
+ * the heavier path, and the one most likely to regress.
+ */
+const placeCases = {
+  "place-surface": placeDocument(getPlace("sydney-cbd")!),
+  "place-mapped": placeDocument(getPlace("san-francisco-downtown")!),
+} as const;
+
+export const BENCHMARK_SPECS = { ...DEMO_MODELS, ...addedCases, ...placeCases } as const;
 
 export const REQUIRED_BENCHMARK_COVERAGE = {
-  sources: ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic"],
+  sources: ["primitive", "extrude", "revolve", "text", "water", "fluid", "cloth", "cellular", "organic", "place"],
   primitives: ["box", "cylinder", "cone", "sphere", "torus"],
   modifiers: ["twist", "taper", "radialWave", "axialWave", "bend", "noise", "voronoi", "vine", "subdivide", "array", "step", "smooth", "drape", "melt"],
   graph: ["shape", "assembly", "repeat"],
@@ -378,3 +393,4 @@ export const REQUIRED_BENCHMARK_COVERAGE = {
 export const REQUIRED_STRUT_PATTERNS = ["cross", "diamond", "radial"] as const;
 export const REQUIRED_VORONOI_MODES = ["cells", "ridges", "wire"] as const;
 export const REQUIRED_SUBDIVISION_SCHEMES = ["catmull-clark", "loop", "linear"] as const;
+export const REQUIRED_PLACE_CAPTURES = ["surface", "buildings"] as const;
