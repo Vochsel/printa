@@ -1,4 +1,5 @@
 import { getDemoModel } from "@/lib/demo-registry";
+import { loadDocument } from "@/lib/document-store";
 import { decodeModelDocument, encodeModelDocument, parseModelDocument, stringifyModelDocument } from "@/lib/model-spec";
 import { inspectProceduralModel } from "@/lib/procedural-mesh";
 
@@ -19,10 +20,11 @@ export function OPTIONS() {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { spec?: string | unknown; encoded?: string; demo?: string; format?: "json" | "yaml" };
+    const body = await request.json() as { spec?: string | unknown; encoded?: string; demo?: string; model?: string; format?: "json" | "yaml" };
     const demo = getDemoModel(body.demo);
-    const input = demo ?? (body.encoded ? decodeModelDocument(body.encoded) : body.spec);
-    if (!input) throw new Error("Provide a model spec or demo id.");
+    const stored = demo ? null : await loadDocument(body.model);
+    const input = demo ?? stored ?? (body.encoded ? decodeModelDocument(body.encoded) : body.spec);
+    if (!input) throw new Error("Provide a model spec, a demo id or a stored model id.");
     const parsed = parseModelDocument(input);
     const result = await inspectProceduralModel(parsed);
     const encoded = encodeModelDocument(result.document);

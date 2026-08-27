@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -30,6 +31,14 @@ import { cn } from "@/lib/utils";
 import { SiteFooter } from "@/components/site-footer";
 import { TemplateGlyph } from "@/components/template-glyph";
 import { TEMPLATES, getTemplate, templateDownloadUrl, templateEditorUrl } from "@/lib/templates";
+import { HANDOFF_EDITOR_URL, stashDocument } from "@/lib/model-handoff";
+import {
+  capturePlace,
+  placeCaptureDocument,
+  searchPlaces,
+  MAX_CAPTURE_RADIUS_M,
+  type PlaceSearchHit,
+} from "@/lib/place-capture";
 
 // ---------------------------------------------------------------------------
 // Everything on this page is built from the platform's real schema and compiled
@@ -65,8 +74,20 @@ const refDownloadUrl = (ref: ModelRef) =>
 const refEditorUrl = (ref: ModelRef) =>
   ref.demo ? `/editor?demo=${ref.demo}` : editorUrl(ref.document);
 
+/** Past this a query string is refused with a 431 before it reaches the compiler. */
+const SPEC_URL_LIMIT = 6000;
+
+const fitsUrl = (ref: ModelRef) => Boolean(ref.demo) || JSON.stringify(ref.document ?? null).length <= SPEC_URL_LIMIT;
+
 async function loadGeometry(ref: ModelRef, signal: AbortSignal) {
-  const response = await fetch(refPreviewUrl(ref), { signal });
+  const response = fitsUrl(ref)
+    ? await fetch(refPreviewUrl(ref), { signal })
+    : await fetch("/api/model/stl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: ref.document, preview: true }),
+        signal,
+      });
   if (!response.ok) throw new Error(`model ${response.status}`);
   const geometry = new STLLoader().parse(await response.arrayBuffer());
   geometry.computeBoundingBox();
@@ -298,10 +319,37 @@ function ModelStage({ document, demo, color = "#ff4d8b", className }: { document
 
 const POPULAR_FONTS = ["Poppins", "Space Grotesk", "Bebas Neue", "Pacifico", "Playfair Display", "Lobster"];
 
+/**
+ * The menu is portalled to the body rather than positioned inside the card.
+ *
+ * The workbench clips its corners with overflow-hidden — it has to, or the
+ * viewport's canvas would square them off — and an absolutely positioned menu
+ * inside it is cut off at the card's edge. Fixed coordinates measured from the
+ * button escape the clip; they are re-measured while the menu is open, so it
+ * stays on the button through a scroll or a resize.
+ */
+function useAnchorRect(open: boolean, ref: React.RefObject<HTMLElement | null>) {
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const measure = () => { if (ref.current) setRect(ref.current.getBoundingClientRect()); };
+    measure();
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", measure, true);
+      window.removeEventListener("resize", measure);
+    };
+  }, [open, ref]);
+  return rect;
+}
+
 function FontPicker({ value, onChange }: { value: string; onChange: (font: string) => void }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [fonts, setFonts] = useState<string[]>(POPULAR_FONTS);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const anchor = useAnchorRect(open, buttonRef);
 
   useEffect(() => {
     if (!open || fonts.length > POPULAR_FONTS.length) return;
@@ -320,9 +368,14 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
     return (needle ? fonts.filter((f) => f.toLowerCase().includes(needle)) : fonts).slice(0, 80);
   }, [fonts, query]);
 
+  // Below the button when there is room, above it when there is not.
+  const menuHeight = 300;
+  const dropUp = anchor ? anchor.bottom + menuHeight > window.innerHeight && anchor.top > menuHeight : false;
+
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-input bg-background px-3 text-sm outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
@@ -330,8 +383,19 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
         <span className="truncate">{value}</span>
         <ChevronDown size={14} className={cn("shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
-      {open && (
-        <div className="absolute z-30 mt-1.5 w-full overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
+      {open && anchor && createPortal(
+        <>
+          {/* A click anywhere else closes it, the way a native select does. */}
+          <div className="fixed inset-0 z-40" onMouseDown={() => setOpen(false)} />
+          <div
+            className="fixed z-50 overflow-hidden rounded-xl border border-border bg-popover shadow-xl"
+            style={{
+              left: anchor.left,
+              width: anchor.width,
+              top: dropUp ? undefined : anchor.bottom + 6,
+              bottom: dropUp ? window.innerHeight - anchor.top + 6 : undefined,
+            }}
+          >
           <label className="flex h-10 items-center gap-2 border-b border-border px-3 text-muted-foreground">
             <Search size={13} />
             <input
@@ -358,8 +422,10 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
               </button>
             ))}
             {!matches.length && <p className="px-2.5 py-3 text-center text-xs text-muted-foreground">No fonts match.</p>}
+            </div>
           </div>
-        </div>
+        </>,
+        window.document.body,
       )}
     </div>
   );
@@ -389,8 +455,11 @@ const GLYPH_VASE: Glyph = ({ className }) => (
 const GLYPH_TAG: Glyph = ({ className }) => (
   <svg viewBox="0 0 24 24" className={className} {...stroke}><rect x="3" y="8" width="18" height="9" rx="4.5" /><circle cx="7" cy="12.5" r="1.6" /><path d="M12 11h5" /></svg>
 );
-const GLYPH_PRISM: Glyph = ({ className }) => (
-  <svg viewBox="0 0 24 24" className={className} {...stroke}><path d="M6 20 8 4h8l2 16z" /><path d="M7 14h10M7.5 9h9" /></svg>
+const GLYPH_PLACE: Glyph = ({ className }) => (
+  <svg viewBox="0 0 24 24" className={className} {...stroke}><path d="M3 8.5 9 5.5l6 3 6-3v10l-6 3-6-3-6 3z" /><path d="M9 5.5v10M15 8.5v10" /></svg>
+);
+const GLYPH_CELLS: Glyph = ({ className }) => (
+  <svg viewBox="0 0 24 24" className={className} {...stroke}><path d="M12 3l4 2.3v4.6L12 12l-4-2.1V5.3z" /><path d="M6 12.4l4 2.3v4.6L6 21.4l-4-2.3v-4.6z" /><path d="M18 12.4l4 2.3v4.6l-4 2.1-4-2.1v-4.6z" /></svg>
 );
 const GLYPH_LANTERN: Glyph = ({ className }) => (
   <svg viewBox="0 0 24 24" className={className} {...stroke}><path d="M7 4h10l-1.5 16h-7z" /><path d="M10 4c-.6 5.5-.6 10.5 0 16M14 4c.6 5.5.6 10.5 0 16" /></svg>
@@ -449,8 +518,8 @@ const EXAMPLES: Example[] = [
     },
   },
   {
-    id: "prism", name: "Prism vase", blurb: "A square column with a helical twist and taper.", color: "#4aa3c9", glyph: GLYPH_PRISM,
-    document: { version: "1.0", name: "Prism vase", units: "mm", root: { kind: "shape", id: "p", source: { type: "primitive", shape: "box", width: 46, depth: 46, height: 128, segments: 10 }, modifiers: [{ type: "twist", angleDeg: 150, start: 0, end: 1 }, { type: "taper", from: 1, to: 0.62 }] } },
+    id: "shade", name: "Cell shade", blurb: "A spun shade remeshed into its own cell walls.", color: "#4aa3c9", glyph: GLYPH_CELLS,
+    document: { version: "1.0", name: "Cell shade", units: "mm", root: { kind: "shape", id: "s", source: { type: "revolve", profile: [[30, 0], [46, 34], [52, 68], [44, 96]], wall: 3, profileSegments: 64, bottomCap: false, interpolation: "catmull-rom" }, modifiers: [{ type: "voronoi", amplitude: 2.2, scale: 20, seed: 4, mode: "wire", contrast: 1.6 }], material: "pla-matte" } },
   },
   {
     id: "lantern", name: "Twisted lantern", blurb: "A fluted column twisted along its height.", color: "#ff4d8b", glyph: GLYPH_LANTERN,
@@ -461,6 +530,127 @@ const EXAMPLES: Example[] = [
     document: { version: "1.0", name: "Fluted bowl", units: "mm", root: { kind: "shape", id: "w", source: { type: "revolve", profile: [[10, 0], [46, 8], [52, 34], [50, 40]], wall: 2.4, bottomCap: true, interpolation: "catmull-rom" }, modifiers: [{ type: "radialWave", amplitude: 1.6, count: 20, axialTurns: 0 }] } },
   },
 ];
+
+/**
+ * The hero's map example.
+ *
+ * Everything else on this page is a document that already exists; this one
+ * goes and gets its own. Search resolves an address or a landmark, capture
+ * pulls the building outlines and the ground under them, and the result is an
+ * ordinary model document the same stage renders — so a visitor's first model
+ * can be the street they are sitting on.
+ */
+function PlaceControls({
+  captured,
+  onCaptured,
+}: {
+  captured: { name: string; document: unknown } | null;
+  onCaptured: (result: { name: string; document: unknown } | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<PlaceSearchHit[] | null>(null);
+  const [target, setTarget] = useState<PlaceSearchHit | null>(null);
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const search = async () => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2 || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const results = await searchPlaces(trimmed);
+      setHits(results);
+      if (results.length === 0) setError(`Nothing found for “${trimmed}”.`);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Search is unavailable.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const capture = async (hit: PlaceSearchHit) => {
+    setHits(null);
+    setTarget(hit);
+    setBusy(true);
+    setError("");
+    setStatus("Reading the map…");
+    try {
+      const radiusM = Math.min(hit.radiusM, MAX_CAPTURE_RADIUS_M.buildings);
+      const result = await capturePlace(
+        { lat: hit.lat, lng: hit.lng, radiusM, capture: "buildings", label: hit.label },
+        { onProgress: (stage, done, total) => setStatus(total > 1 ? `${stage} ${done}/${total}` : stage) },
+      );
+      const label = hit.label.split(",")[0]?.trim() || hit.label;
+      onCaptured({
+        name: label,
+        document: placeCaptureDocument({ name: label, lat: hit.lat, lng: hit.lng, radiusM, capture: "buildings", baked: result }),
+      });
+      setStatus(result.note);
+    } catch (nextError) {
+      onCaptured(null);
+      setError(nextError instanceof Error ? nextError.message : "That place could not be captured.");
+      setStatus("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-2">
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <label className="grid gap-1.5">
+          <span className="text-[11px] font-medium text-muted-foreground">Anywhere on Earth</span>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void search(); } }}
+            placeholder="An address, a suburb, a landmark…"
+            className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => void search()}
+          disabled={busy || query.trim().length < 2}
+          className="mt-auto flex h-10 items-center gap-1.5 rounded-xl border border-border px-3.5 text-sm font-medium transition-colors hover:bg-secondary disabled:opacity-40"
+        >
+          {busy ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />} Find
+        </button>
+      </div>
+
+      {hits && hits.length > 0 && (
+        <div className="overflow-hidden rounded-xl border border-border bg-popover">
+          {hits.slice(0, 5).map((hit) => (
+            <button
+              key={`${hit.lat},${hit.lng},${hit.label}`}
+              type="button"
+              onClick={() => void capture(hit)}
+              className="grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2 text-left hover:bg-secondary"
+            >
+              <MapPin size={14} className="text-muted-foreground" />
+              <span className="truncate text-xs">{hit.label}</span>
+              <small className="text-[10px] tabular-nums text-muted-foreground">{hit.radiusM} m</small>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        {error
+          ? error
+          : busy
+            ? status
+            : captured
+              ? `${captured.name} · ${status || "captured from OpenStreetMap"}`
+              : target
+                ? status
+                : "Buildings and streets from OpenStreetMap, over ground sampled from open terrain data."}
+      </p>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Workbench — the whole product in one block: pick a form on the left, watch it
@@ -473,18 +663,60 @@ function Workbench() {
   const [font, setFont] = useState("Poppins");
   const [depth, setDepth] = useState(14);
 
+  const [place, setPlace] = useState<{ name: string; document: unknown } | null>(null);
+  const [downloading, setDownloading] = useState(false);
+
   const yourText = useMemo(() => textDoc({ text, font, depth, size: 32 }), [text, font, depth]);
   const example = EXAMPLES.find((item) => item.id === active);
-  const document = example ? example.document : yourText;
-  const color = example ? example.color : "#ff4d8b";
-  const name = example ? example.name : text || "Your text";
-  const blurb = example ? example.blurb : "Any Google font, extruded and bevelled.";
-  const filename = `${(example ? example.id : text || "printa").toLowerCase()}.stl`;
+  const isPlace = active === "place";
+
+  // Until someone captures their own, the map example shows a real one.
+  const ref: ModelRef = isPlace
+    ? (place ? { document: place.document } : { demo: "place-london-city" })
+    : { document: example ? example.document : yourText };
+
+  const color = isPlace ? "#5f8f6a" : example ? example.color : "#ff4d8b";
+  const name = isPlace ? place?.name ?? "The City of London" : example ? example.name : text || "Your text";
+  const blurb = isPlace
+    ? "Any city on Earth, captured from the map and closed into a printable solid."
+    : example
+      ? example.blurb
+      : "Any Google font, extruded and bevelled.";
+  const filename = `${(isPlace ? (place?.name ?? "place") : example ? example.id : text || "printa").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.stl`;
 
   const items: { id: string; name: string; glyph: Glyph }[] = [
     { id: "text", name: "Your text", glyph: GLYPH_TEXT },
     ...EXAMPLES.map(({ id, name: label, glyph }) => ({ id, name: label, glyph })),
+    { id: "place", name: "Your city", glyph: GLYPH_PLACE },
   ];
+
+  // A captured place is far too large for a link, so both actions go through
+  // the document itself: the editor picks it up from this tab's storage, and
+  // the STL is compiled over POST and saved as a blob.
+  const linkable = fitsUrl(ref);
+
+  const downloadStl = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const response = await fetch("/api/model/stl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: ref.document }),
+      });
+      if (!response.ok) throw new Error("compile failed");
+      const url = URL.createObjectURL(await response.blob());
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Nothing useful to say in the hero; the editor reports properly.
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
@@ -517,12 +749,14 @@ function Workbench() {
         {/* Stage + controls */}
         <div className="min-w-0">
           <ModelStage
-            document={document}
+            document={ref.document}
+            demo={ref.demo}
             color={color}
             className="h-[300px] w-full bg-[radial-gradient(circle_at_50%_-10%,#f7f3ff,transparent_72%)] sm:h-[400px]"
           />
           <div className="grid gap-3 border-t border-border p-4">
-            {!example && (
+            {isPlace && <PlaceControls captured={place} onCaptured={setPlace} />}
+            {!example && !isPlace && (
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
                 <label className="grid gap-1.5">
                   <span className="text-[11px] font-medium text-muted-foreground">Your text</span>
@@ -559,18 +793,30 @@ function Workbench() {
                 <p className="truncate text-xs text-muted-foreground">{blurb}</p>
               </div>
               <a
-                href={editorUrl(document)}
+                href={linkable ? refEditorUrl(ref) : HANDOFF_EDITOR_URL}
+                onClick={() => { if (!linkable) stashDocument(ref.document); }}
                 className="flex h-10 items-center gap-1.5 rounded-xl border border-border px-3.5 text-sm font-medium transition-colors hover:bg-secondary"
               >
                 Open in editor <ArrowRight size={14} />
               </a>
-              <a
-                href={downloadUrl(document)}
-                download={filename}
-                className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                <Download size={15} /> Download STL
-              </a>
+              {linkable ? (
+                <a
+                  href={refDownloadUrl(ref)}
+                  download={filename}
+                  className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                >
+                  <Download size={15} /> Download STL
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void downloadStl()}
+                  disabled={downloading}
+                  className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {downloading ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Download STL
+                </button>
+              )}
             </div>
           </div>
         </div>

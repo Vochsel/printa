@@ -1,4 +1,5 @@
 import { getDemoModel } from "@/lib/demo-registry";
+import { loadDocument } from "@/lib/document-store";
 import { decodeModelDocument, parseModelDocument } from "@/lib/model-spec";
 import { MODEL_STL_CORS_HEADERS } from "@/lib/model-stl-cors";
 import { createProceduralStl, makeProceduralFilename, proceduralCacheMetrics } from "@/lib/procedural-mesh";
@@ -11,6 +12,10 @@ async function inputFromRequest(request: Request) {
   const preview = url.searchParams.get("preview") === "true";
   const demo = getDemoModel(url.searchParams.get("demo"));
   if (demo) return { input: demo, preview };
+  // A stored document — a captured place, or something someone saved — is
+  // addressed by key, because the document itself will not fit in a URL.
+  const stored = await loadDocument(url.searchParams.get("model"));
+  if (stored) return { input: stored, preview };
   const encoded = url.searchParams.get("spec");
   if (encoded) {
     const compact = encoded.replace(/=+$/, "");
@@ -26,7 +31,12 @@ async function inputFromRequest(request: Request) {
     const text = await request.text();
     const contentType = request.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
-      const body = JSON.parse(text) as { spec?: string | unknown; preview?: boolean };
+      const body = JSON.parse(text) as { spec?: string | unknown; model?: string; preview?: boolean };
+      if (body.model) {
+        const document = await loadDocument(body.model);
+        if (!document) throw new Error("That model id is not in the store.");
+        return { input: document, preview: body.preview === true };
+      }
       return { input: parseModelDocument(body.spec ?? body), preview: body.preview === true };
     }
     return { input: parseModelDocument(text), preview: false };

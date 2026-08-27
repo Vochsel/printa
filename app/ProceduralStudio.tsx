@@ -60,6 +60,7 @@ import { ChatPanel } from "@/components/editor/ChatPanel";
 import { BrandLink } from "@/components/brand-link";
 import { DEMO_MODEL_CARDS, type DemoModelId } from "@/lib/demo-models";
 import { newPlaceDocument } from "@/lib/place-capture";
+import { takeHandoff } from "@/lib/model-handoff";
 import { printMaterialPreset, type PrintMaterialPreset } from "@/lib/material-presets";
 import type { ModelDocument, ModelDocumentInput } from "@/lib/model-spec";
 import { initSfx, isSfxEnabled, setSfxEnabled, sfx, sfxThrottled } from "@/lib/sfx";
@@ -84,6 +85,8 @@ type ShadingMode = "smooth" | "flat";
 
 const SHADING_KEY = "printa:shading";
 const SIDEBAR_KEY = "printa:sidebar-width";
+const CHAT_DOCKED_KEY = "printa:assistant-docked";
+const CHAT_WIDTH_KEY = "printa:assistant-width";
 
 /**
  * How much document a URL will carry.
@@ -846,7 +849,10 @@ export function ProceduralStudio() {
   const [loadOpen, setLoadOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [specOpen, setSpecOpen] = useState(false);
+  // The assistant is a docked panel, not a popover: once someone works with
+  // it beside the model, closing it on every reload is just a chore.
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatWidth, setChatWidth] = useState(340);
   const [saveName, setSaveName] = useState("");
   const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
   const liveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -857,6 +863,16 @@ export function ProceduralStudio() {
   const sidebarDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const frameModelRef = useRef<() => void>(() => undefined);
   const registerFrame = useCallback((frame: () => void) => { frameModelRef.current = frame; }, []);
+
+  const setChatDocked = useCallback((docked: boolean) => {
+    setChatOpen(docked);
+    window.localStorage.setItem(CHAT_DOCKED_KEY, String(docked));
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => window.localStorage.setItem(CHAT_WIDTH_KEY, String(chatWidth)), 250);
+    return () => window.clearTimeout(timer);
+  }, [chatWidth]);
 
   const handleModelReady = useCallback(() => {
     setModelReady(true);
@@ -872,6 +888,9 @@ export function ProceduralStudio() {
     const raf = requestAnimationFrame(() => {
       const storedWidth = Number(window.localStorage.getItem(SIDEBAR_KEY));
       if (Number.isFinite(storedWidth) && storedWidth >= 264 && storedWidth <= 520) setSidebarWidth(storedWidth);
+      const storedChat = Number(window.localStorage.getItem(CHAT_WIDTH_KEY));
+      if (Number.isFinite(storedChat) && storedChat >= 280 && storedChat <= 560) setChatWidth(storedChat);
+      setChatOpen(window.localStorage.getItem(CHAT_DOCKED_KEY) === "true");
     });
     return () => cancelAnimationFrame(raf);
   }, []);
@@ -931,7 +950,7 @@ export function ProceduralStudio() {
     }
   }, []);
 
-  const inspect = useCallback(async (payload: { demo?: string; spec?: string | ModelDocument | ModelDocumentInput; encoded?: string }) => {
+  const inspect = useCallback(async (payload: { demo?: string; model?: string; spec?: string | ModelDocument | ModelDocumentInput; encoded?: string }) => {
     liveAbortRef.current?.abort();
     liveSequenceRef.current += 1;
     setLoading(true);
@@ -946,7 +965,11 @@ export function ProceduralStudio() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Model spec is invalid.");
-      const demoUrl = payload.demo ? `/editor?demo=${encodeURIComponent(payload.demo)}` : "/editor";
+      const demoUrl = payload.demo
+        ? `/editor?demo=${encodeURIComponent(payload.demo)}`
+        : payload.model
+          ? `/editor?model=${encodeURIComponent(payload.model)}`
+          : "/editor";
       const links = specLinks(data.document, demoUrl);
       setResult({ ...data, stlUrl: links.stlUrl, studioUrl: links.studioUrl });
       setDocument(data.document);
@@ -958,6 +981,9 @@ export function ProceduralStudio() {
       window.history.replaceState(window.history.state, "", links.studioUrl);
       if (links.encoded) {
         setPreview({ key: links.stlUrl, url: `/api/model/stl?spec=${links.encoded}&preview=true` });
+      } else if (payload.model) {
+        // A stored document is addressed by key everywhere, including here.
+        setPreview({ key: `model-${payload.model}`, url: `/api/model/stl?model=${encodeURIComponent(payload.model)}&preview=true` });
       } else if (payload.demo) {
         // A place carries its captured ground, which no query string will
         // hold — but its demo id says the same thing in twenty characters,
@@ -1037,10 +1063,16 @@ export function ProceduralStudio() {
     // `?new=place` starts an empty place, which is how the places gallery
     // hands someone a map of their own to capture.
     const blank = params.get("new");
+    // A document too large for a URL is left in this tab's storage by whoever
+    // sent us here — the landing page's map capture, mostly.
+    const handoff = params.get("handoff") ? takeHandoff() : null;
+    const model = params.get("model");
     const fallback = mode === "procedural" ? "contour-spiral-vase" : "type-specimen";
     const nextDemo = DEMO_MODEL_CARDS.some((card) => card.id === demo) ? demo! : fallback;
     const timer = window.setTimeout(() => {
-      if (blank === "place") void inspect({ spec: newPlaceDocument() });
+      if (handoff) void inspect({ spec: handoff as ModelDocumentInput });
+      else if (model) void inspect({ model });
+      else if (blank === "place") void inspect({ spec: newPlaceDocument() });
       else if (encoded) void inspect({ encoded });
       else void inspect({ demo: nextDemo });
     }, 0);
@@ -1178,7 +1210,7 @@ export function ProceduralStudio() {
               variant={chatOpen ? "secondary" : "ghost"}
               size="sm"
               className={cn(!chatOpen && "text-[var(--accent-tool)]")}
-              onClick={() => { sfx("page"); setChatOpen((open) => !open); }}
+              onClick={() => { sfx("page"); setChatDocked(!chatOpen); }}
               data-cuelume-press
             >
               <Sparkles /> <span className="hidden sm:inline">Assistant</span>
@@ -1427,8 +1459,11 @@ export function ProceduralStudio() {
           {chatOpen && (
             <ChatPanel
               currentSpec={spec}
-              onClose={() => setChatOpen(false)}
+              width={chatWidth}
+              onResize={setChatWidth}
+              onClose={() => setChatDocked(false)}
               onApply={(specJson) => { try { void inspect({ spec: JSON.parse(specJson) as ModelDocument }); } catch { /* ignore malformed */ } }}
+              onApplyModel={(modelId) => void inspect({ model: modelId })}
             />
           )}
         </div>

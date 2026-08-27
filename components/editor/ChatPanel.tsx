@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { ArrowUp, ImagePlus, LoaderCircle, Sparkles, TriangleAlert, Wand2, X } from "lucide-react";
+import { ArrowUp, ImagePlus, LoaderCircle, MapPin, Sparkles, TriangleAlert, Wand2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { sfx } from "@/lib/sfx";
@@ -11,17 +11,25 @@ import { sfx } from "@/lib/sfx";
 const SUGGESTIONS = [
   "A hexagonal pencil pot with a twist",
   "A tall rippled vase, 140mm",
+  "A model of the Brooklyn Bridge, 400m across",
   "A nameplate that says HELLO in a bold font",
 ];
 
 export function ChatPanel({
   currentSpec,
+  width,
   onApply,
+  onApplyModel,
   onClose,
+  onResize,
 }: {
   currentSpec: string;
+  width: number;
   onApply: (specJson: string) => void;
+  /** A captured place is addressed by id: its data never travels through chat. */
+  onApplyModel: (modelId: string) => void;
   onClose: () => void;
+  onResize: (width: number) => void;
 }) {
   const specRef = useRef(currentSpec);
   useEffect(() => { specRef.current = currentSpec; }, [currentSpec]);
@@ -35,24 +43,40 @@ export function ChatPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const appliedRef = useRef<Set<string>>(new Set());
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const busy = status === "submitted" || status === "streaming";
 
-  // Apply the newest successful build_model tool output to the editor (once each).
+  // Apply the newest successful tool output to the editor (once each). A
+  // captured place comes back as an id rather than a spec, because its baked
+  // ground is hundreds of kilobytes that has no business in a chat transcript.
   useEffect(() => {
     for (const message of messages) {
       if (message.role !== "assistant") continue;
       for (const part of message.parts) {
-        if (part.type !== "tool-build_model" || part.state !== "output-available") continue;
-        const output = part.output as { ok?: boolean; spec?: string } | undefined;
+        if (part.type !== "tool-build_model" && part.type !== "tool-capture_place") continue;
+        if (part.state !== "output-available") continue;
         const callId = part.toolCallId;
-        if (output?.ok && output.spec && !appliedRef.current.has(callId)) {
+        if (appliedRef.current.has(callId)) continue;
+
+        if (part.type === "tool-build_model") {
+          const output = part.output as { ok?: boolean; spec?: string; modelId?: string } | undefined;
+          if (!output?.ok) continue;
           appliedRef.current.add(callId);
           sfx("ready");
-          onApply(output.spec);
+          if (output.modelId) onApplyModel(output.modelId);
+          else if (output.spec) onApply(output.spec);
+        }
+
+        if (part.type === "tool-capture_place") {
+          const output = part.output as { ok?: boolean; modelId?: string } | undefined;
+          if (!output?.ok || !output.modelId) continue;
+          appliedRef.current.add(callId);
+          sfx("ready");
+          onApplyModel(output.modelId);
         }
       }
     }
-  }, [messages, onApply]);
+  }, [messages, onApply, onApplyModel]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -71,7 +95,32 @@ export function ChatPanel({
   const attachedCount = files?.length ?? 0;
 
   return (
-    <aside className="flex h-full min-h-0 w-[320px] shrink-0 flex-col border-l border-border bg-background">
+    <>
+      {/* Docked, so it keeps its width between sessions like the inspector. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize assistant"
+        className="group relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize"
+        onPointerDown={(event) => {
+          dragRef.current = { startX: event.clientX, startWidth: width };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          const drag = dragRef.current;
+          if (!drag) return;
+          onResize(Math.min(560, Math.max(280, drag.startWidth + drag.startX - event.clientX)));
+        }}
+        onPointerUp={(event) => {
+          if (!dragRef.current) return;
+          dragRef.current = null;
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }}
+      >
+        <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-[var(--accent-tool)]" />
+      </div>
+
+    <aside className="flex h-full min-h-0 shrink-0 flex-col border-l border-border bg-background" style={{ width: `min(${width}px, 46vw)` }}>
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
         <Sparkles size={14} className="text-[var(--accent-tool)]" />
         <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/80">Assistant</span>
@@ -119,6 +168,32 @@ export function ChatPanel({
               if (part.type === "file" && part.mediaType?.startsWith("image/")) {
                 // eslint-disable-next-line @next/next/no-img-element -- user-attached data URLs, not optimizable assets
                 return <img key={index} src={part.url} alt={part.filename ?? "attachment"} className="max-h-32 max-w-[92%] rounded-lg border border-border object-cover" />;
+              }
+              if (part.type === "tool-find_place" || part.type === "tool-capture_place") {
+                const output = part.output as { ok?: boolean; error?: string; name?: string; note?: string; results?: Array<{ label: string }> } | undefined;
+                const done = part.state === "output-available";
+                const searching = part.type === "tool-find_place";
+                const label = !done
+                  ? searching ? "Looking it up…" : "Capturing the map…"
+                  : output?.ok
+                    ? searching
+                      ? `Found ${output.results?.[0]?.label ?? "a place"}`
+                      : `Captured ${output.name ?? "the map"}${output.note ? ` · ${output.note}` : ""}`
+                    : output?.error ?? "That did not work";
+                return (
+                  <div
+                    key={index}
+                    className={cn(
+                      "flex items-start gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium",
+                      done && output?.ok ? "border-emerald-300/50 bg-emerald-50 text-emerald-700"
+                        : done ? "border-amber-300/50 bg-amber-50 text-amber-700"
+                        : "border-border bg-secondary text-muted-foreground",
+                    )}
+                  >
+                    {done ? <MapPin size={11} className="mt-0.5 shrink-0" /> : <LoaderCircle size={11} className="mt-0.5 shrink-0 animate-spin" />}
+                    <span className="min-w-0">{label}</span>
+                  </div>
+                );
               }
               if (part.type === "tool-build_model") {
                 const output = part.output as { ok?: boolean; name?: string; error?: string } | undefined;
@@ -211,5 +286,6 @@ export function ChatPanel({
         </div>
       </form>
     </aside>
+    </>
   );
 }

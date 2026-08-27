@@ -7,14 +7,22 @@ import {
 } from "ai";
 import { z } from "zod";
 import { encodeModelDocument, modelSpecJsonSchema, parseModelDocument, stringifyModelDocument, type ModelDocument } from "@/lib/model-spec";
+import { bakePlace } from "@/lib/place-bake";
+import { placeCaptureDocument } from "@/lib/place-capture";
+import { searchPlaces } from "@/lib/place-search";
+import { documentStoreConfigured, storeDocument } from "@/lib/document-store";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// A photogrammetric capture is a few hundred tile fetches, so a turn that
+// includes one needs longer than a turn that only writes a spec.
+export const maxDuration = 300;
 
-// "gpt 5.5 lunar" isn't a literal entry in the AI Gateway catalog; the closest
-// matches are openai/gpt-5.5 (used here) and openai/gpt-5.6-luna (the "lunar"
-// codename line). Override with PRINTA_CHAT_MODEL if you want a different one.
-const CHAT_MODEL = process.env.PRINTA_CHAT_MODEL ?? "openai/gpt-5.5";
+/** Past this a query string is refused before the compiler sees it. */
+const SPEC_URL_LIMIT = 6000;
+
+// The lunar line. Override with PRINTA_CHAT_MODEL for anything else in the
+// gateway's catalog.
+const CHAT_MODEL = process.env.PRINTA_CHAT_MODEL ?? "openai/gpt-5.6-luna";
 
 const EXAMPLE_TWIST = `{
   "version": "1.0",
@@ -64,6 +72,8 @@ ${EXAMPLE_VASE}
 Full JSON Schema for reference:
 ${JSON.stringify(modelSpecJsonSchema())}
 
+Real places: when someone asks for a model of a city, a suburb, a street or a landmark, call find_place to resolve it, then capture_place with the coordinates. That returns a finished model addressed by an id — never try to author a "place" source yourself or to copy captured data into build_model, because the captured ground is hundreds of kilobytes of packed base64. A radius of 300-500 m suits a city block; 800-1200 m suits a whole downtown, and detail is lost past that at printable scale. Mapped buildings work anywhere; the photogrammetric surface needs a key and is better for landmarks with curved roofs.
+
 Rules:
 1. To create or change the model, ALWAYS call build_model with the complete document (not a diff). When editing, start from the "Current model" the user provides and modify it.
 2. If build_model returns an error, read it and call build_model again with a corrected document.
@@ -77,6 +87,81 @@ function documentMaterial(node: ModelDocument["root"]): string {
   return documentMaterial(node.children[0]);
 }
 
+/**
+ * Finding a place, so the assistant can be asked for one by name.
+ *
+ * The same geocoder the editor's place panel uses: Google when a key is
+ * configured, OpenStreetMap otherwise. It returns coordinates and a radius
+ * rather than a model, because capturing is the expensive half and the person
+ * may have meant a different Springfield.
+ */
+const findPlace = tool({
+  description:
+    "Find a real place on Earth by name or street address. Returns candidates with coordinates and a suggested capture radius in metres. Use before capture_place when the user names somewhere.",
+  inputSchema: z.object({
+    query: z.string().describe("An address, suburb, city or landmark, e.g. \"Brooklyn Bridge\" or \"350 George St Sydney\"."),
+  }),
+  execute: async ({ query }, { abortSignal }) => {
+    try {
+      const { results, source } = await searchPlaces(query, abortSignal);
+      if (results.length === 0) return { ok: false as const, error: `Nothing found for "${query}".` };
+      return { ok: true as const, source, results: results.slice(0, 5) };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : "Place search failed." };
+    }
+  },
+});
+
+/**
+ * Capturing a place into a printable model.
+ *
+ * The baked ground and outlines are hundreds of kilobytes of base64, which
+ * has no business in a language model's context — so the document is stored
+ * and the tool returns a key. Everything downstream (preview, STL, editor)
+ * addresses it by that key, and the model only ever sees the summary.
+ */
+const capturePlaceTool = tool({
+  description:
+    "Capture a real place as a printable 3D model: mapped building outlines and streets over sampled ground, or a photogrammetric surface. Give coordinates from find_place. Returns a model id the preview and editor use — do not try to reproduce its data in build_model.",
+  inputSchema: z.object({
+    name: z.string().describe("What to call the model, e.g. \"Brooklyn Bridge\"."),
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    radiusM: z.number().min(50).max(2000).describe("Half-width of the ground to capture, in real metres. 300–500 suits a city block."),
+    capture: z.enum(["buildings", "surface"]).default("buildings")
+      .describe("buildings maps outlines and streets (works everywhere); surface is photogrammetric relief and needs a Google key."),
+    shape: z.enum(["circle", "square"]).default("circle"),
+  }),
+  execute: async ({ name, lat, lng, radiusM, capture, shape }) => {
+    if (!documentStoreConfigured()) {
+      return { ok: false as const, error: "This deployment has nowhere to store a captured place, so it cannot make map models." };
+    }
+    try {
+      const apiKey = process.env.GOOGLE_MAPS_API_KEY ?? "";
+      if (capture === "surface" && !apiKey) {
+        return { ok: false as const, error: "No Google Maps key here, so only the mapped-buildings capture is available. Retry with capture: \"buildings\"." };
+      }
+      const baked = await bakePlace({ lat, lng, radiusM, capture, label: name, apiKey });
+      const document = placeCaptureDocument({ name, lat, lng, radiusM, capture, shape, baked });
+      const parsed = parseModelDocument(document);
+      const key = await storeDocument(parsed, { name: parsed.name, kind: "capture" });
+
+      return {
+        ok: true as const,
+        name: parsed.name,
+        modelId: key,
+        note: baked.note,
+        summary: `${name}: ${radiusM * 2} m across, captured as ${capture}. ${baked.note}`,
+        previewUrl: `/api/model/stl?model=${key}&preview=true`,
+        stlUrl: `/api/model/stl?model=${key}`,
+        studioUrl: `/editor?model=${key}`,
+      };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : "That place could not be captured." };
+    }
+  },
+});
+
 const buildModel = tool({
   description: "Realize a Printa Spec 1.0 model. Pass the complete model document as a JSON string. Returns the validated model or a validation error to fix.",
   inputSchema: z.object({
@@ -87,6 +172,22 @@ const buildModel = tool({
     try {
       const document = parseModelDocument(spec);
       const encoded = encodeModelDocument(document);
+      // A document past what a query string carries is stored and addressed
+      // by key; anything else keeps travelling in the URL, which needs no
+      // store and produces a link that survives the store being emptied.
+      if (encoded.length > SPEC_URL_LIMIT && documentStoreConfigured()) {
+        const key = await storeDocument(document, { name: document.name, kind: "capture" });
+        return {
+          ok: true as const,
+          name: document.name,
+          spec: stringifyModelDocument(document, "json"),
+          material: documentMaterial(document.root),
+          modelId: key,
+          previewUrl: `/api/model/stl?model=${key}&preview=true`,
+          stlUrl: `/api/model/stl?model=${key}`,
+          studioUrl: `/editor?model=${key}`,
+        };
+      }
       return {
         ok: true as const,
         name: document.name,
@@ -117,8 +218,8 @@ export async function POST(req: Request) {
     model: CHAT_MODEL,
     system: systemParts.join("\n\n"),
     messages: await convertToModelMessages(messages),
-    tools: { build_model: buildModel },
-    stopWhen: isStepCount(4),
+    tools: { build_model: buildModel, find_place: findPlace, capture_place: capturePlaceTool },
+    stopWhen: isStepCount(6),
   });
 
   return result.toUIMessageStreamResponse();

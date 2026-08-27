@@ -148,6 +148,49 @@ export function newPlaceSource(): PlaceSource {
   };
 }
 
+/**
+ * A captured place, as a finished document.
+ *
+ * One builder for every path that captures: the editor's panel patches the
+ * source it already has, but the landing page, the assistant and anything
+ * else that starts from nothing all want the same document around the same
+ * baked data — and want it built in one place, so a default that changes
+ * changes everywhere.
+ */
+export function placeCaptureDocument(options: {
+  name: string;
+  lat: number;
+  lng: number;
+  radiusM: number;
+  capture: PlaceCaptureKind;
+  shape?: "circle" | "square";
+  baked: Pick<PlaceCaptureResult, "surface" | "footprints" | "roads">;
+}): ModelDocumentInput {
+  const { name, lat, lng, radiusM, capture, shape = "circle", baked } = options;
+  const document = newPlaceDocument() as ModelDocumentInput & { root: { source: PlaceSource } };
+  return {
+    ...document,
+    name,
+    description: `${name}, captured from the map and closed into a printable solid.`,
+    root: {
+      ...document.root,
+      source: {
+        ...newPlaceSource(),
+        label: name,
+        lat,
+        lng,
+        radiusM,
+        capture,
+        shape,
+        surface: baked.surface,
+        ...(baked.footprints ? { footprints: baked.footprints } : {}),
+        ...(baked.roads ? { roads: baked.roads } : {}),
+      },
+    },
+    metadata: { family: "place", capture },
+  } as ModelDocumentInput;
+}
+
 export function newPlaceDocument(): ModelDocumentInput {
   return {
     version: "1.0",

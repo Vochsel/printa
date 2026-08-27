@@ -11,6 +11,33 @@ import { v } from "convex/values";
  * result can show the real model without spinning up a WebGL context.
  */
 export default defineSchema({
+  /**
+   * Model documents too large to travel in a URL.
+   *
+   * A captured place carries its ground inline and runs to a couple of hundred
+   * kilobytes; a query string that size is refused with a 431. Storing the
+   * document and passing a key keeps every surface — preview, STL, editor
+   * link, a link someone sends a friend — working the same way it does for a
+   * small model, and it is the same table a saved project lives in.
+   */
+  documents: defineTable({
+    /** Short, URL-safe id the site addresses the document by. */
+    key: v.string(),
+    name: v.string(),
+    /** The document itself, as JSON — the compiler parses it on the way out. */
+    document: v.string(),
+    bytes: v.number(),
+    /** "capture" is transient; "project" is something a person saved. */
+    kind: v.union(v.literal("capture"), v.literal("project")),
+    /** WorkOS user id when a project belongs to someone. */
+    owner: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_key", ["key"])
+    .index("by_owner", ["owner", "updatedAt"])
+    .index("by_kind", ["kind", "createdAt"]),
+
   templateShots: defineTable({
     /** The template's slug, as it appears in /templates/<slug>. */
     slug: v.string(),

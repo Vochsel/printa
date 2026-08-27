@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as crons from "../crons.js";
+import type * as documents from "../documents.js";
 import type * as templateShots from "../templateShots.js";
 
 import type {
@@ -17,6 +19,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  crons: typeof crons;
+  documents: typeof documents;
   templateShots: typeof templateShots;
 }>;
 
