@@ -1,5 +1,6 @@
 import type { ModelDocumentInput } from "@/lib/model-spec";
 import { PLACES } from "@/lib/place-library";
+import { TEMPLATES, templateDemoId } from "@/lib/templates";
 
 const printDefaults = {
   buildVolume: [256, 256, 256] as [number, number, number],
@@ -428,5 +429,11 @@ export const DEMO_MODEL_CARDS = [
     name: place.name,
     description: place.blurb,
     family: "place",
+  })),
+  ...TEMPLATES.map((entry) => ({
+    id: templateDemoId(entry.slug),
+    name: entry.name,
+    description: entry.tagline,
+    family: entry.category,
   })),
 ];

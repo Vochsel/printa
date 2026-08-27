@@ -33,6 +33,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { JsonField, NumberField, PointListField, SelectField, TextField, ToggleField, VectorField } from "@/components/editor/fields";
 import { PlaceSourceFields } from "@/components/editor/place-source";
+import { ProfileCurveEditor } from "@/components/editor/profile-curve";
 import { newPlaceSource } from "@/lib/place-capture";
 import { cn } from "@/lib/utils";
 import { sfx } from "@/lib/sfx";
@@ -355,7 +356,20 @@ function SourceEditor({ source, fonts, update }: { source: SourceSpec; fonts: Fo
         <NumberField layout="row" label="Roundness" value={source.segments} min={3} max={256} onChange={(value) => set("segments", value)} />
       </>}
       {source.type === "revolve" && <>
-        <PointListField label="Profile · bottom to top" columns={["Radius (mm)", "Height (mm)"]} value={source.profile} onChange={(value) => set("profile", value)} />
+        <ProfileCurveEditor
+          profile={source.profile}
+          smooth={source.interpolation === "catmull-rom"}
+          onChange={(value) => set("profile", value)}
+        />
+        <details className="group/adv rounded-md border border-border bg-muted/40">
+          <summary className="flex min-h-8 cursor-pointer list-none items-center gap-1.5 px-2.5 text-[10px] font-semibold text-muted-foreground [&::-webkit-details-marker]:hidden">
+            Profile as numbers
+            <ChevronDown size={12} className="ml-auto transition-transform group-open/adv:rotate-180" />
+          </summary>
+          <div className="grid gap-2 border-t border-border p-2">
+            <PointListField label="Profile · bottom to top" columns={["Radius (mm)", "Height (mm)"]} value={source.profile} onChange={(value) => set("profile", value)} />
+          </div>
+        </details>
         <Grid3>
           <NumberField label="Wall" value={source.wall} min={0.1} step={0.1} unit="mm" onChange={(value) => set("wall", value)} />
           <NumberField label="Roundness" value={source.segments} min={8} max={512} onChange={(value) => set("segments", value)} />

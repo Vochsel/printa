@@ -8,8 +8,10 @@ import {
   Check,
   ChevronDown,
   Download,
+  LayoutGrid,
   Loader2,
   Lock,
+  MapPin,
   MessageSquareText,
   MousePointer2,
   Search,
@@ -25,6 +27,9 @@ import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { DEFAULT_VIEW, fitCameraToBox } from "@/lib/camera-fit";
 import { cn } from "@/lib/utils";
+import { SiteFooter } from "@/components/site-footer";
+import { TemplateGlyph } from "@/components/template-glyph";
+import { TEMPLATES, getTemplate, templateDownloadUrl, templateEditorUrl } from "@/lib/templates";
 
 // ---------------------------------------------------------------------------
 // Everything on this page is built from the platform's real schema and compiled
@@ -677,7 +682,7 @@ function Gallery() {
                 href={item.href ?? refEditorUrl(item)}
                 className="flex h-7 items-center gap-1 rounded-lg bg-secondary px-2 text-[11px] font-medium hover:bg-secondary/70"
               >
-                {item.href ? "About" : "Open"} <ArrowRight size={12} />
+                {item.href ? "About" : "Use this"} <ArrowRight size={12} />
               </Link>
             </div>
           </div>
@@ -702,9 +707,82 @@ const PRO_FEATURES = [
   "Projects & chat history",
 ];
 
+/** Eight templates that between them show what the engine does. */
+const FEATURED_SLUGS = [
+  "helix-twist-vase",
+  "voronoi-pendant-shade",
+  "house-number",
+  "hex-pen-tray",
+  "lattice-cube",
+  "coral-branch",
+  "ripple-coaster",
+  "fluted-planter",
+];
+
+const FEATURED_TEMPLATES = FEATURED_SLUGS.map((slug) => getTemplate(slug)).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+const FAQ = [
+  {
+    q: "Are the models actually printable?",
+    a: "Every model is compiled to a closed, watertight solid with printable wall thicknesses, and the STL you download is generated from the same document you see turning on the page. Nothing here is a scan or a decorative mesh that needs repairing first.",
+  },
+  {
+    q: "Do I need an account?",
+    a: "No. The editor, the templates, the city captures and STL export are free and need no sign-up. Models you save stay in your own browser.",
+  },
+  {
+    q: "Can I change a template, or is it fixed?",
+    a: "A template is a model document, not a mesh — so the wall thickness, height, segment count, font and every modifier are still parameters. Press Use this and the editor opens the same spec, recompiling as you type.",
+  },
+  {
+    q: "What can it print of my own city?",
+    a: "Search any city, suburb or landmark on Earth and capture it: either a photogrammetric surface, which keeps rooflines and trees, or mapped OpenStreetMap outlines extruded over sampled ground. The capture is baked into the document, so it prints the same offline.",
+  },
+  {
+    q: "Which file format do I get?",
+    a: "Binary STL, the format every slicer reads. Dimensions are exact millimetres, so a 120 mm model measures 120 mm on the bed with no scaling step.",
+  },
+  {
+    q: "Does it work with ChatGPT?",
+    a: "Yes. Printa is an MCP server, so an assistant can build, preview and download models through the same endpoints the editor uses.",
+  },
+];
+
+const HOME_JSON_LD = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      name: "Printa",
+      applicationCategory: "DesignApplication",
+      operatingSystem: "Any — runs in the browser",
+      description: "Create, edit and download print-ready 3D models from a spec: type, revolved profiles, lattices, simulations and real places captured from maps.",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      featureList: [
+        "Watertight STL export",
+        "Parametric model documents",
+        "1,900+ Google Fonts as 3D text",
+        "City and terrain capture",
+        "MCP endpoint for AI assistants",
+      ],
+    },
+    {
+      "@type": "FAQPage",
+      mainEntity: FAQ.map((item) => ({
+        "@type": "Question",
+        name: item.q,
+        acceptedAnswer: { "@type": "Answer", text: item.a },
+      })),
+    },
+  ],
+};
+
 export function HomePage() {
   return (
     <main className="min-h-dvh bg-background text-foreground">
+      {/* Serialised from literals defined in this file; no user input reaches it. */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(HOME_JSON_LD) }} />
+
       <nav className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2 font-heading text-[15px] font-semibold tracking-tight" aria-label="Printa home">
@@ -712,6 +790,12 @@ export function HomePage() {
             Printa
           </Link>
           <div className="ml-auto flex items-center gap-2">
+            <Link href="/templates" className="hidden h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:flex">
+              <LayoutGrid size={15} /> Templates
+            </Link>
+            <Link href="/places" className="hidden h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground md:flex">
+              <MapPin size={15} /> Places
+            </Link>
             <Link href="/chat" className="hidden h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:flex">
               <MessageSquareText size={15} /> Chat
             </Link>
@@ -784,6 +868,73 @@ export function HomePage() {
         </div>
       </section>
 
+      {/* Templates — a hundred starting points, no WebGL per card */}
+      <section id="templates" className="border-y border-border bg-secondary/30">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="font-heading text-3xl font-semibold tracking-tight sm:text-4xl">
+              Start from one of {TEMPLATES.length} templates
+            </h2>
+            <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+              Vases, lampshades, signs, desk organisers, jewellery, lattices and
+              planters — each one a document rather than a mesh, so every
+              dimension is still yours to change.
+            </p>
+          </div>
+
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {FEATURED_TEMPLATES.map((entry) => (
+              <div key={entry.slug} className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card">
+                <Link href={`/templates/${entry.slug}`} aria-label={entry.name}>
+                  <TemplateGlyph template={entry} className="aspect-[4/3] w-full bg-secondary/40" />
+                </Link>
+                <div className="flex flex-1 flex-col p-3.5">
+                  <Link href={`/templates/${entry.slug}`} className="text-sm font-semibold hover:underline">{entry.name}</Link>
+                  <p className="mt-1 flex-1 text-xs leading-relaxed text-muted-foreground">{entry.tagline}</p>
+                  <div className="mt-3 flex items-center gap-2">
+                    <Link
+                      href={templateEditorUrl(entry.slug)}
+                      className="flex h-7 flex-1 items-center justify-center gap-1 rounded-lg bg-foreground px-2 text-[11px] font-medium text-background transition hover:opacity-90"
+                    >
+                      Use this <ArrowRight size={12} />
+                    </Link>
+                    <a
+                      href={templateDownloadUrl(entry.slug)}
+                      download={`${entry.slug}.stl`}
+                      className="flex h-7 items-center gap-1.5 rounded-lg border border-border px-2 text-[11px] font-medium hover:bg-secondary"
+                    >
+                      <Download size={12} /> STL
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 flex justify-center">
+            <Link
+              href="/templates"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-4 py-2.5 text-sm font-medium text-background transition hover:opacity-90"
+            >
+              Browse all {TEMPLATES.length} templates <ArrowRight size={14} />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Questions people actually ask before they trust a generator */}
+      <section id="faq" className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
+        <h2 className="font-heading text-3xl font-semibold tracking-tight sm:text-4xl">Common questions</h2>
+        <dl className="mt-8 grid gap-6">
+          {FAQ.map((item) => (
+            <div key={item.q}>
+              <dt className="text-[15px] font-semibold">{item.q}</dt>
+              <dd className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{item.a}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
       {/* Pricing */}
       <section id="pricing" className="mx-auto max-w-4xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="mx-auto max-w-xl text-center">
@@ -831,6 +982,8 @@ export function HomePage() {
         </div>
       </section>
 
+      <SiteFooter />
+
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-muted-foreground sm:flex-row sm:px-6">
           <div className="flex items-center gap-2">
@@ -840,6 +993,7 @@ export function HomePage() {
           </div>
           <div className="flex items-center gap-5">
             <Link href="/editor" className="hover:text-foreground">Editor</Link>
+            <Link href="/templates" className="hover:text-foreground">Templates</Link>
             <Link href="/chat" className="hover:text-foreground">Chat</Link>
             <a href="/mcp" className="hover:text-foreground">MCP</a>
             <span>© 2026</span>

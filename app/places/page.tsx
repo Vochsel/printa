@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowRight, Layers, MapPin, Mountain } from "lucide-react";
 import { PLACES, placeScale } from "@/lib/place-library";
 import { placePreviewUrl } from "@/lib/place-links";
-import { PlacePreview } from "./PlacePreview";
+import { ModelTurntable } from "@/components/model-turntable";
 
 export const metadata: Metadata = {
   title: "3D printable city models",
@@ -54,7 +54,7 @@ export default function PlacesIndex() {
               href={`/places/${place.slug}`}
               className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition hover:border-foreground/25"
             >
-              <PlacePreview
+              <ModelTurntable
                 specUrl={placePreviewUrl(place)}
                 className="aspect-[4/3] w-full bg-secondary/40"
               />

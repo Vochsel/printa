@@ -11,7 +11,7 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
  * the MCP tools use — so what a visitor sees is genuinely the file they would
  * download, not a picture of one.
  */
-export function PlacePreview({
+export function ModelTurntable({
   specUrl,
   className = "",
   spin = true,

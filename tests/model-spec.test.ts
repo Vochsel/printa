@@ -7,6 +7,8 @@ import { DEMO_MODELS } from "../lib/demo-models";
 import { PLACES } from "../lib/place-library";
 import { placeDocument } from "../lib/place-document";
 import { hasCapture, newPlaceDocument, newPlaceSource } from "../lib/place-capture";
+import { TEMPLATES, TEMPLATE_CATEGORIES, templateDemoId, templatesInCategory } from "../lib/templates";
+import { getDemoModel } from "../lib/demo-registry";
 import { raiseVoids } from "../lib/place-grid";
 import { createPlaceGeometryParts } from "../lib/place-geometry";
 import { BENCHMARK_SPECS, REQUIRED_BENCHMARK_COVERAGE, REQUIRED_PLACE_CAPTURES, REQUIRED_STRUT_PATTERNS, REQUIRED_SUBDIVISION_SCHEMES, REQUIRED_VORONOI_MODES } from "../benchmarks/specs";
@@ -232,6 +234,74 @@ test("every shipped place carries the capture its document claims", () => {
     if (place.capture === "buildings") {
       assert.ok(source.footprints, `${place.slug} should ship baked footprints`);
     }
+  }
+});
+
+test("every template is a valid document with unique identity", () => {
+  assert.equal(TEMPLATES.length, 100, "the catalogue advertises a hundred templates");
+
+  const slugs = new Set<string>();
+  const names = new Set<string>();
+  for (const entry of TEMPLATES) {
+    assert.match(entry.slug, /^[a-z0-9-]+$/, `${entry.slug} should be a URL-safe slug`);
+    assert.ok(!slugs.has(entry.slug), `${entry.slug} is duplicated`);
+    assert.ok(!names.has(entry.name), `${entry.name} is duplicated`);
+    slugs.add(entry.slug);
+    names.add(entry.name);
+
+    assert.ok(entry.tagline.length > 12, `${entry.slug} needs a real tagline`);
+    assert.ok(entry.about.length > 60, `${entry.slug} needs a real description`);
+    assert.ok(entry.tags.length >= 2, `${entry.slug} needs tags to be findable`);
+    assert.ok(entry.category in TEMPLATE_CATEGORIES, `${entry.slug} has an unknown category`);
+
+    // Parsing is the contract every other surface relies on: a template that
+    // does not validate is a card, a landing page and a `?demo=` id that all
+    // 404 at the compiler rather than in the catalogue.
+    const document = parseModelDocument(entry.document);
+    assert.equal(document.name, entry.name);
+    assert.equal(document.units, "mm");
+  }
+
+  // Every category the catalogue advertises has something in it.
+  for (const category of Object.keys(TEMPLATE_CATEGORIES) as Array<keyof typeof TEMPLATE_CATEGORIES>) {
+    assert.ok(templatesInCategory(category).length > 0, `${category} should not be empty`);
+  }
+});
+
+test("every template resolves through the demo registry the pages address it by", () => {
+  for (const entry of TEMPLATES) {
+    const resolved = getDemoModel(templateDemoId(entry.slug));
+    assert.ok(resolved, `${entry.slug} should resolve as a demo id`);
+    assert.equal((resolved as { name: string }).name, entry.name);
+  }
+  assert.equal(getDemoModel("template-does-not-exist"), null);
+});
+
+test("every template builds finite geometry inside the build volume", async (t) => {
+  for (const entry of TEMPLATES) {
+    await t.test(entry.slug, async () => {
+      const document = parseModelDocument(entry.document);
+      // Text templates need the server-side font loader, which this suite
+      // deliberately does not reach for; the spec itself is still checked.
+      if (JSON.stringify(document.root).includes('"type":"text"')) return;
+
+      const geometry = await buildNode(document.root);
+      const position = geometry.getAttribute("position");
+      assert.ok(position.count >= 12, `${entry.slug} should produce geometry`);
+      for (let i = 0; i < position.count; i += 1) {
+        assert.ok(
+          Number.isFinite(position.getX(i)) && Number.isFinite(position.getY(i)) && Number.isFinite(position.getZ(i)),
+          `${entry.slug} should not emit non-finite vertices`,
+        );
+      }
+      // A template that overruns the reference plate is one nobody can print,
+      // and nothing in the catalogue would say so.
+      const bounds = geometryBounds(geometry);
+      bounds.forEach((extent, axis) => {
+        assert.ok(extent <= document.print.buildVolume[axis] + 0.5, `${entry.slug} exceeds the build volume: ${extent.toFixed(1)}mm`);
+      });
+      geometry.dispose();
+    });
   }
 });
 

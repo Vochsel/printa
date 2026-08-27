@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Box, Download, Layers, Mountain, Ruler, SlidersHorizontal } from "lucide-react";
 import { PLACES, getPlace, placeScale } from "@/lib/place-library";
 import { placeDownloadUrl, placeEditorUrl, placePreviewUrl } from "@/lib/place-links";
-import { PlacePreview } from "../PlacePreview";
+import { ModelTurntable } from "@/components/model-turntable";
 
 /**
  * A landing page per place.
@@ -87,7 +87,7 @@ export default async function PlacePage({ params }: { params: Promise<{ slug: st
       </div>
 
       <section className="mx-auto grid max-w-6xl items-start gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:gap-12 lg:py-12">
-        <PlacePreview
+        <ModelTurntable
           specUrl={placePreviewUrl(place)}
           className="aspect-square w-full overflow-hidden rounded-2xl border border-border bg-secondary/40"
         />
@@ -174,7 +174,7 @@ export default async function PlacePage({ params }: { params: Promise<{ slug: st
                 href={`/places/${other.slug}`}
                 className="group overflow-hidden rounded-xl border border-border bg-card transition hover:border-foreground/25"
               >
-                <PlacePreview
+                <ModelTurntable
                   specUrl={placePreviewUrl(other)}
                   className="aspect-[4/3] w-full bg-secondary/40"
                   spin={false}

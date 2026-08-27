@@ -37,6 +37,10 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(home, /Go Pro — \$10\/mo/);
   assert.match(home, /Cloth & water sim/);
   assert.match(home, /href="\/editor"/);
+  // The catalogue is linked from the landing page, and its cards open in the
+  // editor rather than only downloading.
+  assert.match(home, /href="\/templates"/);
+  assert.match(home, /Use this/);
   // Browsers kill the oldest context once a page holds more than a handful,
   // so the landing page keeps its live viewports countable: one workbench
   // that swaps its document, plus the gallery cards.
@@ -59,6 +63,11 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(inspector, /loadFontPreview/);
   assert.match(inspector, /Search .* Google Fonts/);
   assert.match(inspector, /PointListField/);
+  // A revolved profile is a curve: the panel draws it as one, mirrored about
+  // the axis, rather than only listing its points.
+  assert.match(inspector, /ProfileCurveEditor/);
+  // Places are editable in the inspector, not only shipped as demos.
+  assert.match(inspector, /PlaceSourceFields/);
   assert.match(inspector, /Global radius offset/);
   assert.match(inspector, /Vary amount over shape/);
   assert.match(inspector, /Preview build plate/);
@@ -375,6 +384,11 @@ test("production build contains every public route", async () => {
     access(new URL(".next/server/app/skills/route.js", root)),
     access(new URL(".next/server/app/mcp/route.js", root)),
     access(new URL(".next/server/app/health/route.js", root)),
+    access(new URL(".next/server/app/templates/page.js", root)),
+    access(new URL(".next/server/app/templates/[slug]/page.js", root)),
+    access(new URL(".next/server/app/templates/category/[category]/page.js", root)),
+    access(new URL(".next/server/app/api/place/capture/route.js", root)),
+    access(new URL(".next/server/app/api/place/search/route.js", root)),
     access(new URL("public/og.png", root)),
     access(new URL("public/printa-logo-square.jpg", root)),
     access(new URL("public/benchmarks/index.html", root)),
