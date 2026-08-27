@@ -57,20 +57,29 @@ function fit(rings: Point[][]): string {
     .join(" ");
 }
 
-function firstShape(node: LooseNode | undefined): LooseNode | undefined {
-  if (!node) return undefined;
-  if (node.kind === "shape") return node;
-  if (node.child) return firstShape(node.child);
-  for (const child of node.children ?? []) {
-    const found = firstShape(child);
-    if (found) return found;
-  }
-  return undefined;
+function shapes(node: LooseNode | undefined, found: LooseNode[] = []): LooseNode[] {
+  if (!node) return found;
+  if (node.kind === "shape") found.push(node);
+  if (node.child) shapes(node.child, found);
+  for (const child of node.children ?? []) shapes(child, found);
+  return found;
+}
+
+/**
+ * Which part of an assembly speaks for it.
+ *
+ * A sign is a backplate and a word, and the backplate is the first child —
+ * but nobody recognises a sign by its plate, so lettering wins when there is
+ * any.
+ */
+function representative(root: LooseNode | undefined): LooseNode | undefined {
+  const all = shapes(root);
+  return all.find((node) => node.source?.type === "text") ?? all[0];
 }
 
 /** The silhouette a template's own document implies, seen from the front. */
 function silhouette(root: LooseNode | undefined): { path?: string; word?: string } {
-  const node = firstShape(root);
+  const node = representative(root);
   const source = node?.source;
   if (!source) return {};
 
@@ -118,7 +127,48 @@ function silhouette(root: LooseNode | undefined): { path?: string; word?: string
     return { path: fit([[[-halfWidth, 0], [halfWidth, 0], [halfWidth, height], [-halfWidth, height]]]) };
   }
 
-  if (source.type === "cellular" || source.type === "organic" || source.type === "cloth" || source.type === "fluid" || source.type === "water") {
+  if (source.type === "cellular") {
+    // A lattice is struts, not a block: the outline alone would be a square.
+    const width = Number(source.width ?? 60);
+    const height = Number(source.height ?? 60);
+    const columns = 4;
+    const rows = Math.max(2, Math.round((height / width) * columns));
+    const rings: Point[][] = [];
+    for (let row = 0; row < rows; row += 1) {
+      for (let column = 0; column < columns; column += 1) {
+        const x = -width / 2 + (column + 0.5) * (width / columns);
+        const y = (row + 0.5) * (height / rows);
+        const cellW = width / columns / 2.4;
+        const cellH = height / rows / 2.4;
+        rings.push([[x - cellW, y], [x, y + cellH], [x + cellW, y], [x, y - cellH]]);
+      }
+    }
+    return { path: fit(rings) };
+  }
+
+  if (source.type === "organic") {
+    // A trunk and two levels of branching, which is what the source grows.
+    const width = Number(source.width ?? 60);
+    const height = Number(source.height ?? 90);
+    const trunk = Math.max(1.5, Number(source.trunkDiameter ?? 6) / 2);
+    const branch = (x: number, y: number, spread: number, rise: number, thickness: number): Point[] => [
+      [x - thickness, y],
+      [x + spread - thickness * 0.6, y + rise],
+      [x + spread + thickness * 0.6, y + rise],
+      [x + thickness, y],
+    ];
+    return {
+      path: fit([
+        [[-trunk, 0], [-trunk * 0.6, height * 0.45], [trunk * 0.6, height * 0.45], [trunk, 0]],
+        branch(0, height * 0.42, width * 0.3, height * 0.3, trunk * 0.7),
+        branch(0, height * 0.42, -width * 0.3, height * 0.34, trunk * 0.7),
+        branch(width * 0.3, height * 0.72, width * 0.14, height * 0.24, trunk * 0.45),
+        branch(-width * 0.3, height * 0.76, -width * 0.12, height * 0.2, trunk * 0.45),
+      ]),
+    };
+  }
+
+  if (source.type === "cloth" || source.type === "fluid" || source.type === "water") {
     const width = Number(source.width ?? 60);
     const height = Number(source.height ?? source.base ?? 20);
     return { path: fit([[[-width / 2, 0], [width / 2, 0], [width / 2, height], [-width / 2, height]]]) };
