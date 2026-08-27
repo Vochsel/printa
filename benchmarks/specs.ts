@@ -3,6 +3,7 @@ import { DEMO_MODELS } from "../lib/demo-models";
 import { parseModelDocument, type ModelDocumentInput, type ModifierSpec } from "../lib/model-spec";
 import { getPlace } from "../lib/place-library";
 import { placeDocument } from "../lib/place-document";
+import { newPlaceDocument } from "../lib/place-capture";
 
 const defaults = {
   print: { buildVolume: [256, 256, 256] as [number, number, number], autoCenter: true, placeOnBed: true },
@@ -378,6 +379,11 @@ const addedCases = {
 const placeCases = {
   "place-surface": placeDocument(getPlace("sydney-cbd")!),
   "place-mapped": placeDocument(getPlace("san-francisco-downtown")!),
+  // The state a place is in between being added in the editor and being
+  // captured: coordinates, plinth and rim, no ground. It is the cheapest
+  // place build there is, which is what makes it worth watching — a
+  // regression here is a regression in the ground and rim alone.
+  "place-uncaptured": newPlaceDocument(),
 } as const;
 
 export const BENCHMARK_SPECS = { ...DEMO_MODELS, ...addedCases, ...placeCases } as const;

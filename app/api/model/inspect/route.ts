@@ -1,4 +1,4 @@
-import { getDemoModel } from "@/lib/demo-models";
+import { getDemoModel } from "@/lib/demo-registry";
 import { decodeModelDocument, encodeModelDocument, parseModelDocument, stringifyModelDocument } from "@/lib/model-spec";
 import { inspectProceduralModel } from "@/lib/procedural-mesh";
 

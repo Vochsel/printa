@@ -11,7 +11,7 @@ import {
   normalizeTextModelOptions,
 } from "@/lib/text-mesh";
 import { resolveGoogleFont } from "@/lib/google-fonts";
-import { getDemoModel } from "@/lib/demo-models";
+import { getDemoModel } from "@/lib/demo-registry";
 import { encodeModelDocument, parseModelDocument, stringifyModelDocument } from "@/lib/model-spec";
 import { inspectProceduralModel, makeProceduralFilename } from "@/lib/procedural-mesh";
 

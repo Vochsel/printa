@@ -59,8 +59,9 @@ import { ToggleField } from "@/components/editor/fields";
 import { ChatPanel } from "@/components/editor/ChatPanel";
 import { BrandLink } from "@/components/brand-link";
 import { DEMO_MODEL_CARDS, type DemoModelId } from "@/lib/demo-models";
+import { newPlaceDocument } from "@/lib/place-capture";
 import { printMaterialPreset, type PrintMaterialPreset } from "@/lib/material-presets";
-import type { ModelDocument } from "@/lib/model-spec";
+import type { ModelDocument, ModelDocumentInput } from "@/lib/model-spec";
 import { initSfx, isSfxEnabled, setSfxEnabled, sfx, sfxThrottled } from "@/lib/sfx";
 import { deleteSavedModel, listSavedModels, saveModel, type SavedModel } from "@/lib/user-models";
 import { cn } from "@/lib/utils";
@@ -84,11 +85,33 @@ type ShadingMode = "smooth" | "flat";
 const SHADING_KEY = "printa:shading";
 const SIDEBAR_KEY = "printa:sidebar-width";
 
-function encodeDocument(document: ModelDocument) {
-  const bytes = new TextEncoder().encode(JSON.stringify(document));
+/**
+ * How much document a URL will carry.
+ *
+ * A place holds its captured ground inline, which is hundreds of kilobytes;
+ * put that in a query string and the server answers 431 before the compiler
+ * ever sees it, so the preview silently fails. Anything larger is addressed
+ * by POST instead — the preview compiles over the request body and the
+ * download streams through a blob — and the address bar keeps the demo id, or
+ * nothing at all, rather than a link that cannot be opened.
+ */
+const SPEC_URL_LIMIT = 6000;
+
+function encodeJson(json: string) {
+  const bytes = new TextEncoder().encode(json);
   let binary = "";
   for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+type SpecLinks = { encoded: string; stlUrl: string; studioUrl: string };
+
+/** Shareable URLs for a document, or empty ones when it is too big to encode. */
+function specLinks(document: ModelDocument, studioFallback = "/editor"): SpecLinks {
+  const json = JSON.stringify(document);
+  if (json.length > SPEC_URL_LIMIT) return { encoded: "", stlUrl: "", studioUrl: studioFallback };
+  const encoded = encodeJson(json);
+  return { encoded, stlUrl: `/make/model.stl?spec=${encoded}`, studioUrl: `/editor?spec=${encoded}` };
 }
 
 function geometryKey(document: ModelDocument) {
@@ -819,6 +842,7 @@ export function ProceduralStudio() {
   const handleSamples = useCallback((samples: number) => setPathSamples(samples), []);
   const [soundOn, setSoundOn] = useState(() => typeof window === "undefined" || isSfxEnabled());
   const [sidebarWidth, setSidebarWidth] = useState(340);
+  const [downloading, setDownloading] = useState(false);
   const [loadOpen, setLoadOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [specOpen, setSpecOpen] = useState(false);
@@ -852,41 +876,6 @@ export function ProceduralStudio() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const inspect = useCallback(async (payload: { demo?: string; spec?: string | ModelDocument; encoded?: string }) => {
-    liveAbortRef.current?.abort();
-    liveSequenceRef.current += 1;
-    setLoading(true);
-    setModelReady(false);
-    modelWasReadyRef.current = false;
-    setError("");
-    try {
-      const response = await fetch("/api/model/inspect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, format: "yaml" }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Model spec is invalid.");
-      setResult(data);
-      setDocument(data.document);
-      setSimStale(false);
-      setSpec(data.spec);
-      setPreview({
-        key: data.stlUrl,
-        url: `/api/model/stl?spec=${data.encoded}&preview=true`,
-      });
-      compiledGeometryKeyRef.current = geometryKey(data.document);
-      setPreviewQuality(false);
-      setSlice(1);
-      if (data.encoded) window.history.replaceState(window.history.state, "", `/editor?spec=${data.encoded}`);
-    } catch (nextError) {
-      sfx("error");
-      setError(nextError instanceof Error ? nextError.message : "Model spec is invalid.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   const compileLive = useCallback(async (next: ModelDocument) => {
     const sequence = ++liveSequenceRef.current;
     liveAbortRef.current?.abort();
@@ -908,9 +897,7 @@ export function ProceduralStudio() {
       const buffer = await response.arrayBuffer();
       if (sequence !== liveSequenceRef.current) return;
       const dimensions = (response.headers.get("X-Printa-Dimensions") ?? "0,0,0").split(",").map(Number);
-      const encoded = encodeDocument(next);
-      const stlUrl = `/make/model.stl?spec=${encoded}`;
-      const studioUrl = `/editor?spec=${encoded}`;
+      const { stlUrl, studioUrl } = specLinks(next);
       const material = response.headers.get("X-Printa-Material") as PrintMaterialPreset | null;
       const exceedsBuildVolume = response.headers.get("X-Printa-Exceeds") === "true";
       setResult({
@@ -944,6 +931,51 @@ export function ProceduralStudio() {
     }
   }, []);
 
+  const inspect = useCallback(async (payload: { demo?: string; spec?: string | ModelDocument | ModelDocumentInput; encoded?: string }) => {
+    liveAbortRef.current?.abort();
+    liveSequenceRef.current += 1;
+    setLoading(true);
+    setModelReady(false);
+    modelWasReadyRef.current = false;
+    setError("");
+    try {
+      const response = await fetch("/api/model/inspect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, format: "yaml" }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Model spec is invalid.");
+      const demoUrl = payload.demo ? `/editor?demo=${encodeURIComponent(payload.demo)}` : "/editor";
+      const links = specLinks(data.document, demoUrl);
+      setResult({ ...data, stlUrl: links.stlUrl, studioUrl: links.studioUrl });
+      setDocument(data.document);
+      setSimStale(false);
+      setSpec(data.spec);
+      compiledGeometryKeyRef.current = geometryKey(data.document);
+      setPreviewQuality(false);
+      setSlice(1);
+      window.history.replaceState(window.history.state, "", links.studioUrl);
+      if (links.encoded) {
+        setPreview({ key: links.stlUrl, url: `/api/model/stl?spec=${links.encoded}&preview=true` });
+      } else if (payload.demo) {
+        // A place carries its captured ground, which no query string will
+        // hold — but its demo id says the same thing in twenty characters,
+        // and that response is cacheable.
+        setPreview({ key: `demo-${payload.demo}`, url: `/api/model/stl?demo=${encodeURIComponent(payload.demo)}&preview=true` });
+      } else {
+        // A saved or generated place has no id to be fetched by, so it
+        // compiles over POST exactly like an edit does.
+        void compileLive(data.document);
+      }
+    } catch (nextError) {
+      sfx("error");
+      setError(nextError instanceof Error ? nextError.message : "Model spec is invalid.");
+    } finally {
+      setLoading(false);
+    }
+  }, [compileLive]);
+
   const updateDocument = useCallback((next: ModelDocument) => {
     setDocument(next);
     const nextSpec = JSON.stringify(next, null, 2);
@@ -953,13 +985,12 @@ export function ProceduralStudio() {
     if (geometryKey(next) === compiledGeometryKeyRef.current) {
       liveSequenceRef.current += 1;
       setLiveUpdating(false);
-      const encoded = encodeDocument(next);
-      const studioUrl = `/editor?spec=${encoded}`;
+      const { stlUrl, studioUrl } = specLinks(next);
       setResult((previous) => previous ? {
         ...previous,
         document: next,
         spec: nextSpec,
-        stlUrl: `/make/model.stl?spec=${encoded}`,
+        stlUrl,
         studioUrl,
         materialPreset: documentMaterial(next.root),
         exceedsBuildVolume: previous.stats.widthMm > next.print.buildVolume[0]
@@ -975,9 +1006,8 @@ export function ProceduralStudio() {
       liveSequenceRef.current += 1;
       setLiveUpdating(false);
       setSimStale(true);
-      const encoded = encodeDocument(next);
-      const studioUrl = `/editor?spec=${encoded}`;
-      setResult((previous) => previous ? { ...previous, document: next, spec: nextSpec, stlUrl: `/make/model.stl?spec=${encoded}`, studioUrl, materialPreset: documentMaterial(next.root) } : previous);
+      const { stlUrl, studioUrl } = specLinks(next);
+      setResult((previous) => previous ? { ...previous, document: next, spec: nextSpec, stlUrl, studioUrl, materialPreset: documentMaterial(next.root) } : previous);
       window.history.replaceState(window.history.state, "", studioUrl);
       return;
     }
@@ -1004,10 +1034,14 @@ export function ProceduralStudio() {
     const encoded = params.get("spec");
     const demo = params.get("demo") as DemoModelId | null;
     const mode = params.get("mode");
+    // `?new=place` starts an empty place, which is how the places gallery
+    // hands someone a map of their own to capture.
+    const blank = params.get("new");
     const fallback = mode === "procedural" ? "contour-spiral-vase" : "type-specimen";
     const nextDemo = DEMO_MODEL_CARDS.some((card) => card.id === demo) ? demo! : fallback;
     const timer = window.setTimeout(() => {
-      if (encoded) void inspect({ encoded });
+      if (blank === "place") void inspect({ spec: newPlaceDocument() });
+      else if (encoded) void inspect({ encoded });
       else void inspect({ demo: nextDemo });
     }, 0);
     return () => window.clearTimeout(timer);
@@ -1020,6 +1054,49 @@ export function ProceduralStudio() {
       liveAbortRef.current?.abort();
     };
   }, []);
+
+  /**
+   * Save the STL.
+   *
+   * A document that fits a URL is opened as a link, so the file is fetched by
+   * the browser with a proper name and can be shared. A place is far past
+   * that, so its bytes are compiled over POST and handed to a blob download
+   * instead of a request the server would refuse.
+   */
+  const downloadStl = useCallback(async () => {
+    if (!result || downloading) return;
+    sfx("chime");
+    if (result.stlUrl) {
+      window.open(result.stlUrl, "_blank");
+      return;
+    }
+    setDownloading(true);
+    try {
+      const response = await fetch("/api/model/stl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: result.document }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(data?.error ?? "The model could not be compiled.");
+      }
+      const blob = await response.blob();
+      const name = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1]
+        ?? `${result.document.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "model"}.stl`;
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = name;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (nextError) {
+      sfx("error");
+      setError(nextError instanceof Error ? nextError.message : "The model could not be downloaded.");
+    } finally {
+      setDownloading(false);
+    }
+  }, [result, downloading]);
 
   const openLoad = () => {
     setSavedModels(listSavedModels());
@@ -1135,11 +1212,11 @@ export function ProceduralStudio() {
             <Button variant="ghost" size="sm" className="hidden lg:inline-flex" onClick={openSave} disabled={!document} data-cuelume-press><Save /> Save</Button>
             <Button
               size="sm"
-              disabled={!result || liveUpdating}
-              onClick={() => { if (result) { sfx("chime"); window.open(result.stlUrl, "_blank"); } }}
+              disabled={!result || liveUpdating || downloading}
+              onClick={() => void downloadStl()}
               data-cuelume-press
             >
-              <Download /> <span className="hidden sm:inline">{liveUpdating ? "Updating…" : "Download STL"}</span>
+              <Download /> <span className="hidden sm:inline">{liveUpdating ? "Updating…" : downloading ? "Compiling…" : "Download STL"}</span>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="More"><Ellipsis /></Button>} />

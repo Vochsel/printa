@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Layers, Mountain } from "lucide-react";
+import { ArrowRight, Layers, MapPin, Mountain } from "lucide-react";
 import { PLACES, placeScale } from "@/lib/place-library";
 import { placePreviewUrl } from "@/lib/place-links";
 import { PlacePreview } from "./PlacePreview";
@@ -34,6 +34,16 @@ export default function PlacesIndex() {
           slice straight away. Pick a place to see it turning, change its size and
           plinth, or open it in the editor and keep going.
         </p>
+        <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground">
+          Somewhere missing? Search any city, suburb or landmark on Earth in the
+          editor and capture it yourself.
+        </p>
+        <Link
+          href="/editor?new=place"
+          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-medium text-background transition hover:opacity-90"
+        >
+          <MapPin className="size-4" /> Make your own place
+        </Link>
       </section>
 
       <section className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">

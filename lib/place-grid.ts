@@ -112,3 +112,37 @@ export function despeckle(grid: SampleGrid, toleranceM = 6): void {
   }
   heights.set(out);
 }
+
+/**
+ * Raise an implausible low tail to the ground around it.
+ *
+ * Terrain tiles carry voids and ocean readings, and a capture next to water
+ * comes back with a hundred samples near −600 m among ground that never
+ * leaves ±10 m. Nothing in the model reports that: the plinth simply sinks a
+ * kilometre and the city becomes a rim on top of a cylinder.
+ *
+ * The floor is a full inter-percentile spread below the first percentile, so
+ * it only catches values no terrain in the frame could explain. A genuine
+ * valley is left alone, because its own floor *is* the first percentile — and
+ * a capture that is mostly open water keeps its depth for the same reason.
+ *
+ * Returns how many samples were raised, so the capture can say so.
+ */
+export function raiseVoids(grid: SampleGrid): number {
+  const { heights } = grid;
+  if (heights.length < 100) return 0;
+
+  const sorted = Float32Array.from(heights).sort();
+  const low = sorted[Math.floor(0.01 * (sorted.length - 1))];
+  const high = sorted[Math.floor(0.99 * (sorted.length - 1))];
+  const floor = low - Math.max(1, high - low);
+
+  let raised = 0;
+  for (let i = 0; i < heights.length; i += 1) {
+    if (heights[i] < floor) {
+      heights[i] = low;
+      raised += 1;
+    }
+  }
+  return raised;
+}

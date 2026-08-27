@@ -37,8 +37,13 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(home, /Go Pro — \$10\/mo/);
   assert.match(home, /Cloth & water sim/);
   assert.match(home, /href="\/editor"/);
-  // The page mounts exactly one WebGL viewport; the gallery swaps its document.
-  assert.equal(home.match(/<ModelStage\b/g)?.length, 1, "landing keeps a single WebGL context");
+  // Browsers kill the oldest context once a page holds more than a handful,
+  // so the landing page keeps its live viewports countable: one workbench
+  // that swaps its document, plus the gallery cards.
+  const stages = home.match(/<ModelStage\b/g)?.length ?? 0;
+  assert.ok(stages >= 1 && stages <= 2, `landing should mount few WebGL viewports, found ${stages}`);
+  const galleryCards = home.match(/^\s+demo: "/gm)?.length ?? 0;
+  assert.ok(galleryCards <= 6, `landing gallery should stay small, found ${galleryCards} cards`);
   assert.match(home, /const EXAMPLES: Example\[\]/);
   assert.match(editor, /<ProceduralStudio\s*\/>/);
   assert.match(studio, /View settings/);

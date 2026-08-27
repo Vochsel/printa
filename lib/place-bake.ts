@@ -1,6 +1,6 @@
 import type { SourceSpec } from "@/lib/model-spec";
 import { LocalFrame } from "@/lib/place-geo";
-import { despeckle, fillGaps, type SampleGrid } from "@/lib/place-grid";
+import { despeckle, fillGaps, raiseVoids, type SampleGrid } from "@/lib/place-grid";
 import { terrainSampleGrid } from "@/lib/place-elevation";
 import { fetchBuildings } from "@/lib/place-osm";
 import { googleTilesSampleGrid } from "@/lib/place-tiles";
@@ -168,9 +168,10 @@ export async function bakePlace(options: BakeOptions): Promise<BakeResult> {
     });
     fillGaps(result.heightfield);
     despeckle(result.heightfield);
+    const raised = raiseVoids(result.heightfield);
     return {
       surface: packSurface(result.heightfield),
-      note: `${result.tilesUsed} tiles · ${result.triangles.toLocaleString()} source triangles`,
+      note: `${result.tilesUsed} tiles · ${result.triangles.toLocaleString()} source triangles${voidNote(raised)}`,
     };
   }
 
@@ -182,13 +183,18 @@ export async function bakePlace(options: BakeOptions): Promise<BakeResult> {
 
   const grid = ground ?? emptyGrid(radiusM);
   fillGaps(grid);
+  const raised = raiseVoids(grid);
 
   const frame = new LocalFrame(lat, lng, 0);
   return {
     surface: packSurface(grid),
     footprints: packFootprints(buildings, frame, radiusM),
-    note: `${buildings.length} buildings · OpenStreetMap${ground ? "" : " · flat ground"}`,
+    note: `${buildings.length} buildings · OpenStreetMap${ground ? "" : " · flat ground"}${voidNote(raised)}`,
   };
+}
+
+function voidNote(raised: number): string {
+  return raised > 0 ? ` · ${raised.toLocaleString()} void samples raised` : "";
 }
 
 function emptyGrid(radiusM: number): SampleGrid {

@@ -12,6 +12,7 @@ import {
   EyeOff,
   GripVertical,
   Layers3,
+  MapPin,
   Plus,
   Printer,
   Search,
@@ -31,6 +32,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { JsonField, NumberField, PointListField, SelectField, TextField, ToggleField, VectorField } from "@/components/editor/fields";
+import { PlaceSourceFields } from "@/components/editor/place-source";
+import { newPlaceSource } from "@/lib/place-capture";
 import { cn } from "@/lib/utils";
 import { sfx } from "@/lib/sfx";
 import { modifierDropIndex, reorderModifierStack, type ModifierDropSide } from "@/lib/modifier-order";
@@ -53,6 +56,7 @@ const SOURCE_TYPES: { value: SourceSpec["type"]; label: string; hint: string }[]
   { value: "primitive", label: "Basic shape", hint: "Box, cylinder, cone, sphere, torus" },
   { value: "extrude", label: "Extruded outline", hint: "A 2D path pulled into 3D" },
   { value: "revolve", label: "Spun profile", hint: "Vases, bowls, anything round" },
+  { value: "place", label: "Map place", hint: "A real city block, captured from the map" },
   { value: "cellular", label: "Cellular lattice", hint: "Lightweight seeded Voronoi-style struts" },
   { value: "organic", label: "Organic growth", hint: "Branching coral-like printable structures" },
   { value: "fluid", label: "Fluid (SPH)", hint: "Pour liquid that pools over the scene" },
@@ -212,6 +216,7 @@ function sourceDefaults(type: SourceSpec["type"]): SourceSpec {
   if (type === "extrude") return { type, depth: 8, bevel: 0.8, bevelSegments: 3, curveSegments: 12, direction: [0, 0, 1], path: { commands: [{ op: "move", to: [-25, -25] }, { op: "line", to: [25, -25] }, { op: "line", to: [25, 25] }, { op: "line", to: [-25, 25] }, { op: "close" }], holes: [] } };
   if (type === "water") return { type, width: 100, depth: 80, base: 3, resolution: 56, steps: 50, damping: 0.985, drops: [{ x: 0, y: 0, radius: 8, amplitude: 5 }], bake: 0 };
   if (type === "fluid") return { type, width: 70, depth: 70, amount: 55, spawnHeight: 70, particleSize: 6, viscosity: 0.18, gravity: 9.8, steps: 220, surfaceResolution: 64, bake: 0 };
+  if (type === "place") return newPlaceSource();
   if (type === "cellular") return { type, width: 64, depth: 64, height: 72, cellSize: 18, strutDiameter: 2.2, jitter: 0.62, neighbors: 3, seed: 1, radialSegments: 8 };
   if (type === "organic") return { type, width: 70, depth: 70, height: 100, trunkDiameter: 7, levels: 4, branching: 2, angleDeg: 34, twistDeg: 137.5, taper: 0.72, seed: 1, radialSegments: 9, surfaceResolution: 60, smoothness: 0.75 };
   return { type: "cloth", width: 100, depth: 100, thickness: 1.2, resolution: 28, steps: 100, startHeight: 35, gravity: 0.18, constraintIterations: 4, pins: "corners", bake: 0 };
@@ -262,6 +267,7 @@ function nodeIcon(node: ModelNode) {
   if (node.kind !== "shape") return <Layers3 size={13} />;
   if (node.source.type === "text") return <Type size={13} />;
   if (node.source.type === "water" || node.source.type === "cloth" || node.source.type === "fluid") return <Waves size={13} />;
+  if (node.source.type === "place") return <MapPin size={13} />;
   return <Box size={13} />;
 }
 
@@ -380,6 +386,7 @@ function SourceEditor({ source, fonts, update }: { source: SourceSpec; fonts: Fo
           <JsonField label="Direction [x, y, z]" rows={2} value={source.direction} onChange={(value) => set("direction", value)} />
         </AdvancedData>
       </>}
+      {source.type === "place" && <PlaceSourceFields source={source} update={update} />}
       {source.type === "cellular" && <>
         <p className="text-[11px] leading-relaxed text-muted-foreground">A seeded, stratified cell network connects nearest sites into a lightweight printable lattice.</p>
         <Grid3>

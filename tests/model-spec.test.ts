@@ -6,6 +6,8 @@ import type { BufferGeometry } from "three";
 import { DEMO_MODELS } from "../lib/demo-models";
 import { PLACES } from "../lib/place-library";
 import { placeDocument } from "../lib/place-document";
+import { hasCapture, newPlaceDocument, newPlaceSource } from "../lib/place-capture";
+import { raiseVoids } from "../lib/place-grid";
 import { createPlaceGeometryParts } from "../lib/place-geometry";
 import { BENCHMARK_SPECS, REQUIRED_BENCHMARK_COVERAGE, REQUIRED_PLACE_CAPTURES, REQUIRED_STRUT_PATTERNS, REQUIRED_SUBDIVISION_SCHEMES, REQUIRED_VORONOI_MODES } from "../benchmarks/specs";
 import {
@@ -231,6 +233,60 @@ test("every shipped place carries the capture its document claims", () => {
       assert.ok(source.footprints, `${place.slug} should ship baked footprints`);
     }
   }
+});
+
+test("a place created in the editor builds before it is captured", () => {
+  // The editor adds a place with coordinates but no baked ground, and fills
+  // it in when someone presses Capture. Between those two moments the
+  // document still has to compile, or the layer appears as an error rather
+  // than as an empty plinth waiting for its city.
+  const document = parseModelDocument(newPlaceDocument());
+  const node = document.root as { kind: string; source: Parameters<typeof createPlaceGeometryParts>[0] };
+  assert.equal(node.kind, "shape");
+  assert.equal(node.source.type, "place");
+  assert.equal(node.source.surface, undefined);
+  assert.equal(hasCapture(node.source), false);
+
+  const parts = createPlaceGeometryParts(node.source);
+  // Ground and rim, and nothing else: no footprints have been captured yet.
+  assert.equal(parts.length, 2);
+  for (const part of parts) {
+    const position = part.getAttribute("position");
+    for (let i = 0; i < position.count; i += 1) {
+      assert.ok(Number.isFinite(position.getX(i)) && Number.isFinite(position.getY(i)) && Number.isFinite(position.getZ(i)));
+    }
+    part.dispose();
+  }
+});
+
+test("a place reports whether it holds the capture its kind needs", () => {
+  const source = newPlaceSource();
+  assert.equal(hasCapture(source), false);
+  assert.equal(hasCapture({ ...source, surface: { grid: 8, minM: 0, maxM: 1, heights: "" } }), false);
+  assert.equal(
+    hasCapture({ ...source, surface: { grid: 8, minM: 0, maxM: 1, heights: "" }, footprints: { count: 1, data: "" } }),
+    true,
+  );
+  // A photogrammetric capture needs no outlines.
+  assert.equal(hasCapture({ ...source, capture: "surface", surface: { grid: 8, minM: 0, maxM: 1, heights: "" } }), true);
+});
+
+test("captured ground raises void samples without flattening real relief", () => {
+  // Terrain tiles answer with occasional −600 m voids over water. Left alone
+  // they set the floor of the model, and the city becomes a rim on a
+  // cylinder — a failure the mesh itself cannot report.
+  const size = 32;
+  const coastal = { size, radiusM: 300, heights: new Float32Array(size * size) };
+  for (let i = 0; i < coastal.heights.length; i += 1) coastal.heights[i] = 2 + (i % 7);
+  coastal.heights[10] = -663;
+  coastal.heights[400] = -512;
+  assert.equal(raiseVoids(coastal), 2);
+  assert.ok(Math.min(...coastal.heights) > -10, "voids should be raised to the local ground");
+
+  // A genuine valley is its own first percentile, so nothing moves.
+  const valley = { size, radiusM: 300, heights: new Float32Array(size * size) };
+  for (let i = 0; i < valley.heights.length; i += 1) valley.heights[i] = i < 200 ? -80 : 120;
+  assert.equal(raiseVoids(valley), 0);
 });
 
 test("a place builds a closed solid for every shipped entry", () => {

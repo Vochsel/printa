@@ -1,4 +1,4 @@
-import { getDemoModel } from "@/lib/demo-models";
+import { getDemoModel } from "@/lib/demo-registry";
 import { decodeModelDocument, parseModelDocument } from "@/lib/model-spec";
 import { MODEL_STL_CORS_HEADERS } from "@/lib/model-stl-cors";
 import { createProceduralStl, makeProceduralFilename, proceduralCacheMetrics } from "@/lib/procedural-mesh";
