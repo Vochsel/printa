@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Convex writes these from the schema on every push.
+    "convex/_generated/**",
   ]),
 ]);
 

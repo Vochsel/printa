@@ -14,7 +14,8 @@
     "test": "npm run build && npm run test:unit",
     "test:unit": "node --experimental-vm-modules --import tsx --test tests/project.test.mjs && node --import tsx --test tests/model-spec.test.ts",
     "lint": "eslint . --ignore-pattern .next",
-    "bake:places": "tsx scripts/bake-places.ts"
+    "bake:places": "tsx scripts/bake-places.ts",
+    "shots": "tsx scripts/capture-template-shots.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.34",
@@ -24,6 +25,7 @@
     "ai": "^7.0.31",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "convex": "^1.45.0",
     "cuelume": "^0.1.2",
     "lucide-react": "^1.25.0",
     "manifold-3d": "^3.5.1",
