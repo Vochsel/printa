@@ -224,7 +224,7 @@ test("every shipped place carries the capture its document claims", () => {
     const document = parseModelDocument(placeDocument(place));
     const node = document.root;
     assert.equal(node.kind, "shape", `${place.slug} should be a single shape`);
-    const source = (node as { source: { type: string; capture: string; surface?: unknown; footprints?: unknown } }).source;
+    const source = (node as { source: { type: string; capture: string; surface?: unknown; footprints?: unknown; roads?: unknown } }).source;
 
     assert.equal(source.type, "place");
     assert.equal(source.capture, place.capture);
@@ -233,6 +233,9 @@ test("every shipped place carries the capture its document claims", () => {
     assert.ok(source.surface, `${place.slug} should ship a baked surface`);
     if (place.capture === "buildings") {
       assert.ok(source.footprints, `${place.slug} should ship baked footprints`);
+      // Blocks with no streets between them read as scattered towers rather
+      // than as a city, and nothing in the mesh reports the difference.
+      assert.ok(source.roads, `${place.slug} should ship baked streets`);
     }
   }
 });
@@ -303,6 +306,48 @@ test("every template builds finite geometry inside the build volume", async (t) 
       geometry.dispose();
     });
   }
+});
+
+test("a mapped place with streets still unions into one watertight solid", async () => {
+  const place = PLACES.find((entry) => entry.capture === "buildings")!;
+  const document = parseModelDocument(placeDocument(place));
+  const source = (document.root as { source: Parameters<typeof createPlaceGeometryParts>[0] }).source;
+
+  // Manifold refuses a part it cannot read as a closed solid, so a street
+  // ribbon with a hole in it fails here rather than in someone's slicer.
+  const merged = await unionClosedGeometryParts(createPlaceGeometryParts(source));
+  assert.equal(topologicalBoundaryEdgeCount(merged), 0, `${place.slug} should union closed`);
+  merged.dispose();
+});
+
+test("mapped streets are built as solids and can be turned off", () => {
+  const place = PLACES.find((entry) => entry.capture === "buildings")!;
+  const document = parseModelDocument(placeDocument(place));
+  const source = (document.root as { source: Parameters<typeof createPlaceGeometryParts>[0] }).source;
+
+  const withStreets = createPlaceGeometryParts(source);
+  const without = createPlaceGeometryParts({ ...source, roadRelief: 0 });
+  assert.ok(
+    withStreets.length > without.length,
+    `${place.slug} should add street solids: ${withStreets.length} vs ${without.length}`,
+  );
+
+  // A ribbon that ran off the model would print as a spur hanging in the air,
+  // and a non-finite vertex travels all the way to the STL as an empty file.
+  const limit = (place.shape === "circle" ? source.size : source.size) / 2 + 1;
+  for (const part of withStreets) {
+    const position = part.getAttribute("position");
+    for (let i = 0; i < position.count; i += 1) {
+      const x = position.getX(i);
+      const y = position.getY(i);
+      const z = position.getZ(i);
+      assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z), `${place.slug} street vertex should be finite`);
+      assert.ok(Math.hypot(x, y) <= limit * 1.45, `${place.slug} street should stay inside the model`);
+      assert.ok(z >= -0.001, `${place.slug} street should not sink below the bed`);
+    }
+    part.dispose();
+  }
+  without.forEach((part) => part.dispose());
 });
 
 test("a place created in the editor builds before it is captured", () => {

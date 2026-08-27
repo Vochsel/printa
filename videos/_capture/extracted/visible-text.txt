@@ -1,0 +1,162 @@
+[a] Templates
+[a] Open editor
+[h1] Turn words into
+[span] printable objects.
+[p] Describe an object and Printa builds a real, watertight 3D model. Everything below is compiled live — pick a form, change it, download the STL.
+[span] Watertight, print-ready
+[span] Any Google font
+[span] Free, no sign-up
+[span] Your text
+[span] Rippled vase
+[span] Name keychain
+[span] Prism vase
+[span] Twisted lantern
+[span] Fluted bowl
+[p] Every form here is a Printa Spec document, compiled to a mesh on request — the same pipeline the editor and the ChatGPT app use.
+[span] drag to orbit
+[span] Your text
+[span] Font
+[span] Poppins
+[span] Extrusion
+[p] PRINTA
+[p] Any Google font, extruded and bevelled.
+[a] Open in editor
+[a] Download STL
+[h2] Ask
+[p] Describe it in plain words — “a sign that says SYDNEY”.
+[h2] Refine
+[p] Taller, rounder, a softer font. The model updates as you talk.
+[h2] Print
+[p] Download a watertight STL that works in any slicer.
+[h2] Real models, compiled on this page
+[p] Type, vessels and lattices — and whole cities, captured from photogrammetry or mapped outlines. Every tile is a live STL, not a screenshot.
+[span] drag to orbit
+[p] Sydney CBD
+[span] Place · Surface
+[p] Photogrammetric surface — towers, trees and the harbour edge, captured from Google 3D tiles.
+[a] STL
+[a] About
+[span] drag to orbit
+[p] Midtown Manhattan
+[span] Place · Mapped
+[p] Mapped outlines — OpenStreetMap footprints extruded into crisp blocks over sampled ground.
+[a] STL
+[a] About
+[span] drag to orbit
+[p] Downtown San Francisco
+[span] Place · Mapped
+[p] Mapped outlines on genuine hills — blocks step up the slope instead of sitting flat.
+[a] STL
+[a] About
+[span] drag to orbit
+[p] Contour spiral vase
+[span] Revolve
+[p] A revolved profile with fine helical ribs and a wall thickness that slices without infill.
+[a] STL
+[a] Use this
+[span] drag to orbit
+[p] Type specimen
+[span] Text
+[p] Any of 1,900+ Google Fonts, extruded and bevelled to an exact letter height.
+[a] STL
+[a] Use this
+[span] drag to orbit
+[p] Cellular lattice
+[span] Lattice
+[p] A Voronoi strut lattice — light, rigid, and solid enough to print without infill.
+[a] STL
+[a] Use this
+[a] Browse every place
+[h2] Start from one of
+[h2] 100
+[h2] templates
+[p] Vases, lampshades, signs, desk organisers, jewellery, lattices and planters — each one a document rather than a mesh, so every dimension is still yours to change.
+[a] Helix twist vase
+[p] Eight ribs carried around the vase by a 240° twist.
+[a] Use this
+[a] STL
+[a] Voronoi pendant shade
+[p] A cell-wall shade that casts a scattered, organic pattern.
+[a] Use this
+[a] STL
+[a] House number
+[p] Three large digits with a mounting backplate.
+[a] Use this
+[a] STL
+[a] Hex pen tray
+[p] A shallow six-sided tray for pens, clips and keys.
+[a] Use this
+[a] STL
+[a] Lattice cube
+[p] A 70 mm seeded strut lattice — light, rigid, no infill needed.
+[a] Use this
+[a] STL
+[a] Coral branch
+[p] A branching growth unified into one smooth printable surface.
+[a] Use this
+[a] STL
+[a] Ripple coaster
+[p] A frozen water ripple, simulated from three drops.
+[a] Use this
+[a] STL
+[a] Fluted planter
+[p] A 130 mm planter with sixteen flutes and a drainage well.
+[a] Use this
+[a] STL
+[a] Browse all
+[a] 100
+[a] templates
+[h2] Common questions
+[dt] Are the models actually printable?
+[dd] Every model is compiled to a closed, watertight solid with printable wall thicknesses, and the STL you download is generated from the same document you see turning on the page. Nothing here is a scan or a decorative mesh that needs repairing first.
+[dt] Do I need an account?
+[dd] No. The editor, the templates, the city captures and STL export are free and need no sign-up. Models you save stay in your own browser.
+[dt] Can I change a template, or is it fixed?
+[dd] A template is a model document, not a mesh — so the wall thickness, height, segment count, font and every modifier are still parameters. Press Use this and the editor opens the same spec, recompiling as you type.
+[dt] What can it print of my own city?
+[dd] Search any city, suburb or landmark on Earth and capture it: either a photogrammetric surface, which keeps rooflines and trees, or mapped OpenStreetMap outlines extruded over sampled ground. The capture is baked into the document, so it prints the same offline.
+[dt] Which file format do I get?
+[dd] Binary STL, the format every slicer reads. Dimensions are exact millimetres, so a 120 mm model measures 120 mm on the bed with no scaling step.
+[dt] Does it work with ChatGPT?
+[dd] Yes. Printa is an MCP server, so an assistant can build, preview and download models through the same endpoints the editor uses.
+[h2] Start free. Go further with Pro.
+[p] The editor, chat and STL export are free forever.
+[h3] Free
+[span] / forever
+[li] Visual editor & procedural modeling
+[li] Text, shapes, revolves & modifiers
+[li] Watertight STL download
+[li] MCP endpoint for ChatGPT
+[a] Open the editor
+[span] Pro
+[h3] Pro
+[span] $10
+[span] / month
+[li] Every format — 3MF, OBJ, STEP
+[li] Cloth & water sim
+[li] Voronoi noise & lattices
+[li] Organic growth
+[li] Struts & smart seams
+[li] Projects & chat history
+[a] Go Pro — $10/mo
+[p] Billing launches soon — early makers lock in this price.
+[p] Print-ready 3D models from a spec: type it, describe it, or capture it from a map. Every model on this site is compiled by the same engine that serves the editor.
+[a] Open the editor
+[a] All templates
+[a] City models
+[a] Capture a place
+[a] Describe a model
+[p] Templates by category
+[a] Vases & vessels
+[a] Lighting
+[a] Signs & lettering
+[a] Desk & organisation
+[a] Jewellery & small goods
+[a] Structural & test parts
+[a] Organic & sculptural
+[a] Tabletop & toys
+[a] Kitchen & dining
+[a] Garden & plants
+[p] Map data © OpenStreetMap contributors, ODbL. Elevation from open terrain tiles.
+[span] · Ideas in. Objects out.
+[a] Templates

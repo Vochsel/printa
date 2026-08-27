@@ -1,0 +1,265 @@
+{
+  "typography": [
+    {
+      "role": "display",
+      "fontFamily": "Space Grotesk",
+      "fontSize": "60px",
+      "fontWeight": "600",
+      "lineHeight": "63px",
+      "letterSpacing": "-1.5px",
+      "color": "#18181B",
+      "sampleText": "Turn words intoprintable objects."
+    },
+    {
+      "role": "heading",
+      "fontFamily": "Space Grotesk",
+      "fontSize": "36px",
+      "fontWeight": "600",
+      "lineHeight": "40px",
+      "letterSpacing": "-0.9px",
+      "color": "#18181B",
+      "sampleText": "Real models, compiled on this page"
+    },
+    {
+      "role": "heading-3",
+      "fontFamily": "Space Grotesk",
+      "fontSize": "18px",
+      "fontWeight": "600",
+      "lineHeight": "28px",
+      "letterSpacing": "-0.45px",
+      "color": "#18181B",
+      "sampleText": "Free"
+    },
+    {
+      "role": "heading-2",
+      "fontFamily": "Space Grotesk",
+      "fontSize": "16px",
+      "fontWeight": "600",
+      "lineHeight": "24px",
+      "letterSpacing": "-0.4px",
+      "color": "#18181B",
+      "sampleText": "Ask"
+    },
+    {
+      "role": "body",
+      "fontFamily": "Geist",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "lineHeight": "26px",
+      "letterSpacing": "normal",
+      "color": "#71717A",
+      "sampleText": "Describe an object and Printa builds a real, watertight 3D m"
+    },
+    {
+      "role": "link",
+      "fontFamily": "Space Grotesk",
+      "fontSize": "15px",
+      "fontWeight": "600",
+      "lineHeight": "22.5px",
+      "letterSpacing": "-0.375px",
+      "color": "#18181B",
+      "sampleText": "Printa"
+    },
+    {
+      "role": "code",
+      "fontFamily": "Geist Mono",
+      "fontSize": "11px",
+      "fontWeight": "600",
+      "lineHeight": "16.5px",
+      "letterSpacing": "normal",
+      "color": "#6E56CF",
+      "sampleText": "1"
+    }
+  ],
+  "spacing": {
+    "observed": [
+      4,
+      6,
+      8,
+      10,
+      12,
+      14,
+      16,
+      24,
+      40,
+      80
+    ],
+    "baseUnit": 8
+  },
+  "radius": [
+    "8px",
+    "11.2px",
+    "14.4px"
+  ],
+  "shadows": [
+    {
+      "value": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.1) 0px 1px 3px 0px, rgba(0, 0, 0, 0.1) 0px 1px 2px -1px",
+      "count": 1
+    }
+  ],
+  "buttons": [
+    {
+      "label": "Your text",
+      "background": "#18181B",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#FFFFFF",
+      "padding": "8px 10px",
+      "borderRadius": "11.2px",
+      "border": "0px solid rgb(228, 228, 231)",
+      "boxShadow": "none",
+      "fontSize": "13px",
+      "fontWeight": "500",
+      "height": "38px"
+    },
+    {
+      "label": "Rippled vase",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#71717A",
+      "padding": "8px 10px",
+      "borderRadius": "11.2px",
+      "border": "0px solid rgb(228, 228, 231)",
+      "boxShadow": "none",
+      "fontSize": "13px",
+      "fontWeight": "500",
+      "height": "38px"
+    },
+    {
+      "label": "Poppins",
+      "background": "#FFFFFF",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#18181B",
+      "padding": "0px 12px",
+      "borderRadius": "11.2px",
+      "border": "1px solid rgb(217, 217, 222)",
+      "boxShadow": "none",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "height": "40px"
+    }
+  ],
+  "cards": [
+    {
+      "label": "card",
+      "background": "#FAFAFA",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#18181B",
+      "padding": "0px",
+      "borderRadius": "17.6px",
+      "border": "1px solid rgb(228, 228, 231)",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.1) 0px 1px 3px 0px, rgba(0, 0, 0, 0.1) 0px 1px 2px -1px",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "height": "549.5px"
+    },
+    {
+      "label": "card",
+      "background": "#FAFAFA",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#18181B",
+      "padding": "0px",
+      "borderRadius": "14.4px",
+      "border": "1px solid rgb(228, 228, 231)",
+      "boxShadow": "none",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "height": "326px"
+    }
+  ],
+  "nav": {
+    "label": "navigation",
+    "background": "oklab(0.999994 0.0000455678 0.0000200868 / 0.85)",
+    "backgroundImage": "",
+    "backdropFilter": "blur(8px)",
+    "color": "#18181B",
+    "padding": "0px",
+    "borderRadius": "0px",
+    "border": "",
+    "boxShadow": "none",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "height": "57px"
+  },
+  "chips": [
+    {
+      "label": "drag to orbit",
+      "background": "oklab(0.999994 0.0000455678 0.0000200868 / 0.85)",
+      "color": "#71717A",
+      "padding": "4px 10px",
+      "borderRadius": "3.35544e+07px",
+      "border": "0px solid rgb(228, 228, 231)",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.1) 0px 1px 3px 0px, rgba(0, 0, 0, 0.1) 0px 1px 2px -1px",
+      "fontSize": "11px",
+      "fontWeight": "500",
+      "height": "24.5px"
+    },
+    {
+      "label": "Pro",
+      "background": "#FF4D8B",
+      "color": "#FFFFFF",
+      "padding": "2px 10px",
+      "borderRadius": "3.35544e+07px",
+      "border": "0px solid rgb(228, 228, 231)",
+      "boxShadow": "none",
+      "fontSize": "11px",
+      "fontWeight": "600",
+      "height": "20.5px"
+    }
+  ],
+  "statCells": [],
+  "tabs": [
+    {
+      "label": "14 mm",
+      "background": "transparent",
+      "color": "#18181B",
+      "padding": "0px",
+      "borderRadius": "0px",
+      "border": "0px solid rgb(228, 228, 231)",
+      "boxShadow": "none",
+      "fontSize": "11px",
+      "fontWeight": "500",
+      "height": "16.5px"
+    }
+  ],
+  "backgrounds": [
+    {
+      "value": "radial-gradient(circle at 50% -10%, rgb(247, 243, 255), rgba(0, 0, 0, 0) 72%)",
+      "area": 365600
+    },
+    {
+      "value": "radial-gradient(circle at 50% 12%, rgba(201, 116, 63, 0.133), rgba(0, 0, 0, 0) 74%)",
+      "area": 102966
+    },
+    {
+      "value": "radial-gradient(circle at 50% 12%, rgba(224, 160, 60, 0.133), rgba(0, 0, 0, 0) 74%)",
+      "area": 51483
+    },
+    {
+      "value": "radial-gradient(circle at 50% 12%, rgba(74, 163, 201, 0.133), rgba(0, 0, 0, 0) 74%)",
+      "area": 51483
+    },
+    {
+      "value": "radial-gradient(circle at 50% 12%, rgba(123, 99, 206, 0.133), rgba(0, 0, 0, 0) 74%)",
+      "area": 51483
+    },
+    {
+      "value": "radial-gradient(circle at 50% 12%, rgba(106, 154, 63, 0.133), rgba(0, 0, 0, 0) 74%)",
+      "area": 51483
+    }
+  ],
+  "glass": [
+    {
+      "backdropFilter": "blur(8px)",
+      "background": "oklab(0.999994 0.0000455678 0.0000200868 / 0.85)",
+      "border": "",
+      "borderRadius": "0px",
+      "boxShadow": "",
+      "area": 109440
+    }
+  ]
+}

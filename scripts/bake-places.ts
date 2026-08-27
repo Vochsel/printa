@@ -32,6 +32,7 @@ async function main() {
       baked[place.slug] = {
         surface: result.surface,
         ...(result.footprints ? { footprints: result.footprints } : {}),
+        ...(result.roads ? { roads: result.roads } : {}),
       };
       const size = JSON.stringify(baked[place.slug]).length;
       console.log(`${result.note} — ${(size / 1024).toFixed(0)}KB in ${((Date.now() - started) / 1000).toFixed(1)}s`);

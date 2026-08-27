@@ -1,7 +1,7 @@
 import { degreeSpan } from "@/lib/place-geo";
 
 /**
- * Building footprints from OpenStreetMap, fetched in the browser.
+ * Buildings and streets from OpenStreetMap, fetched in the browser.
  *
  * The core OSM API is tried first: it is CORS-enabled, returns a whole bbox in
  * one call, and — unlike the volunteer Overpass mirrors — is not prone to
@@ -36,6 +36,61 @@ export type Building = {
   heightM: number;
 };
 
+export type Road = {
+  /** Flat [lng, lat, lng, lat, …] centreline. */
+  line: number[];
+  widthM: number;
+};
+
+export type OsmFeatures = { buildings: Building[]; roads: Road[] };
+
+/**
+ * How wide a street is when nobody has said.
+ *
+ * Carriageway plus footpaths, because at 1:5,000 a street reads as the gap
+ * between the buildings, not as the asphalt alone. Classes below these — 
+ * service roads, alleys, footpaths, cycle tracks — are left out: a dense
+ * block has hundreds of them and they turn the model into hatching.
+ */
+const ROAD_WIDTH_M: Record<string, number> = {
+  motorway: 24,
+  motorway_link: 12,
+  trunk: 20,
+  trunk_link: 11,
+  primary: 16,
+  primary_link: 10,
+  secondary: 14,
+  secondary_link: 9,
+  tertiary: 12,
+  tertiary_link: 8,
+  residential: 10,
+  unclassified: 9,
+  living_street: 8,
+  pedestrian: 8,
+};
+
+const METRES_PER_LANE = 3.2;
+
+function widthOf(tags: Record<string, string>): number | null {
+  const highway = tags.highway;
+  const base = ROAD_WIDTH_M[highway];
+  if (base === undefined) return null;
+  // A square mapped as a pedestrian area is a polygon, not a centreline;
+  // ribboning it would draw a stripe across the middle of the square.
+  if (tags.area === "yes") return null;
+  // Tunnels are under the ground the model prints, so a ribbon for one would
+  // be a street running through a hill.
+  if (tags.tunnel && tags.tunnel !== "no") return null;
+  if (Number(tags.layer) < 0) return null;
+
+  const explicit = parseMetres(tags.width) ?? parseMetres(tags["carriageway:width"]);
+  if (explicit && explicit > 0) return Math.min(60, explicit + 4);
+
+  const lanes = Number(tags.lanes);
+  if (Number.isFinite(lanes) && lanes > 0) return Math.min(60, lanes * METRES_PER_LANE + 4);
+  return base;
+}
+
 type OsmElement = {
   type: string;
   id: number;
@@ -65,13 +120,13 @@ function heightOf(tags: Record<string, string>): number {
   return DEFAULT_HEIGHT_M;
 }
 
-/** Buildings within `radiusM` of a point. */
-export async function fetchBuildings(
+/** Buildings and streets within `radiusM` of a point. */
+export async function fetchOsmFeatures(
   lat: number,
   lng: number,
   radiusM: number,
   signal?: AbortSignal,
-): Promise<Building[]> {
+): Promise<OsmFeatures> {
   // Reach past the model edge so buildings on the boundary can be clipped
   // rather than disappearing.
   const reach = radiusM * 1.45;
@@ -89,7 +144,7 @@ async function fromOsmApi(
   lng: number,
   reach: number,
   signal?: AbortSignal,
-): Promise<Building[]> {
+): Promise<OsmFeatures> {
   const { dLat, dLng } = degreeSpan(lat, reach);
   const bbox = [lng - dLng, lat - dLat, lng + dLng, lat + dLat]
     .map((v) => v.toFixed(6))
@@ -130,6 +185,7 @@ async function fromOsmApi(
   };
 
   const out: Building[] = [];
+  const roads: Road[] = [];
   const claimed = new Set<number>();
 
   // Multipolygon relations first, so their member ways are not also emitted
@@ -150,13 +206,42 @@ async function fromOsmApi(
   }
 
   for (const el of elements) {
-    if (el.type !== "way" || !el.tags?.building) continue;
-    if (el.tags.building === "roof") continue;
+    if (el.type !== "way" || !el.tags) continue;
+
+    if (el.tags.highway) {
+      const widthM = widthOf(el.tags);
+      // Unlike a footprint, a street that runs off the edge of the bbox is
+      // still worth drawing: the nodes it does have are a real length of
+      // road, so it is split into the runs that survived rather than dropped.
+      if (widthM !== null) {
+        for (const line of lineRuns(el.nodes ?? [], nodes)) roads.push({ line, widthM });
+      }
+      continue;
+    }
+
+    if (!el.tags.building || el.tags.building === "roof") continue;
     if (claimed.has(el.id)) continue;
     const ring = ringOf(el);
     if (ring) out.push({ ring, heightM: heightOf(el.tags) });
   }
-  return out;
+  return { buildings: out, roads };
+}
+
+/** Split a way into the contiguous runs whose nodes the response carried. */
+function lineRuns(refs: number[], nodes: Map<number, [number, number]>): number[][] {
+  const runs: number[][] = [];
+  let current: number[] = [];
+  for (const ref of refs) {
+    const point = nodes.get(ref);
+    if (!point) {
+      if (current.length >= 4) runs.push(current);
+      current = [];
+      continue;
+    }
+    current.push(point[0], point[1]);
+  }
+  if (current.length >= 4) runs.push(current);
+  return runs;
 }
 
 async function fromOverpass(
@@ -164,11 +249,13 @@ async function fromOverpass(
   lng: number,
   reach: number,
   signal?: AbortSignal,
-): Promise<Building[]> {
+): Promise<OsmFeatures> {
+  const highways = Object.keys(ROAD_WIDTH_M).join("|");
   const query =
     `[out:json][timeout:45];` +
     `(way["building"](around:${Math.round(reach)},${lat},${lng});` +
-    `relation["building"]["type"="multipolygon"](around:${Math.round(reach)},${lat},${lng}););` +
+    `relation["building"]["type"="multipolygon"](around:${Math.round(reach)},${lat},${lng});` +
+    `way["highway"~"^(${highways})$"](around:${Math.round(reach)},${lat},${lng}););` +
     `out geom tags;`;
 
   const res = await fetch(OVERPASS, {
@@ -181,15 +268,26 @@ async function fromOverpass(
 
   const body = (await res.json()) as { elements?: OsmElement[] };
   const out: Building[] = [];
+  const roads: Road[] = [];
   for (const el of body.elements ?? []) {
     const geometry = el.geometry;
-    if (!geometry || geometry.length < 4) continue;
     const tags = el.tags ?? {};
+
+    if (tags.highway) {
+      const widthM = widthOf(tags);
+      if (widthM === null || !geometry || geometry.length < 2) continue;
+      const line: number[] = [];
+      for (const p of geometry) line.push(p.lon, p.lat);
+      roads.push({ line, widthM });
+      continue;
+    }
+
+    if (!geometry || geometry.length < 4) continue;
     if (tags.building === "roof") continue;
 
     const ring: number[] = [];
     for (const p of geometry) ring.push(p.lon, p.lat);
     out.push({ ring, heightM: heightOf(tags) });
   }
-  return out;
+  return { buildings: out, roads };
 }

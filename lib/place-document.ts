@@ -13,6 +13,7 @@ import { PLACES, type PlaceEntry } from "@/lib/place-library";
 type Baked = {
   surface?: { grid: number; minM: number; maxM: number; heights: string };
   footprints?: { count: number; data: string };
+  roads?: { count: number; data: string };
 };
 
 const printDefaults = {
@@ -28,6 +29,7 @@ export type PlaceOverrides = {
   frameHeight?: number;
   exaggeration?: number;
   resolution?: number;
+  roadRelief?: number;
 };
 
 export function placeDocument(
@@ -62,11 +64,15 @@ export function placeDocument(
         // than a place. Somewhere flat can raise this per document.
         exaggeration: overrides.exaggeration ?? place.exaggeration ?? 1,
         resolution: overrides.resolution ?? 180,
+        // Streets stand a little proud of the ground, which is what makes a
+        // mapped capture read as a city rather than as scattered blocks.
+        roadRelief: overrides.roadRelief ?? 0.8,
         // No blur on a captured surface: it rounds the very edges that make a
         // building read as a building at this scale.
         smoothing: 0,
         ...(baked.surface ? { surface: baked.surface } : {}),
         ...(baked.footprints ? { footprints: baked.footprints } : {}),
+        ...(baked.roads ? { roads: baked.roads } : {}),
       },
       modifiers: [],
       material: "pla-matte",

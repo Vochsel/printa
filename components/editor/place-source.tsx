@@ -139,7 +139,7 @@ export function PlaceSourceFields({
       );
       // A surface capture leaves no outlines behind: keeping a previous set
       // would carry tens of kilobytes the model never draws.
-      update({ surface: result.surface, footprints: result.footprints });
+      update({ surface: result.surface, footprints: result.footprints, roads: result.roads });
       setNote(result.note);
       sfx("success");
     } catch (nextError) {
@@ -162,7 +162,7 @@ export function PlaceSourceFields({
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5">
           <Input
             value={query}
-            placeholder="Search a city, suburb or landmark…"
+            placeholder="Search an address, suburb or landmark…"
             className={controlClass}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -254,7 +254,7 @@ export function PlaceSourceFields({
                     : "No capture yet, so this builds as bare ground. Capture to fill it in."
                   : stale
                     ? "Moved since the capture. Recapture so the ground matches the coordinates."
-                    : note || `Captured · ${source.surface?.grid ?? 0}² ground${source.footprints ? ` · ${source.footprints.count.toLocaleString()} buildings` : ""} · ${sizeKb} KB`}
+                    : note || `Captured · ${source.surface?.grid ?? 0}² ground${source.footprints ? ` · ${source.footprints.count.toLocaleString()} buildings` : ""}${source.roads ? ` · ${source.roads.count.toLocaleString()} streets` : ""} · ${sizeKb} KB`}
             </span>
           </p>
         )}
@@ -266,11 +266,14 @@ export function PlaceSourceFields({
         <NumberField label="Height boost" value={source.exaggeration} min={0.1} max={8} step={0.1} onChange={(value) => update({ exaggeration: value ?? 1 })} />
       </Grid3>
       <Grid3>
+        <NumberField label="Street relief" value={source.roadRelief} min={0} max={10} step={0.1} unit="mm" onChange={(value) => update({ roadRelief: value ?? 0 })} />
         <NumberField label="Rim" value={source.frame} min={0} max={40} step={0.5} unit="mm" onChange={(value) => update({ frame: value ?? 0 })} />
         <NumberField label="Rim height" value={source.frameHeight} min={0} max={120} step={0.5} unit="mm" onChange={(value) => update({ frameHeight: value ?? 0 })} />
-        <NumberField label="Mesh detail" value={source.resolution} min={24} max={400} onChange={(value) => update({ resolution: value ?? 160 })} />
       </Grid3>
-      <NumberField layout="row" label="Smoothing passes" value={source.smoothing} min={0} max={4} onChange={(value) => update({ smoothing: value ?? 0 })} />
+      <Grid2>
+        <NumberField label="Mesh detail" value={source.resolution} min={24} max={400} onChange={(value) => update({ resolution: value ?? 160 })} />
+        <NumberField layout="stack" label="Smoothing" value={source.smoothing} min={0} max={4} onChange={(value) => update({ smoothing: value ?? 0 })} />
+      </Grid2>
     </>
   );
 }

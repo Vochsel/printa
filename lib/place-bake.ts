@@ -2,7 +2,7 @@ import type { SourceSpec } from "@/lib/model-spec";
 import { LocalFrame } from "@/lib/place-geo";
 import { despeckle, fillGaps, raiseVoids, type SampleGrid } from "@/lib/place-grid";
 import { terrainSampleGrid } from "@/lib/place-elevation";
-import { fetchBuildings } from "@/lib/place-osm";
+import { fetchOsmFeatures } from "@/lib/place-osm";
 import { googleTilesSampleGrid } from "@/lib/place-tiles";
 
 /**
@@ -149,6 +149,7 @@ export type BakeOptions = {
 export type BakeResult = {
   surface: NonNullable<PlaceSource["surface"]>;
   footprints?: NonNullable<PlaceSource["footprints"]>;
+  roads?: NonNullable<PlaceSource["roads"]>;
   note: string;
 };
 
@@ -176,21 +177,84 @@ export async function bakePlace(options: BakeOptions): Promise<BakeResult> {
   }
 
   onProgress?.("Reading OpenStreetMap", 0, 1);
-  const [buildings, ground] = await Promise.all([
-    fetchBuildings(lat, lng, radiusM),
+  const [features, ground] = await Promise.all([
+    fetchOsmFeatures(lat, lng, radiusM),
     terrainSampleGrid({ lat, lng, radiusM, resolution: BAKE_GRID }),
   ]);
+  const { buildings, roads } = features;
 
   const grid = ground ?? emptyGrid(radiusM);
   fillGaps(grid);
   const raised = raiseVoids(grid);
 
   const frame = new LocalFrame(lat, lng, 0);
+  const packedRoads = packRoads(roads, frame, radiusM);
   return {
     surface: packSurface(grid),
     footprints: packFootprints(buildings, frame, radiusM),
-    note: `${buildings.length} buildings · OpenStreetMap${ground ? "" : " · flat ground"}${voidNote(raised)}`,
+    roads: packedRoads,
+    note: `${buildings.length} buildings · ${packedRoads.count} streets · OpenStreetMap${ground ? "" : " · flat ground"}${voidNote(raised)}`,
   };
+}
+
+/**
+ * Pack street centrelines.
+ *
+ * The same quantisation as the footprints — decimetres in an int16 — with the
+ * trailing value carrying the street's width rather than a building's height.
+ */
+function packRoads(
+  roads: Array<{ line: number[]; widthM: number }>,
+  frame: LocalFrame,
+  radiusM: number,
+) {
+  const chunks: number[] = [];
+  let count = 0;
+
+  for (const road of roads) {
+    const points: Array<[number, number]> = [];
+    for (let i = 0; i + 1 < road.line.length; i += 2) {
+      const point = frame.fromLngLat(road.line[i], road.line[i + 1]);
+      const previous = points[points.length - 1];
+      // Consecutive duplicates come from ways sharing a node with a junction
+      // and would give a ribbon segment no direction to be square to.
+      if (previous && Math.abs(previous[0] - point[0]) < 0.05 && Math.abs(previous[1] - point[1]) < 0.05) continue;
+      points.push(point);
+    }
+    if (points.length < 2 || points.length > 512) continue;
+    // Reach past the edge so a street crossing the boundary is still clipped
+    // rather than dropped.
+    if (points.every(([x, y]) => Math.hypot(x, y) > radiusM * 1.6)) continue;
+
+    chunks.push(points.length);
+    for (const [x, y] of points) {
+      chunks.push(Math.max(-32768, Math.min(32767, Math.round(x * 10))));
+      chunks.push(Math.max(-32768, Math.min(32767, Math.round(y * 10))));
+    }
+    chunks.push(Math.max(0, Math.min(65535, Math.round(road.widthM * 10))));
+    count += 1;
+  }
+
+  const bytes = new Uint8Array(chunks.length * 2);
+  const view = new DataView(bytes.buffer);
+  let offset = 0;
+  let cursor = 0;
+  while (cursor < chunks.length) {
+    const points = chunks[cursor];
+    view.setInt16(offset, points, true);
+    offset += 2;
+    cursor += 1;
+    for (let i = 0; i < points * 2; i += 1) {
+      view.setInt16(offset, chunks[cursor], true);
+      offset += 2;
+      cursor += 1;
+    }
+    view.setUint16(offset, chunks[cursor], true);
+    offset += 2;
+    cursor += 1;
+  }
+
+  return { count, data: encodeBase64(bytes.subarray(0, offset)) };
 }
 
 function voidNote(raised: number): string {

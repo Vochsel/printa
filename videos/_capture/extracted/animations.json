@@ -1,0 +1,288 @@
+{
+  "summary": {
+    "webAnimations": 7,
+    "cssDeclarations": 40,
+    "scrollTargets": 56,
+    "cdpAnimations": 14,
+    "canvases": 7
+  },
+  "namedAnimations": [
+    "spin"
+  ],
+  "scrollTriggeredElements": 56,
+  "representativeAnimations": [
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "spin",
+      "targetSelector": "svg",
+      "targetRect": {
+        "x": 621.1570434570312,
+        "y": 450.40704345703125,
+        "width": 15.6859130859375,
+        "height": 15.6859130859375,
+        "top": 450.40704345703125,
+        "right": 636.8429565429688,
+        "bottom": 466.09295654296875,
+        "left": 621.1570434570312
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "linear",
+          "composite": "replace",
+          "transform": "none",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "linear",
+          "composite": "auto",
+          "transform": "rotate(360deg)",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 1000,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    },
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "spin",
+      "targetSelector": "svg",
+      "targetRect": {
+        "x": 433.15704345703125,
+        "y": 1448.156982421875,
+        "width": 15.6859130859375,
+        "height": 15.68603515625,
+        "top": 1448.156982421875,
+        "right": 448.84295654296875,
+        "bottom": 1463.843017578125,
+        "left": 433.15704345703125
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "linear",
+          "composite": "replace",
+          "transform": "none",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "linear",
+          "composite": "auto",
+          "transform": "rotate(360deg)",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 1000,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    },
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "spin",
+      "targetSelector": "svg",
+      "targetRect": {
+        "x": 806.4851684570312,
+        "y": 1448.156982421875,
+        "width": 15.6859130859375,
+        "height": 15.68603515625,
+        "top": 1448.156982421875,
+        "right": 822.1710815429688,
+        "bottom": 1463.843017578125,
+        "left": 806.4851684570312
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "linear",
+          "composite": "replace",
+          "transform": "none",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "linear",
+          "composite": "auto",
+          "transform": "rotate(360deg)",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 1000,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    },
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "spin",
+      "targetSelector": "svg",
+      "targetRect": {
+        "x": 1179.813232421875,
+        "y": 1448.156982421875,
+        "width": 15.68603515625,
+        "height": 15.68603515625,
+        "top": 1448.156982421875,
+        "right": 1195.499267578125,
+        "bottom": 1463.843017578125,
+        "left": 1179.813232421875
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "linear",
+          "composite": "replace",
+          "transform": "none",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "linear",
+          "composite": "auto",
+          "transform": "rotate(360deg)",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 1000,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    },
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "spin",
+      "targetSelector": "svg",
+      "targetRect": {
+        "x": 433.15704345703125,
+        "y": 1790.156982421875,
+        "width": 15.6859130859375,
+        "height": 15.68603515625,
+        "top": 1790.156982421875,
+        "right": 448.84295654296875,
+        "bottom": 1805.843017578125,
+        "left": 433.15704345703125
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "linear",
+          "composite": "replace",
+          "transform": "none",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "linear",
+          "composite": "auto",
+          "transform": "rotate(360deg)",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 1000,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    },
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "spin",
+      "targetSelector": "svg",
+      "targetRect": {
+        "x": 806.4851684570312,
+        "y": 1790.156982421875,
+        "width": 15.6859130859375,
+        "height": 15.68603515625,
+        "top": 1790.156982421875,
+        "right": 822.1710815429688,
+        "bottom": 1805.843017578125,
+        "left": 806.4851684570312
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "linear",
+          "composite": "replace",
+          "transform": "none",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "linear",
+          "composite": "auto",
+          "transform": "rotate(360deg)",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 1000,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    },
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "spin",
+      "targetSelector": "svg",
+      "targetRect": {
+        "x": 1179.813232421875,
+        "y": 1790.156982421875,
+        "width": 15.68603515625,
+        "height": 15.68603515625,
+        "top": 1790.156982421875,
+        "right": 1195.499267578125,
+        "bottom": 1805.843017578125,
+        "left": 1179.813232421875
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "linear",
+          "composite": "replace",
+          "transform": "none",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "linear",
+          "composite": "auto",
+          "transform": "rotate(360deg)",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 1000,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    }
+  ]
+}

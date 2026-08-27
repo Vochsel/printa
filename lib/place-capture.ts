@@ -24,6 +24,7 @@ export type PlaceCaptureRequest = {
 export type PlaceCaptureResult = {
   surface: NonNullable<PlaceSource["surface"]>;
   footprints?: NonNullable<PlaceSource["footprints"]>;
+  roads?: NonNullable<PlaceSource["roads"]>;
   /** One line describing what was captured, for the editor to show. */
   note: string;
 };
@@ -88,7 +89,7 @@ export async function capturePlace(
       const event = JSON.parse(line) as PlaceCaptureEvent;
       if (event.type === "progress") options.onProgress?.(event.stage, event.done, event.total);
       if (event.type === "error") throw new Error(event.message);
-      if (event.type === "result") result = { surface: event.surface, footprints: event.footprints, note: event.note };
+      if (event.type === "result") result = { surface: event.surface, footprints: event.footprints, roads: event.roads, note: event.note };
     }
     if (done) break;
   }
@@ -100,8 +101,8 @@ export async function capturePlace(
 }
 
 /** Roughly how much room the captured data takes in the document, in bytes. */
-export function captureBytes(source: Pick<PlaceSource, "surface" | "footprints">): number {
-  const base64 = (source.surface?.heights.length ?? 0) + (source.footprints?.data.length ?? 0);
+export function captureBytes(source: Pick<PlaceSource, "surface" | "footprints" | "roads">): number {
+  const base64 = (source.surface?.heights.length ?? 0) + (source.footprints?.data.length ?? 0) + (source.roads?.data.length ?? 0);
   return Math.round(base64 * 0.75);
 }
 
@@ -137,6 +138,9 @@ export function newPlaceSource(): PlaceSource {
     frameHeight: 6,
     exaggeration: 1,
     resolution: 180,
+    // A street reads at a millimetre of relief and prints in three layers at
+    // 0.2 mm; deeper starts to look like a canyon at 1:5,000.
+    roadRelief: 0.8,
     // A captured surface is blurred at its own peril: smoothing rounds off the
     // very edges that make a building read as a building at 1:5,000.
     smoothing: 0,

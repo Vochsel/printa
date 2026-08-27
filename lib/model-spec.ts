@@ -378,6 +378,11 @@ const placeFootprintsSchema = z.object({
   data: z.string().max(4_000_000).describe("base64 packed outlines: per building an int16 point count, int16 x/y decimetres from centre, then a uint16 height in decimetres"),
 }).strict();
 
+const placeRoadsSchema = z.object({
+  count: z.number().int().min(0).max(20_000),
+  data: z.string().max(4_000_000).describe("base64 packed street centrelines: per street an int16 point count, int16 x/y decimetres from centre, then a uint16 width in decimetres"),
+}).strict();
+
 const placeSourceSchema = z.object({
   type: z.literal("place"),
   label: z.string().max(160).default("").describe("Human name of the place, used for filenames and titles"),
@@ -394,8 +399,10 @@ const placeSourceSchema = z.object({
   exaggeration: finite.min(0.1).max(8).default(1.4).describe("Multiplies terrain and building heights"),
   resolution: z.number().int().min(24).max(400).default(160).describe("Mesh divisions across the model"),
   smoothing: z.number().int().min(0).max(4).default(1),
+  roadRelief: nonNegative.max(10).default(0.6).describe("How far mapped streets stand above the ground, in document units; 0 leaves them out"),
   surface: placeSurfaceSchema.optional(),
   footprints: placeFootprintsSchema.optional(),
+  roads: placeRoadsSchema.optional(),
   ...bakeField,
 }).strict();
 
