@@ -61,6 +61,8 @@ import { BrandLink } from "@/components/brand-link";
 import { DEMO_MODEL_CARDS, type DemoModelId } from "@/lib/demo-models";
 import { newPlaceDocument } from "@/lib/place-capture";
 import { takeHandoff } from "@/lib/model-handoff";
+import { capturePlace, searchPlaces, placeCaptureDocument, MAX_CAPTURE_RADIUS_M } from "@/lib/place-capture";
+import { say, useWebMcpTools } from "@/lib/webmcp";
 import { printMaterialPreset, type PrintMaterialPreset } from "@/lib/material-presets";
 import type { ModelDocument, ModelDocumentInput } from "@/lib/model-spec";
 import { initSfx, isSfxEnabled, setSfxEnabled, sfx, sfxThrottled } from "@/lib/sfx";
@@ -1181,6 +1183,90 @@ export function ProceduralStudio() {
     window.localStorage.setItem(SIDEBAR_KEY, String(sidebarWidth));
     sfxThrottled("tick", 150);
   };
+
+  /**
+   * The editor, offered to the browser's own agent.
+   *
+   * Same capabilities as the HTTP MCP server, pointed at the document on
+   * screen: describe it, replace it, capture a place into it, save the STL.
+   * Where the browser has no WebMCP, none of this exists.
+   */
+  useWebMcpTools(() => [
+    {
+      name: "printa_get_model",
+      description: "Read the model currently open in the Printa editor: its Printa Spec document and printed dimensions.",
+      inputSchema: { type: "object", properties: {} },
+      execute: async () => say(
+        result
+          ? `${result.document.name} — ${result.stats.widthMm.toFixed(1)} × ${result.stats.depthMm.toFixed(1)} × ${result.stats.heightMm.toFixed(1)} mm, ${result.stats.triangles.toLocaleString()} triangles.
+
+${result.spec}`
+          : "Nothing is loaded in the editor yet.",
+      ),
+    },
+    {
+      name: "printa_set_model",
+      description: "Replace the model in the Printa editor with a complete Printa Spec 1.0 document, given as JSON. The viewport recompiles immediately.",
+      inputSchema: {
+        type: "object",
+        properties: { spec: { type: "string", description: "A complete Printa Spec 1.0 document as JSON." } },
+        required: ["spec"],
+      },
+      execute: async (input) => {
+        const spec = String((input as unknown as { spec?: string }).spec ?? "");
+        try {
+          await inspect({ spec: JSON.parse(spec) as ModelDocument });
+          return say("Loaded into the editor.");
+        } catch (error) {
+          return say(`That spec did not load: ${error instanceof Error ? error.message : "invalid JSON"}`);
+        }
+      },
+    },
+    {
+      name: "printa_capture_place",
+      description: "Find a real place by name or address and capture it as a printable model — mapped buildings and streets over sampled ground — then open it in the editor.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "An address, suburb, city or landmark." },
+          radiusM: { type: "number", description: "Half-width of the ground to capture in metres; 300-500 suits a city block." },
+        },
+        required: ["query"],
+      },
+      execute: async (input) => {
+        const { query, radiusM } = input as unknown as { query?: string; radiusM?: number };
+        try {
+          const hits = await searchPlaces(String(query ?? ""));
+          const hit = hits[0];
+          if (!hit) return say(`Nothing found for "${query}".`);
+          const radius = Math.min(radiusM ?? hit.radiusM, MAX_CAPTURE_RADIUS_M.buildings);
+          const captured = await capturePlace({ lat: hit.lat, lng: hit.lng, radiusM: radius, capture: "buildings", label: hit.label });
+          const document = placeCaptureDocument({
+            name: hit.label.split(",")[0]?.trim() || hit.label,
+            lat: hit.lat,
+            lng: hit.lng,
+            radiusM: radius,
+            capture: "buildings",
+            baked: captured,
+          });
+          await inspect({ spec: document });
+          return say(`Captured ${hit.label} at ${radius * 2} m across. ${captured.note}`);
+        } catch (error) {
+          return say(`That place could not be captured: ${error instanceof Error ? error.message : "unknown error"}`);
+        }
+      },
+    },
+    {
+      name: "printa_download_stl",
+      description: "Download the model currently open in the Printa editor as a binary STL.",
+      inputSchema: { type: "object", properties: {} },
+      execute: async () => {
+        if (!result) return say("Nothing is loaded to download.");
+        await downloadStl();
+        return say(`Saving ${result.document.name} as STL.`);
+      },
+    },
+  ]);
 
   const sliceMm = result ? slice * result.stats.heightMm : 0;
 

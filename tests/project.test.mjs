@@ -5,14 +5,13 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("ships the homepage, advanced editors, MCP widgets, skills, icons, and generation routes", async () => {
-  const [page, home, editor, studio, inspector, widget, modelWidget, modelSpec, proceduralGeometry, demos, modelStlRoute, publicStlRoute, skill, skillRoute, stlRoute, mcpRoute, fontRoute, icon] = await Promise.all([
+  const [page, home, editor, studio, inspector, widget, modelSpec, proceduralGeometry, demos, modelStlRoute, publicStlRoute, skill, skillRoute, stlRoute, mcpRoute, fontRoute, icon] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/HomePage.tsx", root), "utf8"),
     readFile(new URL("app/editor/page.tsx", root), "utf8"),
     readFile(new URL("app/ProceduralStudio.tsx", root), "utf8"),
     readFile(new URL("app/SpecInspector.tsx", root), "utf8"),
     readFile(new URL("lib/mcp-widget.ts", root), "utf8"),
-    readFile(new URL("lib/mcp-model-widget.ts", root), "utf8"),
     readFile(new URL("lib/model-spec.ts", root), "utf8"),
     readFile(new URL("lib/procedural-geometry.ts", root), "utf8"),
     readFile(new URL("lib/demo-models.ts", root), "utf8"),
@@ -78,35 +77,20 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(inspector, /Drag .* to reorder/);
   assert.match(inspector, /onDragStart/);
   assert.match(inspector, /onDrop/);
-  assert.match(widget, /font-menu/);
-  assert.match(widget, /extrude-segments/);
-  assert.match(widget, /ui\/notifications\/tool-input/);
-  assert.match(widget, /Measurement units/);
-  assert.match(widget, /font-weight/);
-  assert.match(widget, /text-case/);
-  assert.match(widget, /loadPreviewFont/);
-  assert.match(widget, /font-search-wrap/);
-  assert.match(widget, /fontVisibleCount/);
-  assert.match(widget, /scroll for all/);
-  assert.match(widget, /volume-warning/);
-  assert.match(widget, /Generation and download remain enabled/);
-  assert.match(widget, /groundDimensions/);
-  assert.match(widget, /three-gpu-pathtracer/);
-  assert.match(widget, /material-preset/);
-  assert.match(widget, /high-quality/);
-  assert.match(widget, /app settings-collapsed/);
-  assert.match(widget, /requestDisplayMode\(\{mode:target\}\)/);
-  assert.match(widget, /Three\.js/);
-  assert.match(modelWidget, /Shading/);
-  assert.match(modelWidget, /importmap/);
-  assert.match(modelWidget, /cuelume/);
-  assert.match(modelWidget, /create_procedural_model/);
-  assert.match(modelWidget, /JSON \/ YAML/);
-  assert.match(modelWidget, /STLLoader/);
-  assert.match(modelWidget, /new App\(/);
-  assert.match(modelWidget, /app\.ontoolresult/);
-  assert.match(modelWidget, /previewUrl/);
-  assert.match(modelWidget, /The model result did not arrive/);
+  // The MCP app is deliberately one screen: the computed geometry, its printed
+  // size, and a way into the editor. Anything that reads like a second editor
+  // living inside a chat message does not belong here.
+  assert.match(widget, /importmap/);
+  assert.match(widget, /STLLoader/);
+  assert.match(widget, /Open in Printa/);
+  assert.match(widget, /openStudio/);
+  assert.match(widget, /previewUrl/);
+  assert.match(widget, /studioUrl/);
+  assert.match(widget, /new App\(/);
+  assert.match(widget, /app\.ontoolresult/);
+  assert.match(widget, /export function createWidgetHtml/);
+  assert.match(widget, /export function createModelWidgetHtml/);
+  assert.doesNotMatch(widget, /GTAOPass|pathtracer|font-picker/);
   assert.match(modelSpec, /MODEL_SPEC_VERSION/);
   assert.match(modelSpec, /radialWave/);
   assert.match(modelSpec, /waterSourceSchema/);
@@ -146,7 +130,6 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   // Ambient occlusion in every editor viewport + shared brand logo
   assert.match(studio, /GTAOPass/);
   assert.match(studio, /BrandLink/);
-  assert.match(modelWidget, /GTAOPass/);
   assert.match(modelSpec, /disabledField/);
   assert.match(modelSpec, /disabled: z\.boolean\(\)\.optional/);
   // Simulations: SPH fluid, scene collision, on-command bake
@@ -174,23 +157,19 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(mcpRoute, /text\/html;profile=mcp-app|RESOURCE_MIME_TYPE/);
   assert.match(fontRoute, /getGoogleFontCatalog/);
   assert.match(icon, /stacked 3D printing layers/);
-  assert.match(modelWidget, /toggleSpec/);
-  assert.match(modelWidget, /if\(!viewportReady\|\|document\.hidden\)return/);
-  assert.match(widget, /if\(!viewportReady\|\|document\.hidden\)return/);
 });
 
 // These are the failure modes that left the ChatGPT widget rendering nothing:
 // tool output that arrives after the module evaluates, an unreported frame
 // height, and a single CDN or SDK failure taking the whole module down.
 test("MCP widgets survive every way a host can hand them data", async () => {
-  const [modelWidget, widget, mcpRoute, inspectRoute] = await Promise.all([
-    readFile(new URL("lib/mcp-model-widget.ts", root), "utf8"),
+  const [widget, mcpRoute, inspectRoute] = await Promise.all([
     readFile(new URL("lib/mcp-widget.ts", root), "utf8"),
     readFile(new URL("app/mcp/route.ts", root), "utf8"),
     readFile(new URL("app/api/model/inspect/route.ts", root), "utf8"),
   ]);
 
-  for (const [name, source] of [["model", modelWidget], ["text", widget]]) {
+  for (const [name, source] of [["widget", widget]]) {
     // Late-arriving globals: ChatGPT does not guarantee toolOutput exists at
     // module-evaluation time, so both widgets must keep listening.
     assert.match(source, /openai:set_globals/, `${name} widget listens for late globals`);
@@ -203,30 +182,49 @@ test("MCP widgets survive every way a host can hand them data", async () => {
 
   // The SDK handshake must never be fatal: ChatGPT uses its own window.openai
   // bridge and rejects the ext-apps connect() call.
-  assert.doesNotMatch(modelWidget, /Could not connect to the MCP host/);
-  assert.match(modelWidget, /import\("https:\/\/cdn\.jsdelivr\.net\/npm\/@modelcontextprotocol\/ext-apps[^)]*\)/);
-  assert.match(modelWidget, /notifications\/initialized/);
+  assert.doesNotMatch(widget, /Could not connect to the MCP host/);
+  assert.match(widget, /import\("https:\/\/cdn\.jsdelivr\.net\/npm\/@modelcontextprotocol\/ext-apps[^)]*\)/);
+  assert.match(widget, /notifications\/initialized/);
   // three.js loads dynamically so a blocked CDN degrades to a download link.
-  assert.match(modelWidget, /async function bootRenderer/);
-  assert.match(modelWidget, /rendererReady/);
-  assert.match(modelWidget, /The 3D preview could not load/);
+  assert.match(widget, /async function bootRenderer/);
+  assert.match(widget, /rendererReady/);
+  assert.match(widget, /The 3D preview could not load/);
   // Last-resort self-bootstrap needs a CORS-enabled inspect endpoint.
-  assert.match(modelWidget, /\/api\/model\/inspect/);
+  assert.match(widget, /\/api\/model\/inspect/);
   assert.match(inspectRoute, /Access-Control-Allow-Origin/);
   assert.match(inspectRoute, /export function OPTIONS/);
   // Widget HTML is cached by resource URI, so the version must move with it.
-  assert.match(mcpRoute, /printa-procedural-model-v10\.html/);
-  assert.match(mcpRoute, /printa-extruded-text-v11\.html/);
+  assert.match(mcpRoute, /printa-procedural-model-v11\.html/);
+  assert.match(mcpRoute, /printa-extruded-text-v12\.html/);
   // Hosts render widgets on light and dark chrome.
-  assert.match(modelWidget, /prefers-color-scheme: dark/);
+  assert.match(widget, /prefers-color-scheme:dark/);
+});
+
+test("the page offers its tools to the browser's own agent (WebMCP)", async () => {
+  const [webmcp, studio] = await Promise.all([
+    readFile(new URL("lib/webmcp.ts", root), "utf8"),
+    readFile(new URL("app/ProceduralStudio.tsx", root), "utf8"),
+  ]);
+
+  // Chrome's API, and nothing more: where it is missing, registering must be
+  // a no-op rather than a crash on every page load.
+  assert.match(webmcp, /document\.modelContext/);
+  assert.match(webmcp, /registerTool/);
+  assert.match(webmcp, /AbortController/);
+  assert.match(webmcp, /if \(!context\) return/);
+
+  // The editor exposes what the HTTP MCP server does, pointed at the document
+  // on screen.
+  for (const tool of ["printa_get_model", "printa_set_model", "printa_capture_place", "printa_download_stl"]) {
+    assert.match(studio, new RegExp(tool), `editor registers ${tool}`);
+  }
 });
 
 // A syntax error inside a widget's inline module is invisible to tsc and to the
 // Next build — the string still compiles, the browser just renders nothing.
 test("MCP widget inline scripts parse as ES modules", async () => {
   const vm = await import("node:vm");
-  const { createModelWidgetHtml } = await import(new URL("lib/mcp-model-widget.ts", root).href);
-  const { createWidgetHtml } = await import(new URL("lib/mcp-widget.ts", root).href);
+  const { createModelWidgetHtml, createWidgetHtml } = await import(new URL("lib/mcp-widget.ts", root).href);
 
   for (const [name, html] of [
     ["model", createModelWidgetHtml("https://printa.test")],

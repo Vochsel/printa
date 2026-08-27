@@ -2,8 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
-import { createWidgetHtml } from "@/lib/mcp-widget";
-import { createModelWidgetHtml } from "@/lib/mcp-model-widget";
+import { createModelWidgetHtml, createWidgetHtml } from "@/lib/mcp-widget";
 import { BUILD_VOLUME_WARNING_MM } from "@/lib/text-geometry";
 import {
   getTextModelStats,
@@ -20,8 +19,8 @@ export const dynamic = "force-dynamic";
 
 // Hosts cache widget HTML against these URIs, so any change to the widget
 // markup or bootstrap must bump the version or clients keep the stale copy.
-const TEMPLATE_URI = "ui://widget/printa-extruded-text-v11.html";
-const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v10.html";
+const TEMPLATE_URI = "ui://widget/printa-extruded-text-v12.html";
+const MODEL_TEMPLATE_URI = "ui://widget/printa-procedural-model-v11.html";
 
 function createServer(origin: string) {
   const server = new McpServer(
@@ -47,7 +46,7 @@ function createServer(origin: string) {
               resourceDomains: [origin, "https://cdn.jsdelivr.net"],
             },
           },
-        "openai/widgetDescription": "A full 3D text editor with searchable live Google Font previews, print-material presets, progressive path tracing, unit-aware controls, and STL download.",
+        "openai/widgetDescription": "The computed model, turning in 3D, with its printed dimensions — click it to keep editing in Printa, or download the STL.",
           "openai/widgetPrefersBorder": false,
           "openai/widgetCSP": {
             connect_domains: [origin, "https://cdn.jsdelivr.net"],
@@ -72,7 +71,7 @@ function createServer(origin: string) {
             resourceDomains: [origin, "https://cdn.jsdelivr.net"],
           },
         },
-        "openai/widgetDescription": "A complete spec-driven modeling workbench with Google Font text, editable JSON/YAML, form and simulation demos, live 3D preview, spec-controlled floor dimensions, mesh warnings, editor handoff, and STL download.",
+        "openai/widgetDescription": "The computed model, turning in 3D, with its printed dimensions — click it to keep editing in Printa, or download the STL.",
         "openai/widgetPrefersBorder": false,
         "openai/widgetCSP": {
           connect_domains: [origin, "https://cdn.jsdelivr.net"],
@@ -135,6 +134,8 @@ function createServer(origin: string) {
         warnings: z.array(z.string()),
         materialPreset: z.enum(["pla-orange", "pla-matte", "pla-silk", "petg", "resin"]),
         highQuality: z.boolean(),
+        previewUrl: z.string().url(),
+        studioUrl: z.string().url(),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: {
@@ -204,6 +205,39 @@ function createServer(origin: string) {
       const warnings = exceedsBuildVolume
         ? [`Model dimensions exceed the ${BUILD_VOLUME_WARNING_MM} × ${BUILD_VOLUME_WARNING_MM} × ${BUILD_VOLUME_WARNING_MM} mm reference build volume.`]
         : [];
+      // The same text as a Printa Spec document, so the widget's "open in
+      // Printa" lands on the model rather than on an empty editor.
+      const encodedText = encodeModelDocument(parseModelDocument({
+        version: "1.0",
+        name: options.text,
+        units: "mm",
+        root: {
+          kind: "shape",
+          id: "text",
+          source: {
+            type: "text",
+            text: options.text,
+            font: selectedFont.family,
+            ...(options.widthMm ? { width: options.widthMm } : {}),
+            height: options.sizeMm,
+            size: options.sizeMm,
+            depth: options.depthMm,
+            bevel: options.bevelMm,
+            bevelSegments: options.bevelSegments,
+            curveSegments: options.curveSegments,
+            extrudeSegments: options.extrudeSegments,
+            bevelSide: options.bevelSide,
+            smoothNormals: options.smoothNormals,
+            textCase: options.textCase,
+            weight: options.fontWeight,
+            italic: options.italic,
+            underline: options.underline,
+          },
+          modifiers: [],
+          material: material_preset,
+        },
+      }));
+
       const result = {
         ...options,
         font: selectedFont.family,
@@ -211,6 +245,8 @@ function createServer(origin: string) {
         widthMm: Number(stats.widthMm.toFixed(2)),
         heightMm: Number(stats.heightMm.toFixed(2)),
         modelDepthMm: Number(stats.depthMm.toFixed(2)),
+        previewUrl: `${origin}/api/model/stl?spec=${encodedText}&preview=true`,
+        studioUrl: `${origin}/editor?spec=${encodedText}`,
         triangles: stats.triangles,
         filename: makeStlFilename(options.text),
         stlUrl,

@@ -1,148 +1,357 @@
-export function createWidgetHtml(origin: string) {
+/**
+ * The MCP app UI, for every Printa tool.
+ *
+ * One job: show the geometry the tool just computed, and get out of the way.
+ * The earlier widget was a second editor — fonts, sliders, a path tracer, a
+ * spec pane — inside a frame a host sizes for a chat message. Everything it
+ * offered exists in the editor, one click away, so this shows the model and
+ * hands over: click the stage and Printa opens with the same document.
+ *
+ * Hosts differ in how they hand a widget its data, and getting any one of
+ * them wrong leaves the frame blank. So data is accepted from every path at
+ * once, and no single failure takes the UI down:
+ *
+ *   1. `window.openai.toolOutput` — ChatGPT injects this global, and NOT
+ *      necessarily before this module evaluates: we also listen for
+ *      `openai:set_globals` and poll briefly.
+ *   2. `@modelcontextprotocol/ext-apps` — the MCP Apps SDK handshake, loaded
+ *      from a CDN, so a blocked CDN must not be fatal.
+ *   3. Raw `postMessage` JSON-RPC — the same wire protocol, inline, for when
+ *      the SDK cannot be reached at all.
+ *   4. `/api/model/inspect` on our own origin — a last-resort self-bootstrap
+ *      so an embedded widget shows a model rather than a dead spinner.
+ *
+ * Sizing matters as much: a host sizes the iframe from what the widget
+ * reports, and reporting nothing collapses it to nothing.
+ */
+
+type WidgetKind = "model" | "text";
+
+export function createSimpleWidgetHtml(origin: string, kind: WidgetKind) {
   const safeOrigin = JSON.stringify(origin);
+  const safeKind = JSON.stringify(kind);
+
   return String.raw`<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Printa — printable model</title>
   <style>
-    :root{color-scheme:dark;--ink:#f5f0e5;--muted:#99978f;--line:#343432;--panel:#181816;--field:#22221f;--orange:#ff5d2e;--blue:#647cff;--green:#52c47d}
-    *{box-sizing:border-box}html,body{width:100%;min-height:0;overflow:hidden}body{margin:0;background:#111110;color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,select{font:inherit}
-    button{color:inherit}.app{width:100%;height:min(560px,100dvh);min-height:0;display:grid;grid-template-columns:minmax(300px,350px) minmax(0,1fr);overflow:hidden;border:1px solid var(--line);border-radius:14px;background:#111110;transition:grid-template-columns .2s ease}.app.settings-collapsed{grid-template-columns:0 minmax(0,1fr)}.app.is-fullscreen{height:100dvh;border:0;border-radius:0}
-    aside{position:relative;z-index:4;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;padding:18px 18px 16px;border-right:1px solid var(--line);background:var(--panel)}.brand{display:flex;align-items:center;gap:9px;margin-bottom:18px;font-weight:850;letter-spacing:.12em;font-size:12px;white-space:nowrap}.mark{display:grid;place-items:center;width:29px;height:29px;flex:0 0 auto;border-radius:7px;background:var(--orange);color:#17120f;font-size:15px}.tag{margin-left:auto;color:var(--muted);font:600 9px ui-monospace,monospace}.sidebar-toggle,.fullscreen{display:grid;place-items:center;width:32px;height:32px;flex:0 0 auto;border:1px solid #44443f;border-radius:7px;background:#22221f;color:#aaa8a1;cursor:pointer}.sidebar-toggle:hover,.fullscreen:hover{border-color:#686862;color:white}.sidebar-toggle{margin-left:auto}.sidebar-toggle svg,.fullscreen svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.app.settings-collapsed aside{padding:0;overflow:hidden;border-right:0}.app.settings-collapsed .brand{justify-content:center;margin:0}.app.settings-collapsed .mark,.app.settings-collapsed .brand-copy,.app.settings-collapsed .tag,.app.settings-collapsed .settings-content{display:none}.app.settings-collapsed .sidebar-toggle{margin:0}
-    .section{padding:15px 0;border-top:1px solid #30302d}.section:first-of-type{padding-top:0;border-top:0}.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.section-head strong,.field-label{color:#c9c6be;font:700 9px ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase}.unit-select{height:29px;padding:0 24px 0 9px;border:1px solid #43433f;border-radius:6px;outline:none;background:var(--field);color:var(--ink);font:700 10px ui-monospace,monospace;cursor:pointer}
-    .field{display:block;margin-bottom:12px}.field:last-child{margin-bottom:0}.field-label{display:flex;justify-content:space-between;margin-bottom:7px}.field-label small{color:#73726c;font:inherit;text-transform:none}.text-input,.native-select,.font-input{width:100%;height:39px;padding:0 10px;border:1px solid #44443f;border-radius:7px;outline:none;background:var(--field);color:var(--ink);font-size:12px;font-weight:650}.text-input:focus,.native-select:focus,.font-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px #647cff22}.native-select{appearance:auto;cursor:pointer}
-    .font-picker{position:relative}.font-trigger{width:100%;min-height:45px;display:grid;grid-template-columns:minmax(0,1fr) auto 15px;align-items:center;gap:8px;padding:0 10px;border:1px solid #44443f;border-radius:7px;background:var(--field);text-align:left;cursor:pointer}.font-trigger:hover,.font-trigger.open{border-color:#64645e}.font-trigger span{overflow:hidden;font-size:17px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}.font-trigger small{color:#7f7d76;font:550 8px ui-monospace,monospace;text-transform:uppercase}.font-trigger b{color:var(--muted);font-size:12px;transition:transform .18s}.font-trigger.open b{transform:rotate(180deg)}.font-menu{position:absolute;z-index:20;top:calc(100% + 6px);left:0;right:0;overflow:hidden;border:1px solid #4a4a45;border-radius:8px;background:#242421;box-shadow:0 18px 45px #0009}.font-search-wrap{display:flex;align-items:center;gap:8px;min-height:43px;padding:0 9px;border-bottom:1px solid #3a3a36;color:#77756e}.font-search-wrap .font-input{height:36px;padding:0;border:0;background:transparent;box-shadow:none}.font-summary{display:flex;justify-content:space-between;padding:9px 10px;border-bottom:1px solid #3a3a36;color:#85837c;font:600 8px ui-monospace,monospace;text-transform:uppercase}.font-list{max-height:280px;overflow:auto;padding:4px}.font-option{width:100%;min-height:50px;display:grid;grid-template-columns:minmax(0,1fr) auto 15px;align-items:center;gap:8px;padding:0 8px;border:0;border-radius:5px;background:transparent;text-align:left;cursor:pointer}.font-option:hover,.font-option.active{background:#353531}.font-option span{overflow:hidden;font-size:17px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}.font-option small{color:#7f7d76;font:550 8px ui-monospace,monospace;text-transform:uppercase}.font-option i{color:var(--orange);font-style:normal}.font-empty{padding:22px 9px;color:var(--muted);font-size:10px;text-align:center}
-    .range-field{margin-bottom:13px}.range-field:last-child{margin-bottom:0}.range-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}.range-head label{color:#aaa8a1;font-size:10px;font-weight:650}.range-head output{color:#77756e;font:600 9px ui-monospace,monospace}.range-row{display:grid;grid-template-columns:1fr 82px;align-items:center;gap:10px}.range-row>input,.resolution-row input{width:100%;height:3px;appearance:none;border:0;border-radius:99px;outline:none;background:linear-gradient(90deg,var(--orange) var(--progress),#41413d var(--progress));cursor:pointer}.range-row>input::-webkit-slider-thumb,.resolution-row input::-webkit-slider-thumb{width:14px;height:14px;appearance:none;border:2px solid var(--panel);border-radius:50%;background:var(--orange);box-shadow:0 0 0 1px #ff8b68}.range-row>input::-moz-range-thumb,.resolution-row input::-moz-range-thumb{width:11px;height:11px;border:2px solid var(--panel);border-radius:50%;background:var(--orange)}.number-wrap{position:relative}.number-wrap input{width:100%;height:34px;padding:0 29px 0 8px;border:1px solid #42423e;border-radius:6px;outline:none;background:var(--field);color:var(--ink);font:650 10px ui-monospace,monospace}.number-wrap span{position:absolute;right:7px;top:50%;color:#77756f;font:600 8px ui-monospace,monospace;transform:translateY(-50%);pointer-events:none}
-    .advanced-grid,.type-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.type-grid .field{margin-bottom:0}.type-toggles{margin-top:12px;gap:15px}.type-toggles .toggle{margin-top:0}.resolution-row{display:grid;gap:7px}.resolution-row label{display:flex;justify-content:space-between;color:#aaa8a1;font-size:9px;font-weight:650}.resolution-row output{color:#77756e;font:600 8px ui-monospace,monospace}.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:13px;cursor:pointer}.toggle span{display:grid;gap:3px}.toggle strong{font-size:10px}.toggle small{color:var(--muted);font:550 8px ui-monospace,monospace}.toggle input{position:absolute;opacity:0}.toggle i{position:relative;width:35px;height:20px;flex:0 0 auto;border-radius:99px;background:#454541;transition:.18s}.toggle i:after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:white;transition:.18s}.toggle input:checked+i{background:var(--orange)}.toggle input:checked+i:after{transform:translateX(15px)}.toggle input:focus-visible+i{box-shadow:0 0 0 3px #647cff33}
-    .preview-state{display:flex;align-items:center;gap:8px;margin-top:11px;padding:9px;border:1px solid #414a72;border-radius:7px;background:#20243a;color:#aab7ff;font:550 8px/1.35 ui-monospace,monospace}.preview-state i{width:7px;height:7px;border:1px solid #8294ff;border-top-color:transparent;border-radius:50%;animation:spin .85s linear infinite}.preview-state[hidden]{display:none}@keyframes spin{to{transform:rotate(360deg)}}.actions{display:grid;grid-template-columns:1fr 1.25fr;gap:9px;margin-top:16px}.primary,.secondary{min-height:42px;border-radius:7px;cursor:pointer;font-size:10px;font-weight:750}.primary{border:0;background:var(--orange);color:#17120f}.secondary{border:1px solid #464642;background:#2b2b28}.primary:disabled,.secondary:disabled{opacity:.55;cursor:wait}.status{display:flex;align-items:center;gap:7px;margin-top:12px;color:#7ddaa0;font:600 9px ui-monospace,monospace}.status i{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px #43b96f22}.volume-warning{display:grid;gap:4px;margin-top:11px;padding:10px;border:1px solid #9d642c;border-radius:7px;background:#3b2817;color:#ffc27d}.volume-warning strong{font-size:10px}.volume-warning span{color:#dba568;font:550 8px/1.45 ui-monospace,monospace}.volume-warning[hidden]{display:none}.status.warning{color:#ffc27d}.status.warning i{background:#e68a2e;box-shadow:0 0 0 3px #e68a2e22}
-    main{position:relative;min-width:0;min-height:0;overflow:hidden}.canvas{position:absolute;inset:0}.canvas canvas{display:block;width:100%;height:100%}.dims,.mesh-stats{position:absolute;z-index:2;padding:8px 10px;border:1px solid #373734;border-radius:7px;background:#111110bb;backdrop-filter:blur(10px);color:var(--muted);font:600 9px ui-monospace,monospace}.dims{top:14px;right:58px}.mesh-stats{right:14px;bottom:14px;color:#89877f;font-size:8px}.floating-menu,.path-toggle,.focus{position:absolute;z-index:3;width:35px;height:35px;display:grid;place-items:center;border:1px solid #3a3a37;border-radius:7px;background:#171715cc;color:#aaa8a1;cursor:pointer;backdrop-filter:blur(10px)}.floating-menu:hover,.path-toggle:hover,.focus:hover{color:#fff;border-color:#5a5a55}.floating-menu{top:14px;left:14px;display:none}.app.settings-collapsed .floating-menu{display:grid}.floating-menu svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.focus{left:14px;bottom:14px}.path-toggle{left:57px;bottom:14px}.path-toggle svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.path-toggle.active{border-color:var(--orange);background:#2a1a10cc;color:var(--orange)}.fullscreen{position:absolute;z-index:3;top:14px;right:14px;background:#171715cc}.loading{position:absolute;z-index:3;inset:0;display:grid;place-items:center;background:#11111066;color:var(--muted);font:600 10px ui-monospace,monospace;pointer-events:none}
-    @media(max-width:700px){.app{height:min(560px,100dvh);grid-template-columns:1fr;grid-template-rows:minmax(0,1fr)}.app.settings-collapsed{grid-template-columns:1fr}.app aside{position:absolute;inset:0 auto 0 0;width:min(350px,calc(100% - 52px));border-right:1px solid var(--line);border-bottom:0;box-shadow:18px 0 45px #0008}.app.settings-collapsed aside{width:52px;box-shadow:none}.app main{grid-column:1}.font-menu{max-height:260px}.advanced-grid{grid-template-columns:1fr 1fr}}
-    /* Clay product UI */
-    :root{color-scheme:light;--ink:#0a0a0a;--muted:#6a6a6a;--line:#e5dfd0;--panel:#faf5e8;--field:#fffaf0;--orange:#ff4d8b;--blue:#7b63ce;--green:#22c55e}body{background:transparent;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.app{border-color:var(--line);border-radius:16px;background:#fffaf0}.app.is-fullscreen{background:#fffaf0}aside{border-color:var(--line);background:var(--panel)}.mark{border-radius:10px;background:var(--ink);color:#fff}.brand{font-weight:700}.sidebar-toggle{border-color:var(--line);border-radius:10px;background:#fffaf0;color:var(--muted)}.sidebar-toggle:hover{border-color:#c9bea4;color:var(--ink)}.section{border-color:var(--line)}.section-head strong,.field-label{color:#3a3a3a;font-family:Inter,ui-sans-serif,system-ui,sans-serif}.unit-select,.text-input,.native-select,.font-input,.font-trigger,.number-wrap input{border-color:var(--line);border-radius:11px;background:#fffaf0;color:var(--ink)}.text-input,.native-select{height:42px}.font-menu{border-color:var(--line);border-radius:14px;background:#fffaf0;box-shadow:0 22px 52px -28px rgba(60,50,30,.4)}.font-search-wrap,.font-summary{border-color:var(--line);color:var(--muted)}.font-option:hover,.font-option.active{background:#f5f0e0}.font-trigger small,.font-option small,.range-head output,.resolution-row output,.range-head label,.resolution-row label,.number-wrap span{color:var(--muted)}.range-row>input,.resolution-row input{background:linear-gradient(90deg,var(--orange) var(--progress),#ebe6d6 var(--progress))}.range-row>input::-webkit-slider-thumb,.resolution-row input::-webkit-slider-thumb{border-color:var(--panel);box-shadow:none}.toggle i{background:#d7d0c0}.preview-state{border-color:#d9cff8;border-radius:11px;background:#f2eefd;color:#6555a2}.primary,.secondary{min-height:44px;border-radius:12px}.primary{background:var(--ink);color:#fff}.secondary{border-color:var(--line);background:#f5f0e0;color:var(--ink)}.status{color:#287548}.volume-warning{border-color:#f2d4ae;border-radius:12px;background:#fff0df;color:#9a5223}.volume-warning span{color:#9a6842}main{margin:10px;border-radius:20px;background:#1a3a3a}.dims,.mesh-stats,.floating-menu,.path-toggle,.focus,.fullscreen{border-color:rgba(255,255,255,.16);border-radius:11px;background:rgba(10,26,25,.72);color:#d8d5cd}.path-toggle.active{border-color:#ff4d8b;background:rgba(57,20,39,.8);color:#ff86b1}.loading{border-radius:20px;background:rgba(10,26,25,.68);color:#fff}.app.settings-collapsed main{margin:0;border-radius:0}@media(max-width:700px){.app aside{background:var(--panel);box-shadow:18px 0 45px rgba(30,25,15,.18)}.app.settings-collapsed aside{width:0;border:0}.app.settings-collapsed main{margin:0}}
+    :root{
+      color-scheme:light dark;
+      --ink:#18181b;--muted:#71717a;--line:#e4e4e7;--surface:#fffaf0;
+      --stage-a:#f6f3ec;--stage-b:#e9e5da;--accent:#ff4d8b;
+    }
+    @media (prefers-color-scheme:dark){
+      :root:not([data-theme="light"]){
+        --ink:#f4f4f5;--muted:#a1a1aa;--line:#33333a;--surface:#151517;
+        --stage-a:#1b1b1f;--stage-b:#0f0f12;
+      }
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;width:100%;overflow:hidden;background:transparent}
+    body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink)}
+    .card{position:relative;height:var(--frame-h,420px);overflow:hidden;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,var(--stage-a),var(--stage-b))}
+    .stage{position:absolute;inset:0}
+    .stage canvas{display:block;width:100%;height:100%}
+    .open{position:absolute;inset:0;z-index:2;display:block;width:100%;height:100%;border:0;padding:0;background:transparent;cursor:pointer;appearance:none}
+    .name{position:absolute;z-index:3;top:14px;left:16px;max-width:60%;overflow:hidden;font-size:13px;font-weight:650;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}
+    .cta{position:absolute;z-index:4;top:11px;right:12px;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:9px;background:var(--ink);color:var(--surface);font-size:11px;font-weight:650;text-decoration:none}
+    .cta:hover{opacity:.9}
+    .bar{position:absolute;z-index:3;left:16px;right:16px;bottom:13px;display:flex;align-items:center;gap:10px;color:var(--muted);font:600 10px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;pointer-events:none}
+    .bar a{color:var(--muted);pointer-events:auto;text-decoration:none;border-bottom:1px solid currentColor}
+    .bar .hint{margin-left:auto;opacity:.85}
+    .warn{color:#b45309}
+    @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .warn{color:#fbbf24}}
+    .state{position:absolute;z-index:5;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:var(--muted);font-size:12px}
+    .state[hidden]{display:none}
+    .spinner{width:13px;height:13px;margin-right:8px;display:inline-block;border:1.5px solid currentColor;border-top-color:transparent;border-radius:50%;vertical-align:-2px;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
   </style>
-  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.181.2/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.181.2/examples/jsm/","three/examples/jsm/":"https://cdn.jsdelivr.net/npm/three@0.181.2/examples/jsm/","opentype.js":"https://cdn.jsdelivr.net/npm/opentype.js@2.0.0/dist/opentype.mjs","three-mesh-bvh":"https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.5/build/index.module.js","three-gpu-pathtracer":"https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.24/build/index.module.js"}}</script>
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.181.2/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.181.2/examples/jsm/"}}</script>
 </head>
 <body>
-  <div class="app settings-collapsed" id="app">
-    <aside>
-      <div class="brand"><span class="mark">P</span><span class="brand-copy">PRINTA</span><button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Expand settings" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button></div>
-      <div class="settings-content">
-      <div class="section">
-        <label class="field"><span class="field-label">Text <small id="text-count">5 / 24</small></span><input id="text" class="text-input" maxlength="24" value="HELLO" /></label>
-        <div class="field font-picker" id="font-picker"><span class="field-label">Google font <small id="font-count">Loading…</small></span><button id="font-trigger" class="font-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span id="font-selected">Roboto</span><small id="font-selected-category">Sans Serif</small><b>⌄</b></button><div id="font-menu" class="font-menu" hidden><div class="font-search-wrap"><span>⌕</span><input id="font" class="font-input" value="" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="font-list" autocomplete="off" placeholder="Search Google Fonts…" aria-label="Search Google Fonts" /></div><div class="font-summary"><span id="font-summary">0 fonts</span><span id="font-loaded">0 shown</span></div><div id="font-list" class="font-list" role="listbox"></div></div></div>
-      </div>
-      <div class="section">
-        <div class="section-head"><strong>Typography</strong></div>
-        <div class="type-grid"><label class="field"><span class="field-label">Text case</span><select id="text-case" class="native-select"><option value="original">As typed</option><option value="uppercase">UPPERCASE</option><option value="lowercase">lowercase</option><option value="titlecase">Title Case</option></select></label><label class="field"><span class="field-label">Weight</span><select id="font-weight" class="native-select"><option value="regular">Regular</option><option value="bold">Bold</option></select></label></div>
-        <div class="type-grid type-toggles"><label class="toggle"><span><strong>Italic</strong><small>Variant or slant</small></span><input id="italic" type="checkbox" /><i></i></label><label class="toggle"><span><strong>Underline</strong><small>Printable bar</small></span><input id="underline" type="checkbox" /><i></i></label></div>
-      </div>
-      <div class="section">
-        <div class="section-head"><strong>Dimensions</strong><select id="units" class="unit-select" aria-label="Measurement units"><option value="mm">mm</option><option value="cm">cm</option></select></div>
-        <div class="range-field"><div class="range-head"><label for="size">Letter height</label><output id="size-output">36 mm</output></div><div class="range-row"><input id="size" type="range" min=".1" max="256" step="1" value="36" /><div class="number-wrap"><input id="size-number" type="number" /><span id="size-unit">mm</span></div></div></div>
-        <div class="range-field"><div class="range-head"><label for="depth">Extrusion</label><output id="depth-output">4 mm</output></div><div class="range-row"><input id="depth" type="range" min=".1" max="256" step=".5" value="4" /><div class="number-wrap"><input id="depth-number" type="number" /><span id="depth-unit">mm</span></div></div></div>
-        <div class="range-field"><div class="range-head"><label for="bevel">Edge bevel</label><output id="bevel-output">0.6 mm</output></div><div class="range-row"><input id="bevel" type="range" min="0" max="64" step=".1" value=".6" /><div class="number-wrap"><input id="bevel-number" type="number" /><span id="bevel-unit">mm</span></div></div></div>
-      </div>
-      <div class="section">
-        <div class="section-head"><strong>Surface</strong></div>
-        <label class="field"><span class="field-label">Bevel faces</span><select id="bevel-side" class="native-select"><option value="both">Top + bottom</option><option value="top">Top only</option><option value="bottom">Bottom only</option></select></label>
-        <div class="advanced-grid">
-          <div class="resolution-row"><label for="bevel-segments"><span>Bevel smoothness</span><output id="bevel-segments-output">3</output></label><input id="bevel-segments" type="range" min="1" max="12" step="1" value="3" /></div>
-          <div class="resolution-row"><label for="curve-segments"><span>Curve detail</span><output id="curve-segments-output">10</output></label><input id="curve-segments" type="range" min="2" max="24" step="1" value="10" /></div>
-          <div class="resolution-row"><label for="extrude-segments"><span>Extrusion detail</span><output id="extrude-segments-output">1</output></label><input id="extrude-segments" type="range" min="1" max="64" step="1" value="1" /></div>
-        </div>
-        <label class="toggle"><span><strong>Smooth normals</strong><small>Soft preview shading</small></span><input id="smooth-normals" type="checkbox" checked /><i></i></label>
-      </div>
-      <div class="section">
-        <div class="section-head"><strong>Preview</strong><span class="tag" id="sample-count">Three.js</span></div>
-        <label class="field"><span class="field-label">Print material</span><select id="material-preset" class="native-select"><option value="pla-orange">PLA · Printa orange</option><option value="pla-matte">Matte PLA · Bone</option><option value="pla-silk">Silk PLA · Violet</option><option value="petg">PETG · Ice blue</option><option value="resin">Resin · Amber</option></select></label>
-        <input id="high-quality" type="checkbox" hidden />
-        <div id="preview-state" class="preview-state" hidden><i></i><span id="preview-state-copy">Preparing path tracer…</span></div>
-      </div>
-      <div class="actions"><button id="generate" class="secondary">Update model</button><button id="download" class="primary">Download STL</button></div>
-      <div class="status"><i></i><span id="status">Ready to print</span></div>
-      <div id="volume-warning" class="volume-warning" hidden><strong>Build volume warning</strong><span id="volume-warning-copy"></span></div>
-      </div>
-    </aside>
-    <main><div id="canvas" class="canvas"></div><div id="loading" class="loading">Building geometry…</div><button id="floating-menu" class="floating-menu" type="button" aria-label="Show settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button><div id="dims" class="dims">— × — × — mm</div><button id="fullscreen" class="fullscreen" type="button" aria-label="Open fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" /></svg></button><button id="path-toggle" class="path-toggle" type="button" aria-pressed="false" aria-label="Toggle GPU path tracing"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.4" /><path d="M12 3v2.6M12 18.4V21M3 12h2.6M18.4 12H21M5.6 5.6l1.9 1.9M16.5 16.5l1.9 1.9M18.4 5.6l-1.9 1.9M7.5 16.5l-1.9 1.9" /></svg></button><button id="focus" class="focus" type="button" aria-label="Frame model">◎</button><div id="mesh-stats" class="mesh-stats">— triangles</div></main>
+  <div class="card" id="card">
+    <div class="stage" id="stage"></div>
+    <button class="open" id="open" type="button" aria-label="Open this model in Printa"></button>
+    <span class="name" id="name"></span>
+    <a class="cta" id="cta" href="${origin}" target="_blank" rel="noopener">Open in Printa ↗</a>
+    <div class="bar">
+      <span id="stats"></span>
+      <a id="download" href="#" download hidden>Download STL</a>
+      <span class="hint">click to edit</span>
+    </div>
+    <div class="state" id="state"><span><i class="spinner"></i>Building the model…</span></div>
   </div>
+
   <script type="module">
-    import * as THREE from "three";
-    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-    import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-    import { parse as parseOpenType } from "opentype.js";
-    const ORIGIN=${safeOrigin};
-    const el=(id)=>document.getElementById(id);
-    const appShell=el("app"),sidebarToggle=el("sidebar-toggle"),fullscreenButton=el("fullscreen");
-    function setSettingsExpanded(expanded){appShell.classList.toggle("settings-collapsed",!expanded);sidebarToggle.setAttribute("aria-expanded",String(expanded));sidebarToggle.setAttribute("aria-label",expanded?"Collapse settings":"Expand settings")}
-    sidebarToggle.addEventListener("click",()=>setSettingsExpanded(appShell.classList.contains("settings-collapsed")));
-    el("floating-menu").addEventListener("click",()=>setSettingsExpanded(true));
-    const pathToggle=el("path-toggle");pathToggle.addEventListener("click",()=>{fields.highQuality.checked=!fields.highQuality.checked;pathToggle.classList.toggle("active",fields.highQuality.checked);pathToggle.setAttribute("aria-pressed",String(fields.highQuality.checked));restartPathTracing()});
-    const fields={text:el("text"),font:el("font"),textCase:el("text-case"),fontWeight:el("font-weight"),italic:el("italic"),underline:el("underline"),units:el("units"),size:el("size"),depth:el("depth"),bevel:el("bevel"),sizeNumber:el("size-number"),depthNumber:el("depth-number"),bevelNumber:el("bevel-number"),bevelSide:el("bevel-side"),bevelSegments:el("bevel-segments"),curveSegments:el("curve-segments"),extrudeSegments:el("extrude-segments"),smoothNormals:el("smooth-normals"),materialPreset:el("material-preset"),highQuality:el("high-quality")};
-    const dimensions={size:{min:.1,max:256,step:1},depth:{min:.1,max:256,step:.5},bevel:{min:0,max:64,step:.1}};
-    const scene=new THREE.Scene();scene.background=new THREE.Color("#10100f");
-    const camera=new THREE.PerspectiveCamera(34,1,.1,1000);camera.up.set(0,0,1);
-    const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;renderer.shadowMap.enabled=true;el("canvas").appendChild(renderer.domElement);
-    const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.07;controls.minDistance=24;controls.maxDistance=500;
-    const grid=new THREE.GridHelper(260,26,"#4d4d48","#292926");grid.rotateX(Math.PI/2);grid.position.z=-.02;scene.add(grid);
-    const bed=new THREE.Mesh(new THREE.PlaneGeometry(260,190),new THREE.MeshStandardMaterial({color:"#171714",roughness:.95}));bed.receiveShadow=true;scene.add(bed);scene.add(new THREE.HemisphereLight("#fff2d9","#263252",2.4));
-    const key=new THREE.DirectionalLight("#fff2d9",5);key.position.set(-70,-90,130);key.castShadow=true;scene.add(key);const rim=new THREE.DirectionalLight("#657cff",3);rim.position.set(80,70,80);scene.add(rim);
-    let mesh=null,dimensionGroup=null,current=null,framed=false,renderToken=0,previewTimer=0,pathTracer=null,pathScene=null,pathToken=0,lastSamples=-1;const fontCache={},previewFontCache={};let catalog=[];let selectedFont={id:"roboto",family:"Roboto",category:"Sans Serif"};let fontMenuOpen=false;let activeFontIndex=0;let visibleFonts=[],fontVisibleCount=40;
-    const materials={"pla-orange":{color:"#ff5d2e",roughness:.42,metalness:.02,clearcoat:.22,transmission:0},"pla-matte":{color:"#e6dfcf",roughness:.78,metalness:0,clearcoat:.04,transmission:0},"pla-silk":{color:"#7458d8",roughness:.2,metalness:.42,clearcoat:.55,transmission:0},petg:{color:"#78c7dd",roughness:.16,metalness:0,clearcoat:.62,transmission:.18},resin:{color:"#d98b32",roughness:.12,metalness:0,clearcoat:.7,transmission:.32}};
-    function previewMaterial(id){const p=materials[id]||materials["pla-orange"];return new THREE.MeshPhysicalMaterial({color:p.color,roughness:p.roughness,metalness:p.metalness,clearcoat:p.clearcoat,clearcoatRoughness:Math.min(.5,p.roughness+.08),transmission:p.transmission,thickness:p.transmission?1.4:0,ior:1.46})}
-    const slug=value=>String(value||"roboto").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"roboto";
-    const clamp=(value,min,max)=>Math.min(max,Math.max(min,Number(value)));
-    async function getFont(key,text,weight,italic){const cacheKey=key+":"+weight+":"+italic+":"+text;if(!fontCache[cacheKey])fontCache[cacheKey]=fetch(ORIGIN+"/api/font?id="+encodeURIComponent(key)+"&text="+encodeURIComponent(text)+"&weight="+weight+"&italic="+italic).then(async r=>{if(!r.ok)throw new Error("Font unavailable");return{font:parseOpenType(await r.arrayBuffer()),syntheticItalic:r.headers.get("X-Printa-Synthetic-Italic")==="true"}});return fontCache[cacheKey]}
-    function applyCase(text,mode){if(mode==="uppercase")return text.toLocaleUpperCase();if(mode==="lowercase")return text.toLocaleLowerCase();if(mode==="titlecase")return text.toLocaleLowerCase().replace(/(^|\s)\S/g,value=>value.toLocaleUpperCase());return text}
-    function shapesFor(font,text,size,underline,syntheticItalic){const path=font.getPath(text,0,0,size,{kerning:true}),out=new THREE.ShapePath(),slant=syntheticItalic?Math.tan(Math.PI/15):0,point=(x,y)=>({x:(x||0)+(-(y||0)*slant),y:-(y||0)});for(const c of path.commands){const end=point(c.x,c.y);if(c.type==="M")out.moveTo(end.x,end.y);else if(c.type==="L")out.lineTo(end.x,end.y);else if(c.type==="C"){const a=point(c.x1,c.y1),b=point(c.x2,c.y2);out.bezierCurveTo(a.x,a.y,b.x,b.y,end.x,end.y)}else if(c.type==="Q"){const a=point(c.x1,c.y1);out.quadraticCurveTo(a.x,a.y,end.x,end.y)}else if(c.type==="Z"&&out.currentPath)out.currentPath.closePath()}const shapes=out.toShapes();if(underline){const bounds=path.getBoundingBox(),start=bounds.x1,end=bounds.x2+(syntheticItalic?size*.2:0),top=-size*.07,bottom=-size*.13,line=new THREE.Shape();line.moveTo(start,bottom);line.lineTo(end,bottom);line.lineTo(end,top);line.lineTo(start,top);line.closePath();shapes.push(line)}return shapes}
-    function modelFromFields(){return{text:(fields.text.value.trim()||"HELLO").slice(0,24),font:selectedFont.family,fontId:selectedFont.id,textCase:fields.textCase.value,fontWeight:fields.fontWeight.value,italic:fields.italic.checked,underline:fields.underline.checked,sizeMm:Number(fields.size.value),depthMm:Number(fields.depth.value),bevelMm:Number(fields.bevel.value),bevelSegments:Number(fields.bevelSegments.value),curveSegments:Number(fields.curveSegments.value),extrudeSegments:Number(fields.extrudeSegments.value),bevelSide:fields.bevelSide.value,smoothNormals:fields.smoothNormals.checked,materialPreset:fields.materialPreset.value,highQuality:fields.highQuality.checked}}
-    function normalize(data){data=data||{};const family=data.font||selectedFont.family||"Roboto";return{text:(data.text||"HELLO").slice(0,24),font:family,fontId:data.fontId||slug(family),textCase:data.textCase??data.text_case??"original",fontWeight:data.fontWeight??data.font_weight??"regular",italic:data.italic??false,underline:data.underline??false,widthMm:data.widthMm==null?undefined:Number(data.widthMm),sizeMm:Number(data.sizeMm??data.size_mm??36),depthMm:Number(data.depthMm??data.depth_mm??4),bevelMm:Number(data.bevelMm??data.bevel_mm??.6),bevelSegments:Number(data.bevelSegments??data.bevel_segments??3),curveSegments:Number(data.curveSegments??data.curve_segments??10),extrudeSegments:Number(data.extrudeSegments??data.extrude_segments??1),bevelSide:data.bevelSide??data.bevel_side??"both",smoothNormals:data.smoothNormals??data.smooth_normals??true,materialPreset:data.materialPreset??data.material_preset??"pla-orange",highQuality:data.highQuality??data.high_quality??false,stlUrl:data.stlUrl,triangles:data.triangles}}
-    function createGeometry(font,data,syntheticItalic){const bevel=Math.min(data.bevelMm,data.depthMm*.3,data.sizeMm*.08),faces=data.bevelSide==="both"?2:1,core=Math.max(1e-5,data.depthMm-bevel*faces),extrude=size=>{const next=new THREE.ExtrudeGeometry(shapesFor(font,data.renderedText,size,data.underline,syntheticItalic),{depth:core,steps:data.extrudeSegments,curveSegments:data.curveSegments,bevelEnabled:bevel>0,bevelThickness:bevel,bevelSize:bevel*.72,bevelSegments:bevel>0?data.bevelSegments:1});if(bevel>0&&data.bevelSide!=="both"){const position=next.getAttribute("position");for(let i=0;i<position.count;i++){const z=position.getZ(i);if(data.bevelSide==="top"&&z<0)position.setZ(i,0);if(data.bevelSide==="bottom"&&z>core)position.setZ(i,core)}position.needsUpdate=true}next.computeBoundingBox();return next};let fontSize=data.sizeMm,geometry=extrude(fontSize);for(let iteration=0;iteration<4;iteration++){const b=geometry.boundingBox,h=b.max.y-b.min.y,ratio=data.sizeMm/Math.max(1e-8,h);if(Math.abs(1-ratio)<1e-5)break;fontSize*=ratio;geometry.dispose();geometry=extrude(fontSize)}let b=geometry.boundingBox,w=b.max.x-b.min.x,h=b.max.y-b.min.y;geometry.scale(data.widthMm?data.widthMm/Math.max(1e-8,w):1,data.sizeMm/Math.max(1e-8,h),1);geometry.deleteAttribute("normal");if(data.smoothNormals)geometry=mergeVertices(geometry,1e-4);geometry.computeVertexNormals();geometry.computeBoundingBox();b=geometry.boundingBox;geometry.translate(-(b.min.x+b.max.x)/2,-(b.min.y+b.max.y)/2,-b.min.z);geometry.computeBoundingBox();return geometry}
-    function frameModel(){if(!mesh)return;const box=new THREE.Box3().setFromObject(mesh);if(dimensionGroup)box.expandByObject(dimensionGroup);const sphere=box.getBoundingSphere(new THREE.Sphere());const dist=Math.max(28,sphere.radius/Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*1.04);camera.position.set(sphere.center.x+dist*.72,sphere.center.y-dist,sphere.center.z+dist*.68);camera.near=Math.max(.1,dist/100);camera.far=dist*20;camera.updateProjectionMatrix();controls.target.copy(sphere.center);controls.update()}
-    function dimensionLabel(text,color,size){const canvas=document.createElement("canvas");canvas.width=512;canvas.height=128;const c=canvas.getContext("2d");c.fillStyle="rgba(17,17,16,.9)";c.beginPath();c.roundRect(3,3,506,122,24);c.fill();c.strokeStyle=color;c.lineWidth=5;c.stroke();c.fillStyle="#f7f3e9";c.font="700 48px ui-monospace,monospace";c.textAlign="center";c.textBaseline="middle";c.fillText(text,256,65);const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;const label=new THREE.Mesh(new THREE.PlaneGeometry(size*4,size),new THREE.MeshBasicMaterial({map:texture,transparent:true,depthTest:false,toneMapped:false}));label.renderOrder=12;return label}
-    function groundDimensions(b){const group=new THREE.Group(),w=b.max.x-b.min.x,h=b.max.y-b.min.y,largest=Math.max(w,h),margin=THREE.MathUtils.clamp(largest*.09,7,34),arrow=THREE.MathUtils.clamp(largest*.025,2.5,9),labelSize=THREE.MathUtils.clamp(largest*.035,4,10),z=.32,widthY=b.min.y-margin,heightX=b.min.x-margin;function segments(values,color,opacity){const geometry=new THREE.BufferGeometry().setFromPoints(values),material=new THREE.LineBasicMaterial({color,transparent:opacity<1,opacity,depthTest:false}),lines=new THREE.LineSegments(geometry,material);lines.renderOrder=10;group.add(lines)}const v=(x,y)=>new THREE.Vector3(x,y,z);segments([v(b.min.x,widthY),v(b.max.x,widthY),v(b.min.x,widthY),v(b.min.x+arrow,widthY+arrow*.52),v(b.min.x,widthY),v(b.min.x+arrow,widthY-arrow*.52),v(b.max.x,widthY),v(b.max.x-arrow,widthY+arrow*.52),v(b.max.x,widthY),v(b.max.x-arrow,widthY-arrow*.52)],"#ff8258",1);segments([v(heightX,b.min.y),v(heightX,b.max.y),v(heightX,b.min.y),v(heightX+arrow*.52,b.min.y+arrow),v(heightX,b.min.y),v(heightX-arrow*.52,b.min.y+arrow),v(heightX,b.max.y),v(heightX+arrow*.52,b.max.y-arrow),v(heightX,b.max.y),v(heightX-arrow*.52,b.max.y-arrow)],"#8294ff",1);segments([v(b.min.x,b.min.y),v(b.min.x,widthY-arrow),v(b.max.x,b.min.y),v(b.max.x,widthY-arrow),v(b.min.x,b.min.y),v(heightX-arrow,b.min.y),v(b.min.x,b.max.y),v(heightX-arrow,b.max.y)],"#817d74",.58);const wl=dimensionLabel("W  "+w.toFixed(1)+" mm","#ff8258",labelSize);wl.position.set((b.min.x+b.max.x)/2,widthY-labelSize*1.05,z+.03);group.add(wl);const hl=dimensionLabel("H  "+h.toFixed(1)+" mm","#8294ff",labelSize);hl.rotation.z=Math.PI/2;hl.position.set(heightX-labelSize*1.05,(b.min.y+b.max.y)/2,z+.03);group.add(hl);return group}
-    function disposeGroup(group){if(!group)return;group.traverse(child=>{if(child.geometry)child.geometry.dispose();const materials=child.material?(Array.isArray(child.material)?child.material:[child.material]):[];materials.forEach(material=>{if(material.map)material.map.dispose();material.dispose()})})}
-    function makePathScene(source,GradientEquirectTexture){const result=new THREE.Scene();result.background=new THREE.Color("#111315");const environment=new GradientEquirectTexture(64);environment.topColor.set("#fff4dc");environment.bottomColor.set("#35415b");environment.exponent=1.4;environment.update();result.environment=environment;result.environmentIntensity=.72;const model=new THREE.Mesh(source.geometry,source.material.clone());model.name="path-model";model.castShadow=true;model.receiveShadow=true;result.add(model);const b=new THREE.Box3().setFromObject(source),span=Math.max(180,b.max.x-b.min.x,b.max.y-b.min.y),floor=new THREE.Mesh(new THREE.PlaneGeometry(span*2.4,span*2),new THREE.MeshStandardMaterial({color:"#171714",roughness:.82,metalness:.04}));floor.position.z=-.08;floor.receiveShadow=true;floor.name="path-floor";result.add(floor);const key=new THREE.DirectionalLight("#fff1d5",4.5);key.position.set(-90,-120,180);result.add(key);const fill=new THREE.DirectionalLight("#9caeff",2.2);fill.position.set(110,70,100);result.add(fill);const front=new THREE.PointLight("#ffffff",1100,span*4,1.8);front.position.set(0,-span,span*.8);result.add(front);return result}
-    function disposePath(){if(pathTracer)pathTracer.dispose();pathTracer=null;if(pathScene){if(pathScene.environment)pathScene.environment.dispose();pathScene.traverse(child=>{if(child.isMesh){if(child.name==="path-floor")child.geometry.dispose();const list=Array.isArray(child.material)?child.material:[child.material];list.forEach(material=>material.dispose())}})}pathScene=null;lastSamples=-1}
-    async function restartPathTracing(){const token=++pathToken;disposePath();el("sample-count").textContent=fields.highQuality.checked?"0 spp":"Three.js";el("preview-state").hidden=!fields.highQuality.checked;el("preview-state-copy").textContent="Preparing path tracer…";if(!fields.highQuality.checked||!mesh)return;try{const module=await import("three-gpu-pathtracer");if(token!==pathToken||!fields.highQuality.checked)return;const nextScene=makePathScene(mesh,module.GradientEquirectTexture),tracer=new module.WebGLPathTracer(renderer);tracer.tiles.set(4,4);tracer.bounces=4;tracer.filterGlossyFactor=.22;tracer.renderDelay=0;tracer.fadeDuration=220;tracer.minSamples=2;tracer.renderScale=Math.min(.75,1/renderer.getPixelRatio());tracer.dynamicLowRes=false;tracer.rasterizeScene=true;tracer.rasterizeSceneCallback=()=>renderer.render(scene,camera);tracer.setScene(nextScene,camera);pathScene=nextScene;pathTracer=tracer}catch(error){if(token===pathToken){disposePath();el("sample-count").textContent="Unavailable";el("preview-state-copy").textContent="Path tracing requires WebGL 2"}}}
-    function updateBuildWarning(w,h,d){const exceeds=w>256||h>256||d>256,warning=el("volume-warning"),status=el("status");warning.hidden=!exceeds;status.parentElement.classList.toggle("warning",exceeds);if(exceeds){el("volume-warning-copy").textContent=w.toFixed(1)+" × "+h.toFixed(1)+" × "+d.toFixed(1)+" mm exceeds the 256 × 256 × 256 mm reference volume. Generation and download remain enabled.";status.textContent="Generated with size warning"}else status.textContent="Ready to print"}
-    async function renderModel(input,shouldSync){const token=++renderToken;const data=normalize(input);data.renderedText=applyCase(data.text,data.textCase);current=data;if(shouldSync)syncFields(data);el("loading").style.display="grid";try{const loaded=await getFont(data.fontId,data.renderedText,data.fontWeight,data.italic);if(token!==renderToken)return;const geometry=createGeometry(loaded.font,data,loaded.syntheticItalic);const b=geometry.boundingBox;if(mesh){scene.remove(mesh);mesh.geometry.dispose();mesh.material.dispose()}if(dimensionGroup){scene.remove(dimensionGroup);disposeGroup(dimensionGroup)}mesh=new THREE.Mesh(geometry,previewMaterial(data.materialPreset));mesh.castShadow=true;mesh.receiveShadow=true;scene.add(mesh);dimensionGroup=groundDimensions(b);scene.add(dimensionGroup);const w=b.max.x-b.min.x,h=b.max.y-b.min.y,d=b.max.z-b.min.z;const triangles=Math.floor((geometry.index?geometry.index.count:geometry.attributes.position.count)/3);el("dims").textContent=w.toFixed(0)+" × "+h.toFixed(0)+" × "+d.toFixed(1)+" mm";el("mesh-stats").textContent=triangles.toLocaleString()+" triangles";if(!framed){frameModel();framed=true}updateBuildWarning(w,h,d);restartPathTracing()}catch(error){if(token===renderToken)el("status").textContent="Preview could not load"}finally{if(token===renderToken)el("loading").style.display="none"}}
-    function setProgress(input){const min=Number(input.min),max=Number(input.max);input.style.setProperty("--progress",((Number(input.value)-min)/(max-min)*100)+"%")}
-    function displayNumber(mm){return fields.units.value==="cm"?Number((mm/10).toFixed(2)):Number(mm.toFixed(mm<10?1:0))}
-    function syncDimension(name){const slider=fields[name],number=fields[name+"Number"],value=Number(slider.value),unit=fields.units.value;number.value=String(displayNumber(value));number.min=String(dimensions[name].min*(unit==="cm"?.1:1));number.step=String(dimensions[name].step*(unit==="cm"?.1:1));el(name+"-unit").textContent=unit;el(name+"-output").textContent=number.value+" "+unit;setProgress(slider)}
-    function setDimensionMm(name,value){const def=dimensions[name],mm=Math.max(def.min,Number.isFinite(Number(value))?Number(value):def.min),slider=fields[name];slider.max=String(Math.max(def.max,mm));slider.value=String(mm);syncDimension(name)}
-    function syncFields(data){fields.text.value=data.text;selectedFont={id:data.fontId,family:data.font,category:(catalog.find(f=>f.id===data.fontId)||{}).category||"Google Font"};fields.font.value="";updateSelectedFont();fields.textCase.value=data.textCase;fields.fontWeight.value=data.fontWeight;fields.italic.checked=data.italic;fields.underline.checked=data.underline;setDimensionMm("size",data.sizeMm);setDimensionMm("depth",data.depthMm);setDimensionMm("bevel",data.bevelMm);fields.bevelSegments.value=String(data.bevelSegments);fields.curveSegments.value=String(data.curveSegments);fields.extrudeSegments.value=String(data.extrudeSegments);fields.bevelSide.value=data.bevelSide;fields.smoothNormals.checked=data.smoothNormals;fields.materialPreset.value=materials[data.materialPreset]?data.materialPreset:"pla-orange";fields.highQuality.checked=data.highQuality;el("path-toggle").classList.toggle("active",data.highQuality);el("path-toggle").setAttribute("aria-pressed",String(data.highQuality));el("text-count").textContent=data.text.length+" / 24";syncResolution()}
-    function syncResolution(){el("bevel-segments-output").textContent=fields.bevelSegments.value;el("curve-segments-output").textContent=fields.curveSegments.value;el("extrude-segments-output").textContent=fields.extrudeSegments.value;setProgress(fields.bevelSegments);setProgress(fields.curveSegments);setProgress(fields.extrudeSegments)}
-    function schedulePreview(){clearTimeout(previewTimer);previewTimer=setTimeout(()=>renderModel(modelFromFields(),false),140)}
-    ["size","depth","bevel"].forEach(name=>{fields[name].addEventListener("input",()=>{syncDimension(name);schedulePreview()});fields[name+"Number"].addEventListener("input",()=>{const factor=fields.units.value==="cm"?10:1;setDimensionMm(name,Number(fields[name+"Number"].value)*factor);schedulePreview()})});
-    fields.units.addEventListener("change",()=>["size","depth","bevel"].forEach(syncDimension));fields.text.addEventListener("input",()=>{el("text-count").textContent=fields.text.value.length+" / 24";schedulePreview()});fields.textCase.addEventListener("change",schedulePreview);fields.fontWeight.addEventListener("change",schedulePreview);fields.italic.addEventListener("change",schedulePreview);fields.underline.addEventListener("change",schedulePreview);fields.bevelSide.addEventListener("change",schedulePreview);fields.smoothNormals.addEventListener("change",schedulePreview);fields.materialPreset.addEventListener("change",schedulePreview);fields.highQuality.addEventListener("change",schedulePreview);fields.bevelSegments.addEventListener("input",()=>{syncResolution();schedulePreview()});fields.curveSegments.addEventListener("input",()=>{syncResolution();schedulePreview()});fields.extrudeSegments.addEventListener("input",()=>{syncResolution();schedulePreview()});
-    function previewFamily(font){return"Printa Preview "+font.id}function loadPreviewFont(font){if(previewFontCache[font.id])return previewFontCache[font.id];const family=previewFamily(font),text=font.family+" Aa",url=ORIGIN+"/api/font?id="+encodeURIComponent(font.id)+"&text="+encodeURIComponent(text)+"&weight=regular&italic=false";previewFontCache[font.id]=new FontFace(family,"url(\""+url+"\")").load().then(face=>{document.fonts.add(face)}).catch(()=>{});return previewFontCache[font.id]}
-    function updateSelectedFont(){el("font-selected").textContent=selectedFont.family;el("font-selected").style.fontFamily='"'+previewFamily(selectedFont)+'",sans-serif';el("font-selected-category").textContent=selectedFont.category||"Google Font";loadPreviewFont(selectedFont)}
-    function matchingFonts(){const query=fields.font.value.trim().toLowerCase(),matches=!query?catalog:catalog.filter(f=>f.family.toLowerCase().includes(query)||f.category.toLowerCase().includes(query));return query?matches:[selectedFont,...matches.filter(f=>f.id!==selectedFont.id)]}
-    function renderFontList(){const matches=matchingFonts(),list=el("font-list"),scrollTop=list.scrollTop;visibleFonts=matches.slice(0,fontVisibleCount);activeFontIndex=Math.min(activeFontIndex,Math.max(0,visibleFonts.length-1));el("font-summary").textContent=matches.length.toLocaleString()+" fonts";el("font-loaded").textContent=visibleFonts.length.toLocaleString()+" shown"+(matches.length>visibleFonts.length?" · scroll for all":"");list.replaceChildren();visibleFonts.forEach((font,index)=>{loadPreviewFont(font);const button=document.createElement("button");button.type="button";button.className="font-option"+(index===activeFontIndex?" active":"");button.setAttribute("role","option");button.setAttribute("aria-selected",String(font.id===selectedFont.id));button.innerHTML="<span></span><small></small><i></i>";button.children[0].textContent=font.family;button.children[0].style.fontFamily='"'+previewFamily(font)+'",sans-serif';button.children[1].textContent=font.category;button.children[2].textContent=font.id===selectedFont.id?"✓":"";button.addEventListener("mouseenter",()=>{activeFontIndex=index;list.querySelectorAll(".font-option").forEach((node,i)=>node.classList.toggle("active",i===index))});button.addEventListener("mousedown",event=>event.preventDefault());button.addEventListener("click",()=>chooseFont(font));list.appendChild(button)});if(!visibleFonts.length){const empty=document.createElement("div");empty.className="font-empty";empty.textContent="No Google Fonts match this search";list.appendChild(empty)}list.scrollTop=scrollTop}
-    function openFontMenu(){fontMenuOpen=true;fontVisibleCount=40;el("font-menu").hidden=false;el("font-trigger").classList.add("open");el("font-trigger").setAttribute("aria-expanded","true");fields.font.value="";renderFontList();el("font-list").scrollTop=0;setTimeout(()=>fields.font.focus(),0)}
-    function closeFontMenu(){fontMenuOpen=false;el("font-menu").hidden=true;el("font-trigger").classList.remove("open");el("font-trigger").setAttribute("aria-expanded","false");fields.font.value=""}
-    function chooseFont(font){selectedFont=font;updateSelectedFont();closeFontMenu();schedulePreview()}
-    el("font-trigger").addEventListener("click",()=>fontMenuOpen?closeFontMenu():openFontMenu());fields.font.addEventListener("input",()=>{activeFontIndex=0;fontVisibleCount=40;renderFontList();el("font-list").scrollTop=0});fields.font.addEventListener("keydown",event=>{if(event.key==="ArrowDown"){event.preventDefault();const matches=matchingFonts();activeFontIndex=Math.min(activeFontIndex+1,matches.length-1);if(activeFontIndex>=visibleFonts.length-3)fontVisibleCount=Math.min(fontVisibleCount+40,matches.length);renderFontList();el("font-list").querySelector(".font-option.active")?.scrollIntoView({block:"nearest"})}else if(event.key==="ArrowUp"){event.preventDefault();activeFontIndex=Math.max(activeFontIndex-1,0);renderFontList();el("font-list").querySelector(".font-option.active")?.scrollIntoView({block:"nearest"})}else if(event.key==="Enter"&&visibleFonts[activeFontIndex]){event.preventDefault();chooseFont(visibleFonts[activeFontIndex])}else if(event.key==="Escape")closeFontMenu()});el("font-list").addEventListener("scroll",event=>{const list=event.currentTarget;if(list.scrollTop+list.clientHeight<list.scrollHeight-100)return;const matches=matchingFonts();if(fontVisibleCount>=matches.length)return;fontVisibleCount=Math.min(fontVisibleCount+40,matches.length);renderFontList()});document.addEventListener("pointerdown",event=>{if(!el("font-picker").contains(event.target))closeFontMenu()});
-    fetch(ORIGIN+"/api/fonts").then(r=>{if(!r.ok)throw new Error("Catalog unavailable");return r.json()}).then(data=>{catalog=data.fonts||[];el("font-count").textContent=catalog.length.toLocaleString()+" families";const match=catalog.find(f=>f.id===selectedFont.id||f.family.toLowerCase()===selectedFont.family.toLowerCase());if(match)selectedFont=match;updateSelectedFont()}).catch(()=>{el("font-count").textContent="Catalog unavailable"});
-    function updatePathCamera(){if(pathTracer){pathTracer.updateCamera();lastSamples=-1;el("sample-count").textContent="0 spp"}}controls.addEventListener("change",updatePathCamera);let viewportReady=false,resizeFrame=0;function resize(){const box=el("canvas").getBoundingClientRect(),width=Math.floor(box.width),height=Math.floor(box.height);if(width<2||height<2){viewportReady=false;return false}renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();updatePathCamera();viewportReady=true;return true}function scheduleResize(){if(resizeFrame)return;resizeFrame=requestAnimationFrame(()=>{resizeFrame=0;resize()})}new ResizeObserver(scheduleResize).observe(el("canvas"));window.addEventListener("resize",scheduleResize);scheduleResize();(function loop(){requestAnimationFrame(loop);if(!viewportReady||document.hidden)return;controls.update();if(fields.highQuality.checked&&pathTracer){try{if(pathTracer.samples<96)pathTracer.renderSample();const samples=Math.floor(pathTracer.samples);if(samples!==lastSamples){lastSamples=samples;el("sample-count").textContent=samples+" spp";el("preview-state-copy").textContent=samples<96?"Rendering progressively — leave it running for a cleaner image":"Path trace complete"}}catch(error){disposePath();el("sample-count").textContent="Unavailable";el("preview-state-copy").textContent="Path tracing is unavailable";renderer.render(scene,camera)}}else renderer.render(scene,camera)})();el("focus").addEventListener("click",frameModel);
-    let seq=0;const pending=new Map();function requestHost(method,params,timeout=30000){return new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});window.parent.postMessage({jsonrpc:"2.0",id,method,params},"*");setTimeout(()=>{if(pending.has(id)){pending.delete(id);reject(new Error("Host request timed out"))}},timeout)})}function callTool(name,args){return requestHost("tools/call",{name,arguments:args})}
-    let displayMode=window.openai&&window.openai.displayMode==="fullscreen"?"fullscreen":"inline";function reportInlineHeight(){if(displayMode!=="inline")return;const height=560;if(window.openai&&window.openai.notifyIntrinsicHeight)window.openai.notifyIntrinsicHeight(height);window.parent.postMessage({jsonrpc:"2.0",method:"ui/notifications/size-changed",params:{width:Math.ceil(window.innerWidth),height}},"*")}function setDisplayMode(mode){displayMode=mode==="fullscreen"?"fullscreen":"inline";appShell.classList.toggle("is-fullscreen",displayMode==="fullscreen");fullscreenButton.setAttribute("aria-label",displayMode==="fullscreen"?"Exit fullscreen":"Open fullscreen");requestAnimationFrame(()=>{resize();reportInlineHeight()})}async function toggleFullscreen(){const target=displayMode==="fullscreen"?"inline":"fullscreen";try{let result;if(window.openai&&window.openai.requestDisplayMode)result=await window.openai.requestDisplayMode({mode:target});else result=await requestHost("ui/request-display-mode",{mode:target},4000);setDisplayMode(result&&result.mode||target)}catch(error){try{if(target==="fullscreen"&&document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else if(target==="inline"&&document.fullscreenElement&&document.exitFullscreen)await document.exitFullscreen();setDisplayMode(target)}catch(fallbackError){}}}fullscreenButton.addEventListener("click",toggleFullscreen);document.addEventListener("fullscreenchange",()=>setDisplayMode(document.fullscreenElement?"fullscreen":"inline"));window.addEventListener("openai:set_globals",event=>{const globals=(event.detail&&event.detail.globals)||{};if(globals.displayMode)setDisplayMode(globals.displayMode);if(globals.toolOutput)adoptHostModel(globals.toolOutput);else if(globals.toolInput)adoptHostModel(globals.toolInput)});setDisplayMode(displayMode);requestAnimationFrame(reportInlineHeight);
-    function toolArgs(){const data=modelFromFields();return{text:data.text,font:data.font,text_case:data.textCase,font_weight:data.fontWeight,italic:data.italic,underline:data.underline,size_mm:data.sizeMm,depth_mm:data.depthMm,bevel_mm:data.bevelMm,bevel_segments:data.bevelSegments,curve_segments:data.curveSegments,extrude_segments:data.extrudeSegments,bevel_side:data.bevelSide,smooth_normals:data.smoothNormals,material_preset:data.materialPreset,high_quality:data.highQuality}}
-    window.addEventListener("message",event=>{if(event.source!==window.parent)return;const msg=event.data;if(!msg||msg.jsonrpc!=="2.0")return;if(msg.id&&pending.has(msg.id)){const p=pending.get(msg.id);pending.delete(msg.id);msg.error?p.reject(msg.error):p.resolve(msg.result);return}if(msg.method==="ui/notifications/tool-result"){const data=msg.params&&msg.params.structuredContent;if(data)renderModel(data,true)}if(msg.method==="ui/notifications/tool-input"){const data=msg.params&&msg.params.arguments;if(data)renderModel(data,true)}if(msg.method==="ui/notifications/host-context-changed"&&msg.params&&msg.params.displayMode)setDisplayMode(msg.params.displayMode)});
-    el("generate").addEventListener("click",async()=>{el("generate").disabled=true;el("status").textContent="Generating…";try{const result=await callTool("create_extruded_text",toolArgs());const data=result&&result.structuredContent?result.structuredContent:result;await renderModel(data,true)}catch(error){el("status").textContent="Could not update model"}finally{el("generate").disabled=false}});
-    el("download").addEventListener("click",async()=>{const data=modelFromFields();const url=new URL("/api/stl",ORIGIN);url.search=new URLSearchParams({text:data.text,font:data.font,textCase:data.textCase,fontWeight:data.fontWeight,italic:String(data.italic),underline:String(data.underline),size:String(data.sizeMm),depth:String(data.depthMm),bevel:String(data.bevelMm),bevelSegments:String(data.bevelSegments),curveSegments:String(data.curveSegments),extrudeSegments:String(data.extrudeSegments),bevelSide:data.bevelSide,smoothNormals:String(data.smoothNormals)}).toString();const href=url.toString();if(window.openai&&window.openai.openExternal){await window.openai.openExternal({href})}else{window.open(href,"_blank","noopener,noreferrer")}});
-    /* ChatGPT does not guarantee window.openai.toolOutput exists by the time this
-       module evaluates — it can arrive later via openai:set_globals, or be swapped
-       in silently. Reading it once left the widget showing the placeholder model,
-       so adopt whatever turns up and re-render (ignoring repeats of what we drew). */
-    let adoptedHostModel="";
-    function adoptHostModel(data){if(!data)return;const fingerprint=JSON.stringify(data);if(fingerprint===adoptedHostModel)return;adoptedHostModel=fingerprint;void renderModel(data,true)}
-    const initial=(window.openai&&window.openai.toolOutput)||(window.openai&&window.openai.toolInput);
-    if(initial)adoptHostModel(initial);
-    else renderModel({text:"Hello",font:"Roboto",fontId:"roboto",textCase:"original",fontWeight:"regular",italic:false,underline:false,sizeMm:36,depthMm:4,bevelMm:.6,bevelSegments:3,curveSegments:10,extrudeSegments:1,bevelSide:"both",smoothNormals:true,materialPreset:"pla-orange",highQuality:false},true);
-    let hostPolls=0;const hostPollTimer=setInterval(()=>{if(++hostPolls>40)return clearInterval(hostPollTimer);const api=window.openai;if(api&&(api.toolOutput||api.toolInput))adoptHostModel(api.toolOutput||api.toolInput)},250);
+    const ORIGIN = ${safeOrigin};
+    const KIND = ${safeKind};
+    const stage = document.getElementById("stage");
+    const nameEl = document.getElementById("name");
+    const statsEl = document.getElementById("stats");
+    const stateEl = document.getElementById("state");
+    const ctaEl = document.getElementById("cta");
+    const openEl = document.getElementById("open");
+    const downloadEl = document.getElementById("download");
+
+    let current = null;
+    let received = false;
+
+    function applyTheme(theme){
+      if(theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+    }
+    applyTheme(window.openai && window.openai.theme);
+
+    /* ---- the host frame: report a height, or the iframe collapses -------- */
+    function reportHeight(){
+      const height = Math.round(document.getElementById("card").getBoundingClientRect().height) + 2;
+      try{ if(window.openai && window.openai.notifyIntrinsicHeight) window.openai.notifyIntrinsicHeight(height); }catch{}
+      post({ jsonrpc:"2.0", method:"notifications/ui/size-changed", params:{ height } });
+    }
+    function post(message){
+      try{ window.parent && window.parent.postMessage(message, "*"); }catch{}
+    }
+    window.addEventListener("resize", reportHeight);
+    reportHeight();
+
+    function setState(text){
+      if(!text){ stateEl.hidden = true; return; }
+      stateEl.hidden = false;
+      stateEl.innerHTML = text;
+    }
+    function showError(message){
+      setState('<span>' + String(message || "Waiting for the model tool.") + '</span>');
+    }
+
+    /* ---- three.js, loaded from a CDN that may not be reachable ----------- */
+    let rendererReady = false;
+    let showMesh = async () => {};
+
+    async function bootRenderer(){
+      const [THREE, controlsModule, loaderModule] = await Promise.all([
+        import("three"),
+        import("three/addons/controls/OrbitControls.js"),
+        import("three/addons/loaders/STLLoader.js"),
+      ]);
+      const { OrbitControls } = controlsModule;
+      const { STLLoader } = loaderModule;
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 6000);
+      camera.up.set(0, 0, 1);
+      const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      stage.appendChild(renderer.domElement);
+
+      scene.add(new THREE.HemisphereLight(0xffffff, 0xcbc5b8, 2.1));
+      const key = new THREE.DirectionalLight(0xffffff, 2.5);
+      key.position.set(-60, -90, 130);
+      scene.add(key);
+      const rim = new THREE.DirectionalLight(0xb8a4ed, 1.1);
+      rim.position.set(80, 60, 50);
+      scene.add(rim);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.enablePan = false;
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.8;
+      /* The stage is a link; dragging it should orbit, not navigate. */
+      let dragged = false;
+      renderer.domElement.addEventListener("pointerdown", () => { dragged = false; controls.autoRotate = false; });
+      renderer.domElement.addEventListener("pointermove", (event) => { if(event.buttons) dragged = true; });
+      renderer.domElement.addEventListener("click", () => { if(!dragged) openStudio(); });
+      openEl.remove();
+
+      let mesh = null;
+      function resize(){
+        const rect = stage.getBoundingClientRect();
+        if(rect.width < 2 || rect.height < 2) return;
+        renderer.setSize(rect.width, rect.height, false);
+        camera.aspect = rect.width / rect.height;
+        camera.updateProjectionMatrix();
+      }
+      window.addEventListener("resize", resize);
+      resize();
+
+      (function frame(){
+        requestAnimationFrame(frame);
+        controls.update();
+        renderer.render(scene, camera);
+      })();
+
+      showMesh = async (url) => {
+        const response = await fetch(url, { mode:"cors" });
+        if(!response.ok) throw new Error("The model service returned " + response.status + ".");
+        const geometry = new STLLoader().parse(await response.arrayBuffer());
+        geometry.computeVertexNormals();
+        geometry.computeBoundingBox();
+        geometry.computeBoundingSphere();
+
+        if(mesh){ scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
+        mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+          color: 0xe9e4d8, roughness: 0.62, metalness: 0.02, flatShading: false,
+        }));
+        const box = geometry.boundingBox;
+        const centre = box.getCenter(new THREE.Vector3());
+        mesh.position.set(-centre.x, -centre.y, -box.min.z);
+        scene.add(mesh);
+
+        /* Frame the whole model, whatever size it came out. */
+        const radius = geometry.boundingSphere.radius || 40;
+        const height = box.max.z - box.min.z;
+        controls.target.set(0, 0, height / 2);
+        const distance = (radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.35;
+        camera.position.set(distance * 0.62, -distance * 0.72, distance * 0.55 + height / 2);
+        camera.near = Math.max(0.1, distance / 400);
+        camera.far = distance * 12;
+        camera.updateProjectionMatrix();
+        controls.update();
+        setState("");
+      };
+      rendererReady = true;
+    }
+
+    bootRenderer().catch(() => {
+      showError("The 3D preview could not load — the model is still ready to download.");
+    });
+
+    /* ---- what the tool gave us ------------------------------------------ */
+    function openStudio(){
+      const url = current && current.studioUrl;
+      window.open(url || ORIGIN + "/editor", "_blank", "noopener");
+    }
+    openEl.addEventListener("click", openStudio);
+
+    function millimetres(value){
+      return typeof value === "number" && isFinite(value) ? value.toFixed(value < 10 ? 1 : 0) : "?";
+    }
+
+    async function show(output){
+      current = output;
+      received = true;
+      const name = output.name || output.text || output.filename || "Printable model";
+      nameEl.textContent = name;
+      document.title = "Printa — " + name;
+
+      const width = output.widthMm;
+      const depth = output.depthMm !== undefined ? output.depthMm : output.modelDepthMm;
+      const height = output.heightMm;
+      const size = millimetres(width) + " × " + millimetres(depth) + " × " + millimetres(height) + " mm";
+      const triangles = typeof output.triangles === "number" ? " · " + output.triangles.toLocaleString() + " tris" : "";
+      statsEl.textContent = size + triangles;
+      statsEl.className = output.exceedsBuildVolume ? "warn" : "";
+
+      if(output.studioUrl) ctaEl.href = output.studioUrl;
+      if(output.stlUrl){
+        downloadEl.href = output.stlUrl;
+        downloadEl.hidden = false;
+        if(output.filename) downloadEl.setAttribute("download", output.filename);
+      }
+
+      const previewUrl = output.previewUrl || output.stlUrl;
+      if(!previewUrl){ showError("That tool returned no geometry to show."); return; }
+      /* The renderer may still be importing three.js; wait briefly for it. */
+      for(let attempt = 0; attempt < 60 && !rendererReady; attempt += 1){
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if(!rendererReady) return;
+      try{ await showMesh(previewUrl); }
+      catch(error){ showError(error && error.message ? error.message : "The model could not be drawn."); }
+      reportHeight();
+    }
+
+    function accept(candidate){
+      if(!candidate || typeof candidate !== "object") return false;
+      const output = candidate.structuredContent || candidate;
+      if(!output || (!output.previewUrl && !output.stlUrl)) return false;
+      void show(output);
+      return true;
+    }
+
+    /* (a) ChatGPT's globals, which may arrive after this module evaluates. */
+    function hostGlobals(){
+      const api = window.openai;
+      if(!api) return null;
+      return api.toolOutput || null;
+    }
+    accept(hostGlobals());
+    window.addEventListener("openai:set_globals", (event) => {
+      const globals = (event && event.detail && event.detail.globals) || {};
+      applyTheme(globals.theme);
+      if(globals.toolOutput) accept(globals.toolOutput);
+    });
+    /* Some builds mutate window.openai without firing an event. */
+    const poll = setInterval(() => {
+      if(received){ clearInterval(poll); return; }
+      accept(hostGlobals());
+    }, 250);
+    setTimeout(() => clearInterval(poll), 15000);
+
+    /* (b) the raw JSON-RPC channel, for hosts without the SDK. */
+    window.addEventListener("message", (event) => {
+      const data = event && event.data;
+      if(!data || typeof data !== "object") return;
+      if(data.method === "notifications/ui/tool-result" || data.method === "ui/tool-result"){
+        accept(data.params && (data.params.result || data.params));
+      }
+      if(data.result && data.result.structuredContent) accept(data.result);
+    });
+
+    /* (c) the MCP Apps SDK handshake, best effort. */
+    import("https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@1.7.4/+esm").then(({ App }) => {
+      const app = new App({ name:"printa-" + KIND, version:"1.0.0" }, {}, { autoResize:false });
+      app.ontoolresult = (result) => { accept(result); };
+      app.ontoolcancelled = (params) => showError((params && params.reason) || "That model was cancelled.");
+      return app.connect();
+    }).catch(() => {
+      post({ jsonrpc:"2.0", id:"printa-init", method:"initialize", params:{
+        protocolVersion:"2025-06-18",
+        capabilities:{},
+        clientInfo:{ name:"printa-" + KIND, version:"1.0.0" },
+      }});
+      post({ jsonrpc:"2.0", method:"notifications/initialized", params:{} });
+    });
+
+    /* (d) self-bootstrap, so the frame is never an empty box. */
+    setTimeout(() => {
+      if(received) return;
+      fetch(ORIGIN + "/api/model/inspect", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({ demo:"type-specimen", format:"json" }),
+      }).then((response) => {
+        if(!response.ok) throw new Error("Could not reach the Printa model service.");
+        return response.json();
+      }).then((data) => {
+        if(received) return;
+        void show({
+          name: data.document && data.document.name,
+          widthMm: data.stats.widthMm,
+          depthMm: data.stats.depthMm,
+          heightMm: data.stats.heightMm,
+          triangles: data.stats.triangles,
+          previewUrl: ORIGIN + "/api/model/stl?spec=" + data.encoded + "&preview=true",
+          stlUrl: data.stlUrl,
+          studioUrl: data.studioUrl,
+        });
+      }).catch((error) => showError(error && error.message ? error.message : "Waiting for the model tool."));
+    }, 6000);
   </script>
 </body>
 </html>`;
+}
+
+/** The text tool's app: the same viewer, told which tool it belongs to. */
+export function createWidgetHtml(origin: string) {
+  return createSimpleWidgetHtml(origin, "text");
+}
+
+/** The procedural model tool's app. */
+export function createModelWidgetHtml(origin: string) {
+  return createSimpleWidgetHtml(origin, "model");
 }
