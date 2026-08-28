@@ -25,7 +25,9 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
     readFile(new URL("public/printa-icon.svg", root), "utf8"),
   ]);
 
-  assert.match(page, /<HomePage\s*\/>/);
+  // The landing page is rendered by a server page that reads the template
+  // shots for it, since a client component cannot ask the store itself.
+  assert.match(page, /<HomePage shots=\{await templateShots\(\)\} \/>/);
   // Landing: one live-compiled workbench (gallery + editable text) then pricing.
   assert.match(home, /function Workbench/);
   assert.match(home, /function ModelStage/);

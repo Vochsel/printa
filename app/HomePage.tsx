@@ -29,6 +29,7 @@ import { DEFAULT_VIEW, fitCameraToBox } from "@/lib/camera-fit";
 import { cn } from "@/lib/utils";
 import { SiteFooter } from "@/components/site-footer";
 import { TemplateGlyph } from "@/components/template-glyph";
+import type { TemplateShot } from "@/lib/template-shots";
 import { ProButton } from "@/components/pro-button";
 import { TEMPLATES, getTemplate, templateDownloadUrl, templateEditorUrl } from "@/lib/templates";
 import { HANDOFF_EDITOR_URL, stashDocument } from "@/lib/model-handoff";
@@ -1023,7 +1024,7 @@ const HOME_JSON_LD = {
   ],
 };
 
-export function HomePage() {
+export function HomePage({ shots = {} }: { shots?: Record<string, TemplateShot> }) {
   return (
     <main className="min-h-dvh bg-background text-foreground">
       {/* Serialised from literals defined in this file; no user input reaches it. */}
@@ -1132,7 +1133,18 @@ export function HomePage() {
             {FEATURED_TEMPLATES.map((entry) => (
               <div key={entry.slug} className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card">
                 <Link href={`/templates/${entry.slug}`} aria-label={entry.name}>
-                  <TemplateGlyph template={entry} className="aspect-[4/3] w-full bg-secondary/40" />
+                  {shots[entry.slug] ? (
+                    <Image
+                      src={shots[entry.slug].url}
+                      alt={`${entry.name}, rendered`}
+                      width={shots[entry.slug].width}
+                      height={shots[entry.slug].height}
+                      sizes="(min-width: 1024px) 22vw, (min-width: 640px) 45vw, 92vw"
+                      className="aspect-[4/3] w-full bg-background object-contain"
+                    />
+                  ) : (
+                    <TemplateGlyph template={entry} className="aspect-[4/3] w-full bg-secondary/40" />
+                  )}
                 </Link>
                 <div className="flex flex-1 flex-col p-3.5">
                   <Link href={`/templates/${entry.slug}`} className="text-sm font-semibold hover:underline">{entry.name}</Link>
