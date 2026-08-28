@@ -11,7 +11,6 @@ import {
   Download,
   LayoutGrid,
   Loader2,
-  Lock,
   MapPin,
   MessageSquareText,
   MousePointer2,
@@ -30,6 +29,7 @@ import { DEFAULT_VIEW, fitCameraToBox } from "@/lib/camera-fit";
 import { cn } from "@/lib/utils";
 import { SiteFooter } from "@/components/site-footer";
 import { TemplateGlyph } from "@/components/template-glyph";
+import { ProButton } from "@/components/pro-button";
 import { TEMPLATES, getTemplate, templateDownloadUrl, templateEditorUrl } from "@/lib/templates";
 import { HANDOFF_EDITOR_URL, stashDocument } from "@/lib/model-handoff";
 import {
@@ -1218,12 +1218,9 @@ export function HomePage() {
                 <li key={item} className="flex items-start gap-2"><Check size={16} className="mt-0.5 shrink-0 text-[var(--accent-tool)]" /> {item}</li>
               ))}
             </ul>
-            <a href="/chat" className="mt-6 flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
-              Go Pro — $10/mo
-            </a>
-            <p className="mt-2 flex items-center justify-center gap-1 text-center text-[11px] text-muted-foreground">
-              <Lock size={11} /> Billing launches soon — early makers lock in this price.
-            </p>
+            <div className="mt-6">
+              <ProButton className="w-full" />
+            </div>
           </div>
         </div>
       </section>

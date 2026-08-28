@@ -15,13 +15,15 @@
     "test:unit": "node --experimental-vm-modules --import tsx --test tests/project.test.mjs && node --import tsx --test tests/model-spec.test.ts",
     "lint": "eslint . --ignore-pattern .next",
     "bake:places": "tsx scripts/bake-places.ts",
-    "shots": "tsx scripts/capture-template-shots.ts"
+    "shots": "tsx scripts/capture-template-shots.ts",
+    "setup:stripe": "tsx scripts/setup-stripe.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.34",
     "@base-ui/react": "^1.6.0",
     "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@workos-inc/authkit-nextjs": "^4.3.1",
     "ai": "^7.0.31",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -34,6 +36,7 @@
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "shadcn": "^4.13.1",
+    "stripe": "^22.6.0",
     "tailwind-merge": "^3.6.0",
     "three": "0.181.2",
     "three-gpu-pathtracer": "0.0.24",

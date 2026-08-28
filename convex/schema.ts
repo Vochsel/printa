@@ -38,6 +38,30 @@ export default defineSchema({
     .index("by_owner", ["owner", "updatedAt"])
     .index("by_kind", ["kind", "createdAt"]),
 
+  /**
+   * Who is on Pro.
+   *
+   * Stripe is the source of truth; this is the copy the app reads on every
+   * request, keyed by the WorkOS user the checkout was started by. Written
+   * only by the webhook, so a cancelled card downgrades without anyone
+   * having to visit the site.
+   */
+  subscriptions: defineTable({
+    /** WorkOS user id. */
+    owner: v.string(),
+    email: v.string(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("trialing"),
+      v.literal("past_due"),
+      v.literal("canceled"),
+    ),
+    stripeCustomerId: v.string(),
+    stripeSubscriptionId: v.optional(v.string()),
+    currentPeriodEnd: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_owner", ["owner"]).index("by_customer", ["stripeCustomerId"]),
+
   templateShots: defineTable({
     /** The template's slug, as it appears in /templates/<slug>. */
     slug: v.string(),

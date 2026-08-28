@@ -29,6 +29,7 @@ export function SiteFooter() {
             <li><Link href="/places" className="text-muted-foreground hover:text-foreground">City models</Link></li>
             <li><Link href="/editor?new=place" className="text-muted-foreground hover:text-foreground">Capture a place</Link></li>
             <li><Link href="/chat" className="text-muted-foreground hover:text-foreground">Describe a model</Link></li>
+            <li><Link href="/pricing" className="text-muted-foreground hover:text-foreground">Pricing</Link></li>
           </ul>
         </nav>
 

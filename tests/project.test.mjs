@@ -33,7 +33,9 @@ test("ships the homepage, advanced editors, MCP widgets, skills, icons, and gene
   assert.match(home, /Download STL/);
   assert.match(home, /Open in editor/);
   assert.match(home, /\/api\/model\/stl\?spec=/);
-  assert.match(home, /Go Pro — \$10\/mo/);
+  // The Pro call to action lives in one component now, because what it says
+  // depends on whether someone is signed in and already paying.
+  assert.match(home, /<ProButton/);
   assert.match(home, /Cloth & water sim/);
   assert.match(home, /href="\/editor"/);
   // The catalogue is linked from the landing page, and its cards open in the
@@ -198,6 +200,38 @@ test("MCP widgets survive every way a host can hand them data", async () => {
   assert.match(mcpRoute, /printa-extruded-text-v12\.html/);
   // Hosts render widgets on light and dark chrome.
   assert.match(widget, /prefers-color-scheme:dark/);
+});
+
+test("accounts, projects and billing are additive — the site runs without them", async () => {
+  const [proxy, account, projects, billing, checkout, webhook, proButton] = await Promise.all([
+    readFile(new URL("proxy.ts", root), "utf8"),
+    readFile(new URL("lib/account.ts", root), "utf8"),
+    readFile(new URL("app/api/projects/route.ts", root), "utf8"),
+    readFile(new URL("lib/billing.ts", root), "utf8"),
+    readFile(new URL("app/api/checkout/route.ts", root), "utf8"),
+    readFile(new URL("app/api/stripe/webhook/route.ts", root), "utf8"),
+    readFile(new URL("components/pro-button.tsx", root), "utf8"),
+  ]);
+
+  // AuthKit throws at construction when its keys are missing, so a clone with
+  // no WorkOS setup must never build the middleware at all.
+  assert.match(proxy, /WORKOS_API_KEY && process\.env\.WORKOS_CLIENT_ID/);
+  assert.match(proxy, /if \(!withAuthkit\) return NextResponse\.next\(\)/);
+  assert.match(account, /authConfigured/);
+  assert.match(account, /return null/);
+
+  // A project is the same stored document everything else is addressed by.
+  assert.match(projects, /kind: "project"/);
+  assert.match(projects, /parseModelDocument/);
+  assert.match(projects, /\/editor\?model=/);
+
+  // Billing: no key, no crash — and the webhook verifies before it writes.
+  assert.match(billing, /billingConfigured/);
+  assert.match(checkout, /Payments are not configured/);
+  assert.match(webhook, /constructEventAsync/);
+  assert.match(webhook, /stripe-signature/);
+  assert.match(proButton, /Sign in to go Pro/);
+  assert.match(proButton, /Manage billing/);
 });
 
 test("the page offers its tools to the browser's own agent (WebMCP)", async () => {

@@ -10,6 +10,7 @@
 
 import type * as crons from "../crons.js";
 import type * as documents from "../documents.js";
+import type * as subscriptions from "../subscriptions.js";
 import type * as templateShots from "../templateShots.js";
 
 import type {
@@ -21,6 +22,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   documents: typeof documents;
+  subscriptions: typeof subscriptions;
   templateShots: typeof templateShots;
 }>;
 

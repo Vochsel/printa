@@ -22,7 +22,9 @@ import {
   Sparkles,
   Trash2,
   TriangleAlert,
+  LogOut,
   MapPin,
+  UserRound,
 } from "lucide-react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -67,6 +69,14 @@ import { printMaterialPreset, type PrintMaterialPreset } from "@/lib/material-pr
 import type { ModelDocument, ModelDocumentInput } from "@/lib/model-spec";
 import { initSfx, isSfxEnabled, setSfxEnabled, sfx, sfxThrottled } from "@/lib/sfx";
 import { deleteSavedModel, listSavedModels, saveModel, type SavedModel } from "@/lib/user-models";
+import {
+  deleteCloudProject,
+  fetchAccount,
+  listCloudProjects,
+  saveCloudProject,
+  type Account,
+  type CloudProject,
+} from "@/lib/projects";
 import { cn } from "@/lib/utils";
 import { SpecInspector } from "@/app/SpecInspector";
 
@@ -857,6 +867,10 @@ export function ProceduralStudio() {
   const [chatWidth, setChatWidth] = useState(340);
   const [saveName, setSaveName] = useState("");
   const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
+  const [account, setAccount] = useState<Account | null>(null);
+  const [authAvailable, setAuthAvailable] = useState(false);
+  const [cloudProjects, setCloudProjects] = useState<CloudProject[]>([]);
+  const [saving, setSaving] = useState(false);
   const liveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveAbortRef = useRef<AbortController | null>(null);
   const liveSequenceRef = useRef(0);
@@ -1132,8 +1146,22 @@ export function ProceduralStudio() {
     }
   }, [result, downloading]);
 
+  const refreshProjects = useCallback(async () => {
+    const projects = await listCloudProjects();
+    setCloudProjects(projects);
+  }, []);
+
+  useEffect(() => {
+    void fetchAccount().then(({ authAvailable: available, account: person }) => {
+      setAuthAvailable(available);
+      setAccount(person);
+      if (person) void refreshProjects();
+    });
+  }, [refreshProjects]);
+
   const openLoad = () => {
     setSavedModels(listSavedModels());
+    if (account) void refreshProjects();
     setLoadOpen(true);
     sfx("page");
   };
@@ -1144,11 +1172,32 @@ export function ProceduralStudio() {
     sfx("page");
   };
 
-  const handleSave = () => {
-    if (!document) return;
-    saveModel(saveName, document);
-    setSaveOpen(false);
-    sfx("success");
+  /**
+   * Saving.
+   *
+   * Signed in, a project goes to the account and can be opened anywhere;
+   * signed out it stays in this browser, which is what it always did. The
+   * dialog says which is happening rather than making it a setting.
+   */
+  const handleSave = async () => {
+    if (!document || saving) return;
+    setSaving(true);
+    try {
+      if (account) {
+        const saved = await saveCloudProject(saveName || document.name, document);
+        await refreshProjects();
+        window.history.replaceState(window.history.state, "", `/editor?model=${saved.key}`);
+      } else {
+        saveModel(saveName, document);
+      }
+      setSaveOpen(false);
+      sfx("success");
+    } catch (nextError) {
+      sfx("error");
+      setError(nextError instanceof Error ? nextError.message : "That project could not be saved.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Places are demo ids too, and they are generated from the place roster
@@ -1326,6 +1375,25 @@ ${result.spec}`
             <span className="mx-0.5 h-4 w-px bg-border" />
             {/* Load/Save collapse into the overflow menu on narrow screens so the
                 bar never wraps behind the primary Download action. */}
+            {authAvailable && (
+              account ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={
+                    <Button variant="ghost" size="sm" className="hidden md:inline-flex" data-cuelume-press>
+                      <UserRound /> <span className="max-w-[9rem] truncate">{account.name ?? account.email}</span>
+                    </Button>
+                  } />
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={openLoad}><FolderOpen /> My projects</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { window.location.href = "/sign-out?next=/editor"; }}><LogOut /> Sign out</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={() => { window.location.href = "/sign-in?next=/editor"; }} data-cuelume-press>
+                  <UserRound /> Sign in
+                </Button>
+              )
+            )}
             <Button variant="ghost" size="sm" className="hidden lg:inline-flex" onClick={openLoad} data-cuelume-press><FolderOpen /> Load</Button>
             <Button variant="ghost" size="sm" className="hidden lg:inline-flex" onClick={openSave} disabled={!document} data-cuelume-press><Save /> Save</Button>
             <Button
@@ -1585,8 +1653,47 @@ ${result.spec}`
                   ))}
                 </div>
               </section>
+              {authAvailable && (
+                <section>
+                  <h3 className="mb-2 font-heading text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                    {account ? "Your projects" : "Your projects, anywhere"}
+                  </h3>
+                  {!account ? (
+                    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
+                      <span className="min-w-0 flex-1">Sign in and your projects follow you to any browser.</span>
+                      <Button size="xs" onClick={() => { window.location.href = "/sign-in?next=/editor"; }}><UserRound /> Sign in</Button>
+                    </div>
+                  ) : cloudProjects.length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-border px-3 py-5 text-center text-xs text-muted-foreground">
+                      Nothing saved to your account yet — <strong>Save</strong> keeps the current model against {account.email}.
+                    </p>
+                  ) : (
+                    <div className="overflow-hidden rounded-lg border border-border">
+                      {cloudProjects.map((project) => (
+                        <div key={project.key} className="flex items-center gap-2 border-b border-border px-3 py-2 last:border-b-0">
+                          <button type="button" className="min-w-0 flex-1 text-left" onClick={() => { setLoadOpen(false); sfx("droplet"); void inspect({ model: project.key }); }}>
+                            <span className="block truncate text-xs font-semibold">{project.name}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              Saved {new Date(project.updatedAt).toLocaleDateString()} · {(project.bytes / 1024).toFixed(0)} KB
+                            </span>
+                          </button>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="text-destructive"
+                            aria-label={`Delete ${project.name}`}
+                            onClick={() => { sfx("whisper"); void deleteCloudProject(project.key).then(refreshProjects).catch(() => undefined); }}
+                          >
+                            <Trash2 />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
               <section>
-                <h3 className="mb-2 font-heading text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Your saved models</h3>
+                <h3 className="mb-2 font-heading text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Saved in this browser</h3>
                 {savedModels.length === 0 ? (
                   <p className="rounded-lg border border-dashed border-border px-3 py-5 text-center text-xs text-muted-foreground">
                     Nothing saved yet — use <strong>Save</strong> in the top bar to keep a copy of the current model in this browser.
@@ -1648,7 +1755,11 @@ ${result.spec}`
           <DialogContent className="sm:max-w-sm">
             <DialogHeader>
               <DialogTitle className="font-heading">Save model</DialogTitle>
-              <DialogDescription>Keeps a copy in this browser. Use Download STL for a printable file.</DialogDescription>
+              <DialogDescription>
+                {account
+                  ? `Saves to ${account.email}, so you can open it from any browser.`
+                  : "Keeps a copy in this browser. Sign in to save it to your account instead."}
+              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-1.5">
               <Label htmlFor="save-name" className="text-[10px] font-semibold text-muted-foreground">Name</Label>
@@ -1657,12 +1768,14 @@ ${result.spec}`
                 value={saveName}
                 autoFocus
                 onChange={(event) => setSaveName(event.target.value)}
-                onKeyDown={(event) => { if (event.key === "Enter") handleSave(); }}
+                onKeyDown={(event) => { if (event.key === "Enter") void handleSave(); }}
               />
             </div>
             <DialogFooter>
               <Button variant="outline" size="sm" onClick={() => setSaveOpen(false)}>Cancel</Button>
-              <Button size="sm" onClick={handleSave} disabled={!saveName.trim()}><Save /> Save</Button>
+              <Button size="sm" onClick={() => void handleSave()} disabled={!saveName.trim() || saving}>
+                {saving ? <LoaderCircle className="animate-spin" /> : <Save />} Save
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
