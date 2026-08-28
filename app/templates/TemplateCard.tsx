@@ -1,14 +1,35 @@
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Download } from "lucide-react";
 import { TemplateGlyph } from "@/components/template-glyph";
+import type { TemplateShot } from "@/lib/template-shots";
 import { templateDownloadUrl, templateEditorUrl, type Template } from "@/lib/templates";
 
-/** One catalogue card: glyph, name, tagline, and the two things to do with it. */
-export function TemplateCard({ template }: { template: Template }) {
+/**
+ * One catalogue card.
+ *
+ * The picture is the rendered model where one has been captured, and the
+ * silhouette drawn from the document where one has not — so a card is never
+ * blank, and never waits on a store to draw.
+ */
+export function TemplateCard({ template, shot }: { template: Template; shot?: TemplateShot }) {
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition hover:border-foreground/25">
       <Link href={`/templates/${template.slug}`} aria-label={template.name}>
-        <TemplateGlyph template={template} className="aspect-[4/3] w-full bg-secondary/40" />
+        {shot ? (
+          <Image
+            src={shot.url}
+            alt={`${template.name}, rendered`}
+            width={shot.width}
+            height={shot.height}
+            // A hundred of these on one page: only the first rows are worth
+            // fetching eagerly, and none is ever shown near its native 1704px.
+            sizes="(min-width: 1024px) 22vw, (min-width: 640px) 45vw, 92vw"
+            className="aspect-[4/3] w-full bg-background object-contain"
+          />
+        ) : (
+          <TemplateGlyph template={template} className="aspect-[4/3] w-full bg-secondary/40" />
+        )}
       </Link>
       <div className="flex flex-1 flex-col p-3.5">
         <Link href={`/templates/${template.slug}`} className="text-sm font-semibold hover:underline">

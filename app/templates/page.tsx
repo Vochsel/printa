@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { TEMPLATES, TEMPLATE_CATEGORIES, type TemplateCategory } from "@/lib/templates";
 import { TemplateCard } from "./TemplateCard";
+import { templateShots } from "@/lib/template-shots";
 import { SiteFooter } from "@/components/site-footer";
 
 /**
@@ -35,7 +36,9 @@ export const metadata: Metadata = {
 
 const categories = Object.keys(TEMPLATE_CATEGORIES) as TemplateCategory[];
 
-export default function TemplatesIndex() {
+export default async function TemplatesIndex() {
+  const shots = await templateShots();
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
@@ -97,7 +100,7 @@ export default function TemplatesIndex() {
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {inCategory.map((entry) => (
-                <TemplateCard key={entry.slug} template={entry} />
+                <TemplateCard key={entry.slug} template={entry} shot={shots[entry.slug]} />
               ))}
             </div>
           </section>

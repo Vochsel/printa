@@ -202,6 +202,20 @@ test("MCP widgets survive every way a host can hand them data", async () => {
   assert.match(widget, /prefers-color-scheme:dark/);
 });
 
+test("template cards show the rendered shot when there is one", async () => {
+  const [card, shots] = await Promise.all([
+    readFile(new URL("app/templates/TemplateCard.tsx", root), "utf8"),
+    readFile(new URL("lib/template-shots.ts", root), "utf8"),
+  ]);
+
+  // A hundred cards must not wait on a store to draw: no shot, or no Convex,
+  // and the card falls back to the silhouette taken from the document.
+  assert.match(card, /shot \? \(/);
+  assert.match(card, /<TemplateGlyph/);
+  assert.match(shots, /catch \{\n\s*return \{\};/);
+  assert.match(shots, /if \(!url\) return \{\};/);
+});
+
 test("accounts, projects and billing are additive — the site runs without them", async () => {
   const [proxy, account, projects, billing, checkout, webhook, proButton] = await Promise.all([
     readFile(new URL("proxy.ts", root), "utf8"),

@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { SiteFooter } from "@/components/site-footer";
 import { TEMPLATE_CATEGORIES, templatesInCategory, type TemplateCategory } from "@/lib/templates";
 import { TemplateCard } from "../../TemplateCard";
+import { templateShots } from "@/lib/template-shots";
 
 /**
  * A landing page per category.
@@ -48,6 +49,7 @@ export default async function CategoryPage({ params }: { params: Promise<{ categ
 
   const meta = TEMPLATE_CATEGORIES[category];
   const templates = templatesInCategory(category);
+  const shots = await templateShots();
   const others = CATEGORIES.filter((key) => key !== category);
 
   return (
@@ -69,7 +71,7 @@ export default async function CategoryPage({ params }: { params: Promise<{ categ
       <section className="mx-auto max-w-6xl px-4 pb-12 sm:px-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {templates.map((entry) => (
-            <TemplateCard key={entry.slug} template={entry} />
+            <TemplateCard key={entry.slug} template={entry} shot={shots[entry.slug]} />
           ))}
         </div>
       </section>

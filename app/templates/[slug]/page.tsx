@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowRight, Box, Download, Layers3, Ruler } from "lucide-react";
 import { ModelTurntable } from "@/components/model-turntable";
 import { SiteFooter } from "@/components/site-footer";
 import { TemplateGlyph } from "@/components/template-glyph";
+import { templateShots } from "@/lib/template-shots";
 import {
   TEMPLATES,
   TEMPLATE_CATEGORIES,
@@ -35,14 +37,16 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
   const title = `${entry.name} — free 3D print template`;
   const description = `${entry.tagline} Download the STL or edit every parameter in the browser. Free, no account needed.`;
+  const shot = (await templateShots())[entry.slug];
+  const images = shot ? [{ url: shot.url, width: shot.width, height: shot.height, alt: entry.name }] : undefined;
 
   return {
     title,
     description,
     alternates: { canonical: `/templates/${entry.slug}` },
     keywords: [`${entry.name} STL`, `3D printed ${entry.name.toLowerCase()}`, ...entry.tags, "free STL", "3D print template"],
-    openGraph: { title: `${title} · Printa`, description, type: "article" },
-    twitter: { card: "summary_large_image", title, description },
+    openGraph: { title: `${title} · Printa`, description, type: "article", ...(images ? { images } : {}) },
+    twitter: { card: "summary_large_image", title, description, ...(images ? { images: images.map((image) => image.url) } : {}) },
   };
 }
 
@@ -80,6 +84,7 @@ export default async function TemplatePage({ params }: { params: Promise<{ slug:
 
   const category = TEMPLATE_CATEGORIES[entry.category];
   const related = templatesInCategory(entry.category).filter((other) => other.slug !== entry.slug).slice(0, 4);
+  const shots = await templateShots();
   const modifiers = countModifiers(entry.document.root);
 
   const jsonLd = {
@@ -90,6 +95,7 @@ export default async function TemplatePage({ params }: { params: Promise<{ slug:
     encodingFormat: "model/stl",
     isAccessibleForFree: true,
     keywords: entry.tags.join(", "),
+    ...(shots[entry.slug] ? { image: shots[entry.slug].url } : {}),
     creator: { "@type": "Organization", name: "Printa" },
     potentialAction: {
       "@type": "DownloadAction",
@@ -190,7 +196,18 @@ export default async function TemplatePage({ params }: { params: Promise<{ slug:
                 href={`/templates/${other.slug}`}
                 className="group overflow-hidden rounded-xl border border-border bg-card transition hover:border-foreground/25"
               >
-                <TemplateGlyph template={other} className="aspect-[4/3] w-full bg-secondary/40" />
+                {shots[other.slug] ? (
+                  <Image
+                    src={shots[other.slug].url}
+                    alt={`${other.name}, rendered`}
+                    width={shots[other.slug].width}
+                    height={shots[other.slug].height}
+                    sizes="(min-width: 1024px) 22vw, 45vw"
+                    className="aspect-[4/3] w-full bg-background object-contain"
+                  />
+                ) : (
+                  <TemplateGlyph template={other} className="aspect-[4/3] w-full bg-secondary/40" />
+                )}
                 <div className="p-3">
                   <p className="text-xs font-medium">{other.name}</p>
                   <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{other.tagline}</p>
