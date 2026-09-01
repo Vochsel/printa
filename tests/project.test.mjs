@@ -270,6 +270,46 @@ test("the page offers its tools to the browser's own agent (WebMCP)", async () =
   }
 });
 
+test("every page offers the tools that start a model, and the landing page drives its own viewport", async () => {
+  const [layout, siteTools, home, studio, chatPanel] = await Promise.all([
+    readFile(new URL("app/layout.tsx", root), "utf8"),
+    readFile(new URL("components/site-tools.tsx", root), "utf8"),
+    readFile(new URL("app/HomePage.tsx", root), "utf8"),
+    readFile(new URL("app/ProceduralStudio.tsx", root), "utf8"),
+    readFile(new URL("components/editor/ChatPanel.tsx", root), "utf8"),
+  ]);
+
+  // Site-wide: an agent can begin a model from any page, not just /editor.
+  assert.match(layout, /<SiteTools \/>/);
+  for (const tool of [
+    "printa_find_starting_point",
+    "printa_open_model",
+    "printa_make_text",
+    "printa_capture_place",
+    "printa_describe_model",
+  ]) {
+    assert.match(siteTools, new RegExp(tool), `site registers ${tool}`);
+  }
+  // The catalogue is fetched, not bundled: a hundred documents in every
+  // page's payload is a high price for a list of names.
+  assert.match(siteTools, /fetch\("\/api\/models"/);
+  assert.doesNotMatch(siteTools, /from "@\/lib\/templates"/);
+
+  // The landing page's tools act on its viewport rather than navigating.
+  for (const tool of ["printa_show_model", "printa_show_text", "printa_show_place", "printa_open_in_editor"]) {
+    assert.match(home, new RegExp(tool), `landing registers ${tool}`);
+  }
+
+  // One sentence is the shortest way in, for a person or an agent: both end
+  // up at /editor?ask=, which opens the assistant and puts the question.
+  assert.match(home, /function DescribeBox/);
+  assert.match(home, /\/editor\?ask=/);
+  assert.match(siteTools, /\/editor\?ask=/);
+  assert.match(studio, /get\("ask"\)/);
+  assert.match(studio, /initialPrompt/);
+  assert.match(chatPanel, /askedRef/);
+});
+
 // A syntax error inside a widget's inline module is invisible to tsc and to the
 // Next build — the string still compiles, the browser just renders nothing.
 test("MCP widget inline scripts parse as ES modules", async () => {

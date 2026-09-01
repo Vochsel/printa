@@ -33,6 +33,7 @@ import type { TemplateShot } from "@/lib/template-shots";
 import { ProButton } from "@/components/pro-button";
 import { TEMPLATES, getTemplate, templateDownloadUrl, templateEditorUrl } from "@/lib/templates";
 import { HANDOFF_EDITOR_URL, stashDocument } from "@/lib/model-handoff";
+import { say, useWebMcpTools } from "@/lib/webmcp";
 import {
   capturePlace,
   placeCaptureDocument,
@@ -658,6 +659,46 @@ function PlaceControls({
 // compile in the middle, tweak and download underneath.
 // ---------------------------------------------------------------------------
 
+/**
+ * The shortest way in.
+ *
+ * Everything else on this page asks someone to pick a form first. This asks
+ * for a sentence and hands it to the editor's assistant, which is the same
+ * path an agent takes through printa_describe_model — one door, whoever is
+ * knocking.
+ */
+function DescribeBox() {
+  const [prompt, setPrompt] = useState("");
+  const go = () => {
+    const trimmed = prompt.trim();
+    if (!trimmed) return;
+    window.location.href = `/editor?ask=${encodeURIComponent(trimmed.slice(0, 400))}`;
+  };
+
+  return (
+    <form
+      className="flex items-center gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30"
+      onSubmit={(event) => { event.preventDefault(); go(); }}
+    >
+      <Sparkles size={16} className="ml-2.5 shrink-0 text-[var(--accent-tool)]" />
+      <input
+        value={prompt}
+        onChange={(event) => setPrompt(event.target.value)}
+        placeholder="Describe something to print…"
+        aria-label="Describe something to print"
+        className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+      />
+      <button
+        type="submit"
+        disabled={!prompt.trim()}
+        className="flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+      >
+        Build it <ArrowRight size={15} />
+      </button>
+    </form>
+  );
+}
+
 function Workbench() {
   const [active, setActive] = useState("text");
   const [text, setText] = useState("PRINTA");
@@ -666,24 +707,32 @@ function Workbench() {
 
   const [place, setPlace] = useState<{ name: string; document: unknown } | null>(null);
   const [downloading, setDownloading] = useState(false);
+  // A model an agent handed the page through WebMCP, which belongs on the
+  // stage but in none of the rail's categories.
+  const [shown, setShown] = useState<{ name: string; document: unknown } | null>(null);
 
   const yourText = useMemo(() => textDoc({ text, font, depth, size: 32 }), [text, font, depth]);
   const example = EXAMPLES.find((item) => item.id === active);
   const isPlace = active === "place";
+  const isShown = active === "shown" && shown !== null;
 
   // Until someone captures their own, the map example shows a real one.
-  const ref: ModelRef = isPlace
-    ? (place ? { document: place.document } : { demo: "place-london-city" })
-    : { document: example ? example.document : yourText };
+  const ref: ModelRef = isShown
+    ? { document: shown.document }
+    : isPlace
+      ? (place ? { document: place.document } : { demo: "place-london-city" })
+      : { document: example ? example.document : yourText };
 
-  const color = isPlace ? "#5f8f6a" : example ? example.color : "#ff4d8b";
-  const name = isPlace ? place?.name ?? "The City of London" : example ? example.name : text || "Your text";
-  const blurb = isPlace
-    ? "Any city on Earth, captured from the map and closed into a printable solid."
-    : example
-      ? example.blurb
-      : "Any Google font, extruded and bevelled.";
-  const filename = `${(isPlace ? (place?.name ?? "place") : example ? example.id : text || "printa").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.stl`;
+  const color = isShown ? "#7b63ce" : isPlace ? "#5f8f6a" : example ? example.color : "#ff4d8b";
+  const name = isShown ? shown.name : isPlace ? place?.name ?? "The City of London" : example ? example.name : text || "Your text";
+  const blurb = isShown
+    ? "Built for you just now — open it in the editor to keep going."
+    : isPlace
+      ? "Any city on Earth, captured from the map and closed into a printable solid."
+      : example
+        ? example.blurb
+        : "Any Google font, extruded and bevelled.";
+  const filename = `${(isShown ? shown.name : isPlace ? (place?.name ?? "place") : example ? example.id : text || "printa").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.stl`;
 
   const items: { id: string; name: string; glyph: Glyph }[] = [
     { id: "text", name: "Your text", glyph: GLYPH_TEXT },
@@ -718,6 +767,116 @@ function Workbench() {
       setDownloading(false);
     }
   };
+
+  /**
+   * The hero, offered to the browser's agent.
+   *
+   * These act on the stage rather than navigating: an agent can put a model
+   * in front of someone standing on the landing page, and only then hand it
+   * to the editor. The site-wide tools in SiteTools cover everything that
+   * does not need this viewport.
+   */
+  useWebMcpTools(() => [
+    {
+      name: "printa_show_model",
+      description:
+        "Show a Printa Spec 1.0 document in the landing page's live 3D viewport, without leaving the page. Use printa_open_in_editor afterwards to keep working on it.",
+      inputSchema: {
+        type: "object",
+        properties: { spec: { type: "string", description: "A complete Printa Spec 1.0 document as JSON." } },
+        required: ["spec"],
+      },
+      execute: async (input) => {
+        try {
+          const document = JSON.parse(String((input as unknown as { spec?: string }).spec ?? ""));
+          const response = await fetch("/api/model/stl", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ spec: document, preview: true }),
+          });
+          if (!response.ok) {
+            const body = await response.json().catch(() => null) as { error?: string } | null;
+            throw new Error(body?.error ?? "That spec did not compile.");
+          }
+          const dimensions = (response.headers.get("X-Printa-Dimensions") ?? "0,0,0").split(",").map(Number);
+          setShown({ name: String((document as { name?: string }).name ?? "Model"), document });
+          setActive("shown");
+          return say(`Showing it: ${dimensions.map((value) => value.toFixed(1)).join(" × ")} mm.`);
+        } catch (error) {
+          return say(error instanceof Error ? error.message : "That spec did not compile.");
+        }
+      },
+    },
+    {
+      name: "printa_show_text",
+      description: "Set the word the landing page's 3D text example is showing, and its font and depth. The viewport recompiles immediately.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "Up to 16 characters." },
+          font: { type: "string", description: "Any Google Fonts family." },
+          depthMm: { type: "number", description: "Extrusion depth, 3–40 mm." },
+        },
+        required: ["text"],
+      },
+      execute: async (input) => {
+        const next = input as unknown as { text?: string; font?: string; depthMm?: number };
+        setActive("text");
+        setShown(null);
+        setText(String(next.text ?? "").slice(0, 16).toUpperCase());
+        if (next.font) setFont(next.font);
+        if (typeof next.depthMm === "number") setDepth(Math.min(40, Math.max(3, next.depthMm)));
+        return say(`Showing “${next.text}” in ${next.font ?? font}.`);
+      },
+    },
+    {
+      name: "printa_show_place",
+      description: "Capture a real place — buildings and streets over sampled ground — and show it in the landing page's viewport.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "An address, suburb, city or landmark." },
+          radiusM: { type: "number", description: "Half-width of ground to capture, in metres." },
+        },
+        required: ["query"],
+      },
+      execute: async (input) => {
+        const { query, radiusM } = input as unknown as { query?: string; radiusM?: number };
+        try {
+          const hits = await searchPlaces(String(query ?? ""));
+          const hit = hits[0];
+          if (!hit) return say(`Nothing found for "${query}".`);
+          const radius = Math.min(radiusM ?? hit.radiusM, MAX_CAPTURE_RADIUS_M.buildings);
+          const captured = await capturePlace({ lat: hit.lat, lng: hit.lng, radiusM: radius, capture: "buildings", label: hit.label });
+          const label = hit.label.split(",")[0]?.trim() || hit.label;
+          setShown(null);
+          setPlace({ name: label, document: placeCaptureDocument({ name: label, lat: hit.lat, lng: hit.lng, radiusM: radius, capture: "buildings", baked: captured }) });
+          setActive("place");
+          return say(`Showing ${hit.label} at ${radius * 2} m across. ${captured.note}`);
+        } catch (error) {
+          return say(error instanceof Error ? error.message : "That place could not be captured.");
+        }
+      },
+    },
+    {
+      name: "printa_download_stl",
+      description: "Download whatever the landing page's viewport is showing as a print-ready binary STL.",
+      inputSchema: { type: "object", properties: {} },
+      execute: async () => {
+        await downloadStl();
+        return say(`Saving ${name} as an STL.`);
+      },
+    },
+    {
+      name: "printa_open_in_editor",
+      description: "Open whatever the landing page's viewport is showing in Printa's full editor, where every dimension is editable.",
+      inputSchema: { type: "object", properties: {} },
+      execute: async () => {
+        window.location.href = linkable ? refEditorUrl(ref) : stashDocument(ref.document);
+        return say(`Opening ${name} in the editor.`);
+      },
+    },
+  ]);
 
   return (
     <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
@@ -757,7 +916,7 @@ function Workbench() {
           />
           <div className="grid gap-3 border-t border-border p-4">
             {isPlace && <PlaceControls captured={place} onCaptured={setPlace} />}
-            {!example && !isPlace && (
+            {!example && !isPlace && !isShown && (
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
                 <label className="grid gap-1.5">
                   <span className="text-[11px] font-medium text-muted-foreground">Your text</span>
@@ -1067,6 +1226,10 @@ export function HomePage({ shots = {} }: { shots?: Record<string, TemplateShot> 
             <span className="flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Any Google font</span>
             <span className="flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Free, no sign-up</span>
           </div>
+        </div>
+
+        <div className="mx-auto mt-8 max-w-xl">
+          <DescribeBox />
         </div>
 
         <div className="mt-10">

@@ -18,6 +18,7 @@ const SUGGESTIONS = [
 export function ChatPanel({
   currentSpec,
   width,
+  initialPrompt,
   onApply,
   onApplyModel,
   onClose,
@@ -25,6 +26,8 @@ export function ChatPanel({
 }: {
   currentSpec: string;
   width: number;
+  /** A question the page was opened with — `/editor?ask=…` — asked once. */
+  initialPrompt?: string;
   onApply: (specJson: string) => void;
   /** A captured place is addressed by id: its data never travels through chat. */
   onApplyModel: (modelId: string) => void;
@@ -81,6 +84,14 @@ export function ChatPanel({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
+
+  // Ask the opening question exactly once, however often this re-renders.
+  const askedRef = useRef(false);
+  useEffect(() => {
+    if (askedRef.current || !initialPrompt?.trim()) return;
+    askedRef.current = true;
+    sendMessage({ text: initialPrompt.trim() }, { body: { currentSpec: specRef.current } });
+  }, [initialPrompt, sendMessage]);
 
   const submit = (text: string) => {
     const trimmed = text.trim();

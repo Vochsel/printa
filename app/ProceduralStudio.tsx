@@ -865,6 +865,14 @@ export function ProceduralStudio() {
   // it beside the model, closing it on every reload is just a chore.
   const [chatOpen, setChatOpen] = useState(false);
   const [chatWidth, setChatWidth] = useState(340);
+  // Read straight from the URL, once: `inspect` rewrites the address bar as
+  // soon as the first model compiles, so anything only living there is gone
+  // by the time an effect could look for it.
+  const [initialPrompt] = useState<string | undefined>(() =>
+    typeof window === "undefined"
+      ? undefined
+      : new URLSearchParams(window.location.search).get("ask")?.trim() || undefined,
+  );
   const [saveName, setSaveName] = useState("");
   const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
   const [account, setAccount] = useState<Account | null>(null);
@@ -906,10 +914,12 @@ export function ProceduralStudio() {
       if (Number.isFinite(storedWidth) && storedWidth >= 264 && storedWidth <= 520) setSidebarWidth(storedWidth);
       const storedChat = Number(window.localStorage.getItem(CHAT_WIDTH_KEY));
       if (Number.isFinite(storedChat) && storedChat >= 280 && storedChat <= 560) setChatWidth(storedChat);
-      setChatOpen(window.localStorage.getItem(CHAT_DOCKED_KEY) === "true");
+      // A question asked on the way in opens the assistant whatever the
+      // remembered state was; it is the whole reason the page was opened.
+      setChatOpen(Boolean(initialPrompt) || window.localStorage.getItem(CHAT_DOCKED_KEY) === "true");
     });
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [initialPrompt]);
 
   const compileLive = useCallback(async (next: ModelDocument) => {
     const sequence = ++liveSequenceRef.current;
@@ -1083,6 +1093,9 @@ export function ProceduralStudio() {
     // sent us here — the landing page's map capture, mostly.
     const handoff = params.get("handoff") ? takeHandoff() : null;
     const model = params.get("model");
+    // `?ask=` comes from the landing page's describe box and from the site's
+    // WebMCP tools: open the assistant and put the question to it.
+
     const fallback = mode === "procedural" ? "contour-spiral-vase" : "type-specimen";
     const nextDemo = DEMO_MODEL_CARDS.some((card) => card.id === demo) ? demo! : fallback;
     const timer = window.setTimeout(() => {
@@ -1614,6 +1627,7 @@ ${result.spec}`
             <ChatPanel
               currentSpec={spec}
               width={chatWidth}
+              initialPrompt={initialPrompt}
               onResize={setChatWidth}
               onClose={() => setChatDocked(false)}
               onApply={(specJson) => { try { void inspect({ spec: JSON.parse(specJson) as ModelDocument }); } catch { /* ignore malformed */ } }}
